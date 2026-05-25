@@ -62,12 +62,17 @@ module.exports = function(sequelize, DataTypes) {
     recommendation_detail: {
       type: DataTypes.TEXT,
       allowNull: true
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: Sequelize.Sequelize.fn('getdate')
     }
   }, {
     sequelize,
     tableName: 'AIConsultations',
     schema: 'dbo',
-    timestamps: true,
+    timestamps: false,
     indexes: [
       {
         name: "PK__AIConsul__650FE0FBA110828E",

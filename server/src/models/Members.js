@@ -25,8 +25,16 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: true
     },
     bmi: {
-      type: DataTypes.FLOAT,
-      allowNull: true
+      type: DataTypes.VIRTUAL,
+      // Computed column trong SQL Server, chỉ đọc, không ghi
+      get() {
+        const h = this.getDataValue('height');
+        const w = this.getDataValue('weight');
+        if (h && h > 0 && w) {
+          return Math.round((w / (h * h)) * 100) / 100;
+        }
+        return null;
+      }
     },
     fitness_goal: {
       type: DataTypes.STRING(100),

@@ -52,6 +52,11 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: true,
       defaultValue: "Pending"
     },
+    created_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: Sequelize.Sequelize.fn('getdate')
+    },
     resolved_at: {
       type: DataTypes.DATE,
       allowNull: true
@@ -64,7 +69,7 @@ module.exports = function(sequelize, DataTypes) {
     sequelize,
     tableName: 'Reports',
     schema: 'dbo',
-    timestamps: true,
+    timestamps: false,
     indexes: [
       {
         name: "PK__Reports__779B7C5843BE60A8",

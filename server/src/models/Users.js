@@ -44,6 +44,10 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(20),
       allowNull: true,
       defaultValue: "Active"
+    },
+        avatar_url: {
+      type: DataTypes.STRING(255),
+      allowNull: true
     }
   }, {
     sequelize,

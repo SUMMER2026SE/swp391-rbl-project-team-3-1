@@ -34,12 +34,17 @@ module.exports = function(sequelize, DataTypes) {
     calories_per_day: {
       type: DataTypes.INTEGER,
       allowNull: true
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: Sequelize.Sequelize.fn('getdate')
     }
   }, {
     sequelize,
     tableName: 'MealPlans',
     schema: 'dbo',
-    timestamps: true,
+    timestamps: false,
     indexes: [
       {
         name: "PK__MealPlan__05C57607B8BBAFA3",

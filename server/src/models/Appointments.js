@@ -31,12 +31,17 @@ module.exports = function(sequelize, DataTypes) {
     note: {
       type: DataTypes.STRING(500),
       allowNull: true
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: Sequelize.Sequelize.fn('getdate')
     }
   }, {
     sequelize,
     tableName: 'Appointments',
     schema: 'dbo',
-    timestamps: true,
+    timestamps: false,
     indexes: [
       {
         name: "PK__Appointm__A50828FC86EE4CB7",
