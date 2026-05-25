@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo FxFitnessCenter - Login</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f6f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-container { background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        h2 { text-align: center; color: #333; margin-bottom: 24px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; color: #666; font-weight: 600; }
+        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #28a745; border: none; color: white; font-size: 16px; font-weight: bold; border-radius: 4px; cursor: pointer; transition: 0.3s; }
+        button:hover { background: #218838; }
+        #message { margin-top: 15px; padding: 10px; border-radius: 4px; display: none; text-align: center; font-weight: bold; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .dashboard { display: none; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; }
+    </style>
+</head>
+<body>
+
+<div id="loginBox" class="login-container">
+    <h2>FxFitness Đăng Nhập</h2>
+    <form id="loginForm">
+        <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="email" placeholder="Nhập email (ví dụ: admin@gym.com)" required>
+        </div>
+        <div class="form-group">
+            <label>Mật khẩu</label>
+            <input type="password" id="password" placeholder="Nhập mật khẩu" required>
+        </div>
+        <button type="submit">ĐĂNG NHẬP</button>
+    </form>
+    <div id="message"></div>
+</div>
+
+<div id="dashboardBox" class="dashboard">
+    <h2 style="color: #28a745;">🎉 Đăng Nhập Thành Công!</h2>
+    <p>Xin chào: <strong id="userTitle" style="color: #007bff;"></strong></p>
+    <p>Vai trò hệ thống (Role ID): <span id="userRole" style="font-weight: bold;"></span></p>
+    <p style="font-size: 12px; color: #aaa; word-break: break-all; max-width: 350px;">
+        Token đang lưu tại Trình duyệt: <br><span id="tokenView"></span>
+    </p>
+    <button onclick="logout()" style="background: #dc3545; margin-top: 15px;">Đăng xuất</button>
+</div>
+
+<script>
+    const loginForm = document.getElementById('loginForm');
+    const messageDiv = document.getElementById('message');
+    const loginBox = document.getElementById('loginBox');
+    const dashboardBox = document.getElementById('dashboardBox');
+
+    // Hàm hiển thị thông báo nhanh
+    function showMessage(text, isSuccess) {
+        messageDiv.innerText = text;
+        messageDiv.className = isSuccess ? 'success' : 'error';
+        messageDiv.style.display = 'block';
+    }
+
+    // Xử lý sự kiện bấm nút Đăng nhập
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault(); // Ngăn trang web bị tải lại
+
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        try {
+            // Gọi trực tiếp đến API Backend vừa làm
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // LƯU TOKEN VÀO TRÌNH DUYỆT (Giống như giải thích ở câu hỏi trước)
+                localStorage.setItem('token', data.token);
+
+                // Ẩn form Đăng nhập, hiện màn hình thành công điều hướng quyền
+                loginBox.style.display = 'none';
+                dashboardBox.style.display = 'block';
+
+                document.getElementById('userTitle').innerText = data.user.fullName;
+                document.getElementById('userRole').innerText = `${data.user.roleId} (${data.user.roleId === 3 ? 'Admin' : data.user.roleId === 2 ? 'PT' : 'Member'})`;
+                document.getElementById('tokenView').innerText = data.token.substring(0, 30) + "...";
+            } else {
+                showMessage(data.message || 'Đăng nhập thất bại!', false);
+            }
+        } catch (error) {
+            showMessage('Không thể kết nối đến Server Backend!', false);
+        }
+    });
+
+    // Hàm Đăng xuất
+    function logout() {
+        localStorage.removeItem('token'); // Xóa vé thông hành
+        window.location.reload(); // Tải lại trang về trạng thái ban đầu
+    }
+</script>
+</body>
+</html>
