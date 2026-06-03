@@ -4,9 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+<<<<<<< HEAD
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "create-admin": "node scripts/createAdmin.js"
+=======
+    "dev": "nodemon index.js",
+    "start": "node index.js"
+>>>>>>> tue1
   },
   "keywords": [],
   "author": "",
@@ -24,9 +29,12 @@
     "nodemailer": "^8.0.8",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
-    "pg": "^8.21.0"
+    "pg": "^8.21.0",
+    "sequelize": "^6.37.8",
+    "tedious": "^19.2.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "sequelize-auto": "^0.8.8"
   }
 }
