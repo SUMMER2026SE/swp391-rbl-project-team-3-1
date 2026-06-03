@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './LoginPage.css';
 
+// Helper: notify App.jsx that auth state changed (same-tab)
+const notifyAuthChange = () => window.dispatchEvent(new Event('authChange'));
+
 function LoginPage() {
   // Navigation & Authentication states
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -38,7 +41,7 @@ function LoginPage() {
 
   const fileInputRef = useRef(null);
 
-  // Initialize and check reset parameters in URL or active session
+  // Initialize: check reset params in URL, or validate existing session
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const action = params.get('action');
@@ -52,8 +55,28 @@ function LoginPage() {
     } else {
       const t = localStorage.getItem('token');
       if (t) {
-        setToken(t);
-        fetchProfile(t);
+        // Verify token is still valid before trusting it
+        fetch('/api/profile', {
+          headers: { Authorization: `Bearer ${t}` },
+        })
+          .then((r) => {
+            if (r.ok) {
+              setToken(t);
+              return r.json().then((d) => {
+                if (d.profile && d.profile.avatarUrl) {
+                  setAvatarUrl(d.profile.avatarUrl);
+                }
+              });
+            } else {
+              // Token expired or invalid — clear it
+              localStorage.removeItem('token');
+              localStorage.removeItem('userInfo');
+              setToken('');
+              setUserInfo(null);
+              notifyAuthChange();
+            }
+          })
+          .catch((err) => console.error('Lỗi khi xác thực phiên:', err));
       }
     }
   }, []);
@@ -61,9 +84,7 @@ function LoginPage() {
   // Fetch user profile from Backend
   const fetchProfile = (sessionToken) => {
     fetch('/api/profile', {
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
+      headers: { Authorization: `Bearer ${sessionToken}` },
     })
       .then((r) => r.json())
       .then((d) => {
@@ -74,14 +95,8 @@ function LoginPage() {
       .catch((err) => console.error('Lỗi khi tải thông tin cá nhân:', err));
   };
 
-  // Switch right panel states
-  const showCard = (card) => {
-    setCurrentCard(card);
-  };
-
-  const backToLogin = () => {
-    setCurrentCard('login');
-  };
+  const showCard = (card) => setCurrentCard(card);
+  const backToLogin = () => setCurrentCard('login');
 
   const clearAndLogin = () => {
     window.history.pushState({}, '', window.location.pathname);
@@ -98,6 +113,7 @@ function LoginPage() {
     setUserInfo(null);
     setAvatarUrl('');
     window.history.pushState({}, '', window.location.pathname);
+    notifyAuthChange(); // ← tell App.jsx to re-render
   };
 
   // Handle Login submission
@@ -118,6 +134,7 @@ function LoginPage() {
         setToken(d.token);
         setUserInfo(d.user);
         fetchProfile(d.token);
+        notifyAuthChange(); // ← tell App.jsx to re-render to dashboard
       } else {
         setLoginAlert({ show: true, msg: d.message || 'Đăng nhập thất bại!', ok: false });
       }
@@ -142,9 +159,7 @@ function LoginPage() {
       const d = await r.json();
       if (r.ok) {
         setForgotAlert({ show: true, msg: d.message, ok: true });
-        if (d.resetLink) {
-          setDevLink(d.resetLink);
-        }
+        if (d.resetLink) setDevLink(d.resetLink);
       } else {
         setForgotAlert({ show: true, msg: d.message || 'Có lỗi xảy ra!', ok: false });
       }
@@ -169,11 +184,7 @@ function LoginPage() {
       const r = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token: resetToken,
-          userId: resetUserId,
-          newPassword: resetPw1,
-        }),
+        body: JSON.stringify({ token: resetToken, userId: resetUserId, newPassword: resetPw1 }),
       });
       const d = await r.json();
       if (r.ok) {
@@ -210,18 +221,43 @@ function LoginPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          oldPassword: cpwOld,
-          newPassword: cpwNew,
-        }),
+        body: JSON.stringify({ oldPassword: cpwOld, newPassword: cpwNew }),
       });
       const d = await r.json();
       if (r.ok) {
-        setCpwAlert({ show: true, msg: d.message + ' Đang đăng xuất...', ok: true });
+        setCpwAlert({ show: true, msg: d.message + ' Đang cập nhật phiên...', ok: true });
         setCpwOld('');
         setCpwNew('');
         setCpwConf('');
-        setTimeout(logout, 2500);
+
+        // Re-login to get fresh token with new password
+        try {
+          const email = userInfo && userInfo.email;
+          if (!email) throw new Error('No email available');
+
+          const lr = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password: cpwNew }),
+          });
+          const ld = await lr.json();
+          if (lr.ok) {
+            localStorage.setItem('token', ld.token);
+            localStorage.setItem('userInfo', JSON.stringify(ld.user));
+            setToken(ld.token);
+            setUserInfo(ld.user);
+            fetchProfile(ld.token);
+            notifyAuthChange();
+            setCpwAlert({ show: true, msg: 'Đổi mật khẩu thành công!', ok: true });
+          } else {
+            setCpwAlert({ show: true, msg: 'Đổi mật khẩu xong nhưng đăng nhập lại thất bại, đang đăng xuất...', ok: false });
+            setTimeout(logout, 2000);
+          }
+        } catch (err) {
+          console.error('Re-login after password change failed:', err);
+          setCpwAlert({ show: true, msg: 'Đổi mật khẩu thành công nhưng có lỗi khi cập nhật phiên. Vui lòng đăng nhập lại.', ok: false });
+          setTimeout(logout, 2000);
+        }
       } else {
         setCpwAlert({ show: true, msg: d.message || 'Thay đổi mật khẩu thất bại!', ok: false });
       }
@@ -247,14 +283,10 @@ function LoginPage() {
     try {
       const r = await fetch('/api/profile/avatar', {
         method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-
       const d = await r.json();
-
       if (r.ok) {
         setAvatarUrl(d.avatarUrl);
         alert('Đổi ảnh đại diện thành công!');
@@ -266,14 +298,14 @@ function LoginPage() {
     }
   };
 
-  // Helper for back to Home Page
+  // Navigate back to HomePage
   const backToHome = (e) => {
     e.preventDefault();
     window.history.pushState({}, '', '/');
     window.dispatchEvent(new Event('popstate'));
   };
 
-  // Helper to parse role from userInfo / Decoded Token
+  // Parse role label from userInfo
   const getRoleText = () => {
     if (!userInfo) return 'HỘI VIÊN';
     const roleId = userInfo.roleId;
@@ -282,7 +314,7 @@ function LoginPage() {
     return 'MEMBER';
   };
 
-  // Render authenticated Dashboard
+  // ─── Authenticated Dashboard ───────────────────────────────────────────────
   if (token) {
     return (
       <div className="loginpage-container">
@@ -312,12 +344,7 @@ function LoginPage() {
                         id="avatarImg"
                         src={avatarUrl}
                         alt="Avatar"
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                          borderRadius: '50%',
-                        }}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
                       />
                     ) : (
                       <i className="fa-solid fa-user-ninja" id="avatarIcon"></i>
@@ -333,12 +360,8 @@ function LoginPage() {
                     onChange={uploadAvatar}
                   />
 
-                  <button
-                    className="avatar-upload-btn"
-                    onClick={() => fileInputRef.current.click()}
-                  >
-                    <i className="fa-solid fa-camera"></i>
-                    Đổi ảnh đại diện
+                  <button className="avatar-upload-btn" onClick={() => fileInputRef.current.click()}>
+                    <i className="fa-solid fa-camera"></i> Đổi ảnh đại diện
                   </button>
                   <div className="p-name" id="dName">
                     {userInfo ? userInfo.fullName : 'Hội Viên FxFitness'}
@@ -374,7 +397,7 @@ function LoginPage() {
                 <div className="cpw-title">
                   <i className="fa-solid fa-user-shield"></i> Thay Đổi Mật Khẩu
                 </div>
-                
+
                 {cpwAlert.show && (
                   <div className={`alert ${cpwAlert.ok ? 'ok' : 'err'}`} style={{ display: 'flex' }}>
                     <i className={`fa-solid ${cpwAlert.ok ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
@@ -384,48 +407,21 @@ function LoginPage() {
 
                 <form id="fCpw" onSubmit={doChangePw}>
                   <div className="field">
-                    <div className="field-head">
-                      <span className="lbl">Mật khẩu hiện tại</span>
-                    </div>
+                    <div className="field-head"><span className="lbl">Mật khẩu hiện tại</span></div>
                     <div className="inp-wrap">
-                      <input
-                        type="password"
-                        id="cpwOld"
-                        placeholder="Nhập mật khẩu cũ"
-                        value={cpwOld}
-                        onChange={(e) => setCpwOld(e.target.value)}
-                        required
-                      />
+                      <input type="password" placeholder="Nhập mật khẩu cũ" value={cpwOld} onChange={(e) => setCpwOld(e.target.value)} required />
                     </div>
                   </div>
                   <div className="field">
-                    <div className="field-head">
-                      <span className="lbl">Mật khẩu mới</span>
-                    </div>
+                    <div className="field-head"><span className="lbl">Mật khẩu mới</span></div>
                     <div className="inp-wrap">
-                      <input
-                        type="password"
-                        id="cpwNew"
-                        placeholder="Tối thiểu 6 ký tự"
-                        value={cpwNew}
-                        onChange={(e) => setCpwNew(e.target.value)}
-                        required
-                      />
+                      <input type="password" placeholder="Tối thiểu 6 ký tự" value={cpwNew} onChange={(e) => setCpwNew(e.target.value)} required />
                     </div>
                   </div>
                   <div className="field">
-                    <div className="field-head">
-                      <span className="lbl">Xác nhận mật khẩu mới</span>
-                    </div>
+                    <div className="field-head"><span className="lbl">Xác nhận mật khẩu mới</span></div>
                     <div className="inp-wrap">
-                      <input
-                        type="password"
-                        id="cpwConf"
-                        placeholder="Nhập lại mật khẩu mới"
-                        value={cpwConf}
-                        onChange={(e) => setCpwConf(e.target.value)}
-                        required
-                      />
+                      <input type="password" placeholder="Nhập lại mật khẩu mới" value={cpwConf} onChange={(e) => setCpwConf(e.target.value)} required />
                     </div>
                   </div>
                   <button className="btn-primary" type="submit" style={{ marginTop: '4px' }}>
@@ -440,21 +436,19 @@ function LoginPage() {
     );
   }
 
-  // Render Login / Forgot / Reset Forms
+  // ─── Login / Forgot / Reset Forms ─────────────────────────────────────────
   return (
     <div className="loginpage-container">
       <div className="shell" id="authShell">
-        {/* ====== LEFT ====== */}
+        {/* LEFT */}
         <div className="left">
           <div className="oval"></div>
           <div className="triangle"></div>
-
           <div className="left-body">
             <h1 className="heading" onClick={backToHome} style={{ cursor: 'pointer' }}>
               CHÀO MỪNG<br />TRỞ LẠI
             </h1>
             <p className="sub" onClick={backToHome} style={{ cursor: 'pointer' }}>Fx Fitness Center</p>
-
             <div className="gym-photo">
               <div className="gym-placeholder">
                 <i className="fa-solid fa-dumbbell"></i>
@@ -464,7 +458,6 @@ function LoginPage() {
                 <i className="fa-solid fa-chevron-right"></i>
               </div>
             </div>
-
             <p className="gym-caption">
               Đánh thức sức mạnh tiềm ẩn của bạn với cơ sở vật chất hiện đại và
               đội ngũ huấn luyện viên chuyên nghiệp.
@@ -472,18 +465,14 @@ function LoginPage() {
           </div>
         </div>
 
-        {/* ====== RIGHT ====== */}
+        {/* RIGHT */}
         <div className="right">
           <div className="form-box">
-            
-            {/* TABS (Registration removed, so Login stretches 100% of the bar) */}
             <div className="tabs">
-              <button className="tab active" id="tabLogin">
-                Đăng Nhập
-              </button>
+              <button className="tab active" id="tabLogin">Đăng Nhập</button>
             </div>
 
-            {/* ---- LOGIN SECTION ---- */}
+            {/* LOGIN */}
             {currentCard === 'login' && (
               <div id="secLogin">
                 {loginAlert.show && (
@@ -492,35 +481,21 @@ function LoginPage() {
                     <span>{loginAlert.msg}</span>
                   </div>
                 )}
-
                 <form id="fLogin" onSubmit={doLogin}>
                   <div className="field">
-                    <div className="field-head">
-                      <span className="lbl">Email</span>
-                    </div>
+                    <div className="field-head"><span className="lbl">Email</span></div>
                     <div className="inp-wrap">
-                      <input
-                        type="email"
-                        id="loginEmail"
-                        placeholder="ví dụ: ten@email.com"
-                        value={loginEmail}
-                        onChange={(e) => setLoginEmail(e.target.value)}
-                        required
-                      />
+                      <input type="email" placeholder="ví dụ: ten@email.com" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} required />
                     </div>
                   </div>
-
                   <div className="field">
                     <div className="field-head">
                       <span className="lbl">Mật Khẩu</span>
-                      <a className="forgot" onClick={() => showCard('forgotCard')}>
-                        Quên mật khẩu?
-                      </a>
+                      <a className="forgot" onClick={() => showCard('forgotCard')}>Quên mật khẩu?</a>
                     </div>
                     <div className="inp-wrap">
                       <input
                         type={showPw ? 'text' : 'password'}
-                        id="loginPw"
                         placeholder="••••••••"
                         value={loginPw}
                         onChange={(e) => setLoginPw(e.target.value)}
@@ -531,71 +506,45 @@ function LoginPage() {
                       </span>
                     </div>
                   </div>
-
-                  <button className="btn-primary" type="submit">
-                    Đăng Nhập
-                  </button>
+                  <button className="btn-primary" type="submit">Đăng Nhập</button>
                 </form>
-
                 <button className="btn-secondary" onClick={backToHome} style={{ marginTop: '16px' }}>
                   <i className="fa-solid fa-arrow-left"></i> Trở về Trang Chủ
                 </button>
               </div>
             )}
 
-            {/* ---- FORGOT SECTION ---- */}
+            {/* FORGOT */}
             {currentCard === 'forgotCard' && (
               <div id="forgotCard">
-                <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text)', marginBottom: '6px' }}>
-                  Quên Mật Khẩu?
-                </h2>
-                <p style={{ color: '#999', fontSize: '0.88rem', marginBottom: '24px' }}>
-                  Nhập email để nhận link khôi phục.
-                </p>
-
+                <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text)', marginBottom: '6px' }}>Quên Mật Khẩu?</h2>
+                <p style={{ color: '#999', fontSize: '0.88rem', marginBottom: '24px' }}>Nhập email để nhận link khôi phục.</p>
                 {forgotAlert.show && (
                   <div className={`alert ${forgotAlert.ok ? 'ok' : 'err'}`} style={{ display: 'flex' }}>
                     <i className={`fa-solid ${forgotAlert.ok ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
                     <span>{forgotAlert.msg}</span>
                   </div>
                 )}
-
                 <form id="fForgot" onSubmit={doForgot}>
                   <div className="field">
-                    <div className="field-head">
-                      <span className="lbl">Địa chỉ Email</span>
-                    </div>
+                    <div className="field-head"><span className="lbl">Địa chỉ Email</span></div>
                     <div className="inp-wrap">
-                      <input
-                        type="email"
-                        id="forgotEmail"
-                        placeholder="Nhập email để khôi phục"
-                        value={forgotEmail}
-                        onChange={(e) => setForgotEmail(e.target.value)}
-                        required
-                      />
+                      <input type="email" placeholder="Nhập email để khôi phục" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} required />
                     </div>
                   </div>
                   <button className="btn-primary" type="submit" disabled={isForgotLoading}>
                     {isForgotLoading ? 'Đang xử lý...' : 'Gửi Yêu Cầu Khôi Phục'}
                   </button>
                 </form>
-
                 <button className="btn-secondary" onClick={backToLogin}>
                   <i className="fa-solid fa-arrow-left"></i> Quay lại Đăng nhập
                 </button>
-
                 {devLink && (
                   <div id="devBox" className="dev-box">
                     <h4><i className="fa-solid fa-bug"></i> Dev Mode</h4>
                     <p>Link reset (local test):</p>
                     <code>{devLink}</code>
-                    <button
-                      className="btn-primary"
-                      id="btnGoReset"
-                      style={{ marginTop: '12px', padding: '10px' }}
-                      onClick={() => { window.location.href = devLink; }}
-                    >
+                    <button className="btn-primary" style={{ marginTop: '12px', padding: '10px' }} onClick={() => { window.location.href = devLink; }}>
                       Đi tới Link Reset
                     </button>
                   </div>
@@ -603,65 +552,35 @@ function LoginPage() {
               </div>
             )}
 
-            {/* ---- RESET SECTION ---- */}
+            {/* RESET */}
             {currentCard === 'reset' && (
               <div id="resetCard">
-                <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text)', marginBottom: '6px' }}>
-                  Đặt Lại Mật Khẩu
-                </h2>
-                <p style={{ color: '#999', fontSize: '0.88rem', marginBottom: '24px' }}>
-                  Thiết lập mật khẩu bảo vệ mới.
-                </p>
-
+                <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text)', marginBottom: '6px' }}>Đặt Lại Mật Khẩu</h2>
+                <p style={{ color: '#999', fontSize: '0.88rem', marginBottom: '24px' }}>Thiết lập mật khẩu bảo vệ mới.</p>
                 {resetAlert.show && (
                   <div className={`alert ${resetAlert.ok ? 'ok' : 'err'}`} style={{ display: 'flex' }}>
                     <i className={`fa-solid ${resetAlert.ok ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
                     <span>{resetAlert.msg}</span>
                   </div>
                 )}
-
                 <form id="fReset" onSubmit={doReset}>
                   <div className="field">
-                    <div className="field-head">
-                      <span className="lbl">Mật khẩu mới</span>
-                    </div>
+                    <div className="field-head"><span className="lbl">Mật khẩu mới</span></div>
                     <div className="inp-wrap">
-                      <input
-                        type="password"
-                        id="resetPw1"
-                        placeholder="Tối thiểu 6 ký tự"
-                        value={resetPw1}
-                        onChange={(e) => setResetPw1(e.target.value)}
-                        required
-                      />
+                      <input type="password" placeholder="Tối thiểu 6 ký tự" value={resetPw1} onChange={(e) => setResetPw1(e.target.value)} required />
                     </div>
                   </div>
                   <div className="field">
-                    <div className="field-head">
-                      <span className="lbl">Xác nhận mật khẩu mới</span>
-                    </div>
+                    <div className="field-head"><span className="lbl">Xác nhận mật khẩu mới</span></div>
                     <div className="inp-wrap">
-                      <input
-                        type="password"
-                        id="resetPw2"
-                        placeholder="Nhập lại mật khẩu mới"
-                        value={resetPw2}
-                        onChange={(e) => setResetPw2(e.target.value)}
-                        required
-                      />
+                      <input type="password" placeholder="Nhập lại mật khẩu mới" value={resetPw2} onChange={(e) => setResetPw2(e.target.value)} required />
                     </div>
                   </div>
-                  <button className="btn-primary" type="submit">
-                    Cập Nhật Mật Khẩu
-                  </button>
+                  <button className="btn-primary" type="submit">Cập Nhật Mật Khẩu</button>
                 </form>
-
-                <button className="btn-secondary" onClick={clearAndLogin}>
-                  Hủy & Về Đăng nhập
-                </button>
+                <button className="btn-secondary" onClick={clearAndLogin}>Hủy & Về Đăng nhập</button>
               </div>
             )}
-
           </div>
         </div>
       </div>
