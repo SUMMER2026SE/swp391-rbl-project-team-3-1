@@ -1,0 +1,672 @@
+import React, { useState, useEffect, useRef } from 'react';
+import './LoginPage.css';
+
+function LoginPage() {
+  // Navigation & Authentication states
+  const [token, setToken] = useState(localStorage.getItem('token') || '');
+  const [userInfo, setUserInfo] = useState(JSON.parse(localStorage.getItem('userInfo') || 'null'));
+  const [currentCard, setCurrentCard] = useState('login'); // 'login', 'forgot', 'reset'
+
+  // Input states
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPw, setLoginPw] = useState('');
+  const [showPw, setShowPw] = useState(false);
+
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [isForgotLoading, setIsForgotLoading] = useState(false);
+
+  const [resetPw1, setResetPw1] = useState('');
+  const [resetPw2, setResetPw2] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [resetUserId, setResetUserId] = useState('');
+
+  const [cpwOld, setCpwOld] = useState('');
+  const [cpwNew, setCpwNew] = useState('');
+  const [cpwConf, setCpwConf] = useState('');
+
+  // Profile fields (from server)
+  const [avatarUrl, setAvatarUrl] = useState('');
+
+  // Alerts
+  const [loginAlert, setLoginAlert] = useState({ show: false, msg: '', ok: false });
+  const [forgotAlert, setForgotAlert] = useState({ show: false, msg: '', ok: false });
+  const [resetAlert, setResetAlert] = useState({ show: false, msg: '', ok: false });
+  const [cpwAlert, setCpwAlert] = useState({ show: false, msg: '', ok: false });
+
+  // Dev mode for forgot password reset link
+  const [devLink, setDevLink] = useState('');
+
+  const fileInputRef = useRef(null);
+
+  // Initialize and check reset parameters in URL or active session
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const action = params.get('action');
+    const tkn = params.get('token');
+    const uid = params.get('userId');
+
+    if (action === 'reset-password' && tkn && uid) {
+      setResetToken(tkn);
+      setResetUserId(uid);
+      setCurrentCard('reset');
+    } else {
+      const t = localStorage.getItem('token');
+      if (t) {
+        setToken(t);
+        fetchProfile(t);
+      }
+    }
+  }, []);
+
+  // Fetch user profile from Backend
+  const fetchProfile = (sessionToken) => {
+    fetch('/api/profile', {
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+      },
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.profile && d.profile.avatarUrl) {
+          setAvatarUrl(d.profile.avatarUrl);
+        }
+      })
+      .catch((err) => console.error('Lỗi khi tải thông tin cá nhân:', err));
+  };
+
+  // Switch right panel states
+  const showCard = (card) => {
+    setCurrentCard(card);
+  };
+
+  const backToLogin = () => {
+    setCurrentCard('login');
+  };
+
+  const clearAndLogin = () => {
+    window.history.pushState({}, '', window.location.pathname);
+    setResetPw1('');
+    setResetPw2('');
+    setCurrentCard('login');
+  };
+
+  // Sign out
+  const logout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('userInfo');
+    setToken('');
+    setUserInfo(null);
+    setAvatarUrl('');
+    window.history.pushState({}, '', window.location.pathname);
+  };
+
+  // Handle Login submission
+  const doLogin = async (e) => {
+    e.preventDefault();
+    setLoginAlert({ show: false, msg: '', ok: false });
+
+    try {
+      const r = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPw }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        localStorage.setItem('token', d.token);
+        localStorage.setItem('userInfo', JSON.stringify(d.user));
+        setToken(d.token);
+        setUserInfo(d.user);
+        fetchProfile(d.token);
+      } else {
+        setLoginAlert({ show: true, msg: d.message || 'Đăng nhập thất bại!', ok: false });
+      }
+    } catch (err) {
+      setLoginAlert({ show: true, msg: 'Không thể kết nối đến máy chủ FxFitness!', ok: false });
+    }
+  };
+
+  // Handle Forgot Password submission
+  const doForgot = async (e) => {
+    e.preventDefault();
+    setIsForgotLoading(true);
+    setForgotAlert({ show: false, msg: '', ok: false });
+    setDevLink('');
+
+    try {
+      const r = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setForgotAlert({ show: true, msg: d.message, ok: true });
+        if (d.resetLink) {
+          setDevLink(d.resetLink);
+        }
+      } else {
+        setForgotAlert({ show: true, msg: d.message || 'Có lỗi xảy ra!', ok: false });
+      }
+    } catch (err) {
+      setForgotAlert({ show: true, msg: 'Lỗi kết nối máy chủ!', ok: false });
+    } finally {
+      setIsForgotLoading(false);
+    }
+  };
+
+  // Handle Reset Password submission
+  const doReset = async (e) => {
+    e.preventDefault();
+    setResetAlert({ show: false, msg: '', ok: false });
+
+    if (resetPw1 !== resetPw2) {
+      setResetAlert({ show: true, msg: 'Mật khẩu xác nhận không khớp!', ok: false });
+      return;
+    }
+
+    try {
+      const r = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: resetToken,
+          userId: resetUserId,
+          newPassword: resetPw1,
+        }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setResetAlert({ show: true, msg: d.message + ' Đang chuyển hướng...', ok: true });
+        setTimeout(clearAndLogin, 3000);
+      } else {
+        setResetAlert({ show: true, msg: d.message || 'Lỗi đặt lại mật khẩu!', ok: false });
+      }
+    } catch (err) {
+      setResetAlert({ show: true, msg: 'Không thể kết nối đến máy chủ!', ok: false });
+    }
+  };
+
+  // Handle Change Password submission
+  const doChangePw = async (e) => {
+    e.preventDefault();
+    setCpwAlert({ show: false, msg: '', ok: false });
+
+    if (cpwNew !== cpwConf) {
+      setCpwAlert({ show: true, msg: 'Mật khẩu xác nhận không khớp!', ok: false });
+      return;
+    }
+
+    if (!token) {
+      setCpwAlert({ show: true, msg: 'Phiên làm việc đã hết hạn!', ok: false });
+      logout();
+      return;
+    }
+
+    try {
+      const r = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          oldPassword: cpwOld,
+          newPassword: cpwNew,
+        }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setCpwAlert({ show: true, msg: d.message + ' Đang đăng xuất...', ok: true });
+        setCpwOld('');
+        setCpwNew('');
+        setCpwConf('');
+        setTimeout(logout, 2500);
+      } else {
+        setCpwAlert({ show: true, msg: d.message || 'Thay đổi mật khẩu thất bại!', ok: false });
+      }
+    } catch (err) {
+      setCpwAlert({ show: true, msg: 'Lỗi kết nối máy chủ!', ok: false });
+    }
+  };
+
+  // Handle Avatar Upload
+  const uploadAvatar = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!token) {
+      alert('Bạn cần đăng nhập trước!');
+      logout();
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('avatar', file);
+
+    try {
+      const r = await fetch('/api/profile/avatar', {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const d = await r.json();
+
+      if (r.ok) {
+        setAvatarUrl(d.avatarUrl);
+        alert('Đổi ảnh đại diện thành công!');
+      } else {
+        alert(d.message || 'Đổi avatar thất bại!');
+      }
+    } catch (err) {
+      alert('Không thể kết nối server!');
+    }
+  };
+
+  // Helper for back to Home Page
+  const backToHome = (e) => {
+    e.preventDefault();
+    window.history.pushState({}, '', '/');
+    window.dispatchEvent(new Event('popstate'));
+  };
+
+  // Helper to parse role from userInfo / Decoded Token
+  const getRoleText = () => {
+    if (!userInfo) return 'HỘI VIÊN';
+    const roleId = userInfo.roleId;
+    if (roleId === 3) return 'ADMIN';
+    if (roleId === 2) return 'TRAINER';
+    return 'MEMBER';
+  };
+
+  // Render authenticated Dashboard
+  if (token) {
+    return (
+      <div className="loginpage-container">
+        <div className="dash-shell" id="dashShell">
+          <div className="dash-card">
+            <div className="dash-header">
+              <div className="dash-brand">
+                <a href="/" onClick={backToHome} style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'inherit', textDecoration: 'none' }}>
+                  <i className="fa-solid fa-dumbbell"></i>
+                  <div>
+                    <h2>Bảng Điều Khiển</h2>
+                    <p>Hệ thống hội viên FxFitness Center</p>
+                  </div>
+                </a>
+              </div>
+              <button className="btn-logout" onClick={logout}>
+                <i className="fa-solid fa-power-off"></i> Đăng xuất
+              </button>
+            </div>
+
+            <div className="dash-grid">
+              <div>
+                <div className="profile-card">
+                  <div className="p-avatar" id="avatarBox">
+                    {avatarUrl ? (
+                      <img
+                        id="avatarImg"
+                        src={avatarUrl}
+                        alt="Avatar"
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          borderRadius: '50%',
+                        }}
+                      />
+                    ) : (
+                      <i className="fa-solid fa-user-ninja" id="avatarIcon"></i>
+                    )}
+                  </div>
+
+                  <input
+                    type="file"
+                    id="avatarInput"
+                    ref={fileInputRef}
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={uploadAvatar}
+                  />
+
+                  <button
+                    className="avatar-upload-btn"
+                    onClick={() => fileInputRef.current.click()}
+                  >
+                    <i className="fa-solid fa-camera"></i>
+                    Đổi ảnh đại diện
+                  </button>
+                  <div className="p-name" id="dName">
+                    {userInfo ? userInfo.fullName : 'Hội Viên FxFitness'}
+                  </div>
+                  <div className="p-role" id="dRole">
+                    {getRoleText()}
+                  </div>
+                </div>
+
+                <div className="info-list">
+                  <div className="info-row">
+                    <i className="fa-solid fa-envelope"></i>
+                    <div>
+                      <div className="i-lbl">Email Hệ thống</div>
+                      <div className="i-val" id="dEmail">
+                        {userInfo ? userInfo.email : 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="info-row">
+                    <i className="fa-solid fa-shield"></i>
+                    <div>
+                      <div className="i-lbl">Trạng thái bảo mật</div>
+                      <div className="i-val" style={{ color: 'var(--orange)' }}>
+                        Đã kết nối JWT
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="cpw-title">
+                  <i className="fa-solid fa-user-shield"></i> Thay Đổi Mật Khẩu
+                </div>
+                
+                {cpwAlert.show && (
+                  <div className={`alert ${cpwAlert.ok ? 'ok' : 'err'}`} style={{ display: 'flex' }}>
+                    <i className={`fa-solid ${cpwAlert.ok ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
+                    <span>{cpwAlert.msg}</span>
+                  </div>
+                )}
+
+                <form id="fCpw" onSubmit={doChangePw}>
+                  <div className="field">
+                    <div className="field-head">
+                      <span className="lbl">Mật khẩu hiện tại</span>
+                    </div>
+                    <div className="inp-wrap">
+                      <input
+                        type="password"
+                        id="cpwOld"
+                        placeholder="Nhập mật khẩu cũ"
+                        value={cpwOld}
+                        onChange={(e) => setCpwOld(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <div className="field-head">
+                      <span className="lbl">Mật khẩu mới</span>
+                    </div>
+                    <div className="inp-wrap">
+                      <input
+                        type="password"
+                        id="cpwNew"
+                        placeholder="Tối thiểu 6 ký tự"
+                        value={cpwNew}
+                        onChange={(e) => setCpwNew(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <div className="field-head">
+                      <span className="lbl">Xác nhận mật khẩu mới</span>
+                    </div>
+                    <div className="inp-wrap">
+                      <input
+                        type="password"
+                        id="cpwConf"
+                        placeholder="Nhập lại mật khẩu mới"
+                        value={cpwConf}
+                        onChange={(e) => setCpwConf(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <button className="btn-primary" type="submit" style={{ marginTop: '4px' }}>
+                    Cập Nhật Mật Khẩu
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Render Login / Forgot / Reset Forms
+  return (
+    <div className="loginpage-container">
+      <div className="shell" id="authShell">
+        {/* ====== LEFT ====== */}
+        <div className="left">
+          <div className="oval"></div>
+          <div className="triangle"></div>
+
+          <div className="left-body">
+            <h1 className="heading" onClick={backToHome} style={{ cursor: 'pointer' }}>
+              CHÀO MỪNG<br />TRỞ LẠI
+            </h1>
+            <p className="sub" onClick={backToHome} style={{ cursor: 'pointer' }}>Fx Fitness Center</p>
+
+            <div className="gym-photo">
+              <div className="gym-placeholder">
+                <i className="fa-solid fa-dumbbell"></i>
+                <span>Fx Fitness Center</span>
+              </div>
+              <div className="photo-arrow" onClick={backToHome}>
+                <i className="fa-solid fa-chevron-right"></i>
+              </div>
+            </div>
+
+            <p className="gym-caption">
+              Đánh thức sức mạnh tiềm ẩn của bạn với cơ sở vật chất hiện đại và
+              đội ngũ huấn luyện viên chuyên nghiệp.
+            </p>
+          </div>
+        </div>
+
+        {/* ====== RIGHT ====== */}
+        <div className="right">
+          <div className="form-box">
+            
+            {/* TABS (Registration removed, so Login stretches 100% of the bar) */}
+            <div className="tabs">
+              <button className="tab active" id="tabLogin">
+                Đăng Nhập
+              </button>
+            </div>
+
+            {/* ---- LOGIN SECTION ---- */}
+            {currentCard === 'login' && (
+              <div id="secLogin">
+                {loginAlert.show && (
+                  <div className={`alert ${loginAlert.ok ? 'ok' : 'err'}`} style={{ display: 'flex' }}>
+                    <i className={`fa-solid ${loginAlert.ok ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
+                    <span>{loginAlert.msg}</span>
+                  </div>
+                )}
+
+                <form id="fLogin" onSubmit={doLogin}>
+                  <div className="field">
+                    <div className="field-head">
+                      <span className="lbl">Email</span>
+                    </div>
+                    <div className="inp-wrap">
+                      <input
+                        type="email"
+                        id="loginEmail"
+                        placeholder="ví dụ: ten@email.com"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="field">
+                    <div className="field-head">
+                      <span className="lbl">Mật Khẩu</span>
+                      <a className="forgot" onClick={() => showCard('forgotCard')}>
+                        Quên mật khẩu?
+                      </a>
+                    </div>
+                    <div className="inp-wrap">
+                      <input
+                        type={showPw ? 'text' : 'password'}
+                        id="loginPw"
+                        placeholder="••••••••"
+                        value={loginPw}
+                        onChange={(e) => setLoginPw(e.target.value)}
+                        required
+                      />
+                      <span className="eye" onClick={() => setShowPw(!showPw)}>
+                        <i className={`fa-regular ${showPw ? 'fa-eye' : 'fa-eye-slash'}`}></i>
+                      </span>
+                    </div>
+                  </div>
+
+                  <button className="btn-primary" type="submit">
+                    Đăng Nhập
+                  </button>
+                </form>
+
+                <button className="btn-secondary" onClick={backToHome} style={{ marginTop: '16px' }}>
+                  <i className="fa-solid fa-arrow-left"></i> Trở về Trang Chủ
+                </button>
+              </div>
+            )}
+
+            {/* ---- FORGOT SECTION ---- */}
+            {currentCard === 'forgotCard' && (
+              <div id="forgotCard">
+                <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text)', marginBottom: '6px' }}>
+                  Quên Mật Khẩu?
+                </h2>
+                <p style={{ color: '#999', fontSize: '0.88rem', marginBottom: '24px' }}>
+                  Nhập email để nhận link khôi phục.
+                </p>
+
+                {forgotAlert.show && (
+                  <div className={`alert ${forgotAlert.ok ? 'ok' : 'err'}`} style={{ display: 'flex' }}>
+                    <i className={`fa-solid ${forgotAlert.ok ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
+                    <span>{forgotAlert.msg}</span>
+                  </div>
+                )}
+
+                <form id="fForgot" onSubmit={doForgot}>
+                  <div className="field">
+                    <div className="field-head">
+                      <span className="lbl">Địa chỉ Email</span>
+                    </div>
+                    <div className="inp-wrap">
+                      <input
+                        type="email"
+                        id="forgotEmail"
+                        placeholder="Nhập email để khôi phục"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <button className="btn-primary" type="submit" disabled={isForgotLoading}>
+                    {isForgotLoading ? 'Đang xử lý...' : 'Gửi Yêu Cầu Khôi Phục'}
+                  </button>
+                </form>
+
+                <button className="btn-secondary" onClick={backToLogin}>
+                  <i className="fa-solid fa-arrow-left"></i> Quay lại Đăng nhập
+                </button>
+
+                {devLink && (
+                  <div id="devBox" className="dev-box">
+                    <h4><i className="fa-solid fa-bug"></i> Dev Mode</h4>
+                    <p>Link reset (local test):</p>
+                    <code>{devLink}</code>
+                    <button
+                      className="btn-primary"
+                      id="btnGoReset"
+                      style={{ marginTop: '12px', padding: '10px' }}
+                      onClick={() => { window.location.href = devLink; }}
+                    >
+                      Đi tới Link Reset
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ---- RESET SECTION ---- */}
+            {currentCard === 'reset' && (
+              <div id="resetCard">
+                <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text)', marginBottom: '6px' }}>
+                  Đặt Lại Mật Khẩu
+                </h2>
+                <p style={{ color: '#999', fontSize: '0.88rem', marginBottom: '24px' }}>
+                  Thiết lập mật khẩu bảo vệ mới.
+                </p>
+
+                {resetAlert.show && (
+                  <div className={`alert ${resetAlert.ok ? 'ok' : 'err'}`} style={{ display: 'flex' }}>
+                    <i className={`fa-solid ${resetAlert.ok ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
+                    <span>{resetAlert.msg}</span>
+                  </div>
+                )}
+
+                <form id="fReset" onSubmit={doReset}>
+                  <div className="field">
+                    <div className="field-head">
+                      <span className="lbl">Mật khẩu mới</span>
+                    </div>
+                    <div className="inp-wrap">
+                      <input
+                        type="password"
+                        id="resetPw1"
+                        placeholder="Tối thiểu 6 ký tự"
+                        value={resetPw1}
+                        onChange={(e) => setResetPw1(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <div className="field-head">
+                      <span className="lbl">Xác nhận mật khẩu mới</span>
+                    </div>
+                    <div className="inp-wrap">
+                      <input
+                        type="password"
+                        id="resetPw2"
+                        placeholder="Nhập lại mật khẩu mới"
+                        value={resetPw2}
+                        onChange={(e) => setResetPw2(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <button className="btn-primary" type="submit">
+                    Cập Nhật Mật Khẩu
+                  </button>
+                </form>
+
+                <button className="btn-secondary" onClick={clearAndLogin}>
+                  Hủy & Về Đăng nhập
+                </button>
+              </div>
+            )}
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default LoginPage;
