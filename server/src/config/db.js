@@ -1,38 +1,40 @@
-const sql = require('mssql');
+const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
-const dbConfig = {
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  server: process.env.DB_SERVER || 'localhost',
-  database: process.env.DB_NAME,
-  port: parseInt(process.env.DB_PORT) || 1433,
-  options: {
-    encrypt: false, // Đặt thành true nếu dùng Azure SQL, false nếu chạy dưới máy local
-    trustServerCertificate: true, // Quan trọng: Cho phép tự tin cậy chứng chỉ tự ký ở máy local
-  },
-};
+const sequelize = new Sequelize(
+    process.env.DB_NAME,
+    process.env.DB_USER,
+    process.env.DB_PASS,
+    {
+        host: process.env.DB_HOST || '127.0.0.1',
+        port: parseInt(process.env.DB_PORT) || 1433,
+        dialect: 'mssql',
+        logging: false,
+        dialectOptions: {
+            options: {
+                encrypt: false,
+                trustServerCertificate: true,
+                connectionTimeout: 5000,
+                requestTimeout: 10000
+            }
+        },
+        pool: {
+            max: 5,
+            min: 0,
+            acquire: 10000,
+            idle: 10000
+        }
+    }
+);
 
-console.log('⚡ Đang khởi tạo kết nối cơ sở dữ liệu với cấu hình:', {
-  server: dbConfig.server,
-  database: dbConfig.database,
-  user: dbConfig.user,
-  port: dbConfig.port,
-});
+let models = {};
 
-const poolPromise = new sql.ConnectionPool(dbConfig)
-  .connect()
-  .then((pool) => {
-    console.log('🔌 [SUCCESS] Kết nối Microsoft SQL Server thành công!');
-    return pool;
-  })
-  .catch((err) => {
-    console.error('❌ [ERROR] Kết nối cơ sở dữ liệu thất bại! Lỗi chi tiết:', err.message);
-    // Không ném lỗi ra ngoài để server không bị crash đột ngột khi DB chưa bật dưới máy người dùng
-    return null;
-  });
+try {
+    const initModels = require('../models/init-models');
+    models = initModels(sequelize);
+    console.log('✅ Đã nạp danh sách Models thành công!');
+} catch (error) {
+    console.error('❌ Lỗi khi khởi tạo Models:', error.message);
+}
 
-module.exports = {
-  sql,
-  poolPromise,
-};
+module.exports = { sequelize, models };

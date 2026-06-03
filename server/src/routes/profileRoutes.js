@@ -1,10 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const profileController = require('../controllers/profileController');
-const authMiddleware = require('../middleware/authMiddleware');
-const upload = require('../middleware/uploadMiddleware');
 
-router.get('/', authMiddleware, profileController.getProfile);
-router.put('/avatar', authMiddleware, upload.single('avatar'), profileController.updateAvatar);
+const authMiddleware = require('../middlewares/authMiddleware');
+const uploadAvatar = require('../middlewares/uploadAvatarMiddleware'); 
+const profileController = require('../controllers/profileController');
+
+router.get('/', authMiddleware, profileController.getMyProfile);
+router.put('/', authMiddleware, profileController.updateMyProfile);
+router.put('/avatar', authMiddleware, uploadAvatar.single('avatar'), profileController.updateMyAvatar);
 
 module.exports = router;

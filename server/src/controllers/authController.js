@@ -1,74 +1,309 @@
+const { models } = require('../config/db');
 const bcrypt = require('bcryptjs');
-const jwtUtil = require('../utils/jwt');
-const userService = require('../services/userService');
+const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 
-async function register(req, res) {
-  try {
-    const { email, password, name } = req.body;
-    if (!email || !password) return res.status(400).json({ message: 'Email and password required' });
-
-    const existing = await userService.findByEmail(email);
-    if (existing) return res.status(409).json({ message: 'Email already in use' });
-
-    const salt = await bcrypt.genSalt(10);
-    const hash = await bcrypt.hash(password, salt);
-
-    const user = await userService.create({ email, password_hash: hash, name });
-    const token = jwtUtil.sign({ id: user.user_id, email: user.email, roleId: user.role_id });
-
-    res.status(201).json({ user: { id: user.user_id, email: user.email, fullName: user.full_name, roleId: user.role_id }, token });
-  } catch (err) {
-    console.error('Register error:', err);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-}
-
-async function login(req, res) {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ message: 'Email and password required' });
-
-    // Debug: log received login attempt (do not log raw password in production)
+// =====================================================
+// 1. API ĐĂNG KÝ (GIỮ NGUYÊN HOÀN TOÀN LOGIC CŨ CỦA BẠN)
+// =====================================================
+exports.register = async (req, res) => {
     try {
-      console.log('[AUTH_ATTEMPT] email=%s passwordLen=%d ip=%s', email, password ? password.length : 0, req.ip || req.connection.remoteAddress);
-    } catch (e) {
-      console.log('[AUTH_ATTEMPT] email present, could not log more info');
+        const { fullName, email, password, phoneNumber, gender } = req.body;
+
+        if (!fullName || !email || !password) {
+            return res.status(400).json({
+                message: 'Vui lòng điền đầy đủ fullName, email và password.'
+            });
+        }
+
+        const existingUser = await models.Users.findOne({ where: { email } });
+        if (existingUser) {
+            return res.status(400).json({ message: 'Email này đã được sử dụng!' });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(password, salt);
+
+        const newUser = await models.Users.create({
+            full_name: fullName,
+            email: email,
+            password_hash: passwordHash,
+            phone_number: phoneNumber,
+            gender: gender,
+            role_id: 1, // Mặc định là Member
+            status: 'Inactive'
+        });
+
+        return res.status(201).json({
+            message: 'Đăng ký tài khoản thành công! Trạng thái: Chờ kích hoạt.'
+        });
+
+    } catch (error) {
+        console.error('❌ Lỗi Đăng ký:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi đăng ký!', error: error.message });
     }
+};
 
-    const user = await userService.findByEmail(email);
-    if (!user) {
-      console.log('[DEBUG] login: user not found for', email);
-      return res.status(401).json({ message: 'Invalid credentials' });
+// =====================================================
+// 2. API ĐĂNG NHẬP (THÊM MỚI VÀO HỆ THỐNG)
+// =====================================================
+exports.login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        // Kiểm tra xem người dùng đã điền đủ thông tin chưa
+        if (!email || !password) {
+            return res.status(400).json({
+                message: 'Vui lòng nhập đầy đủ email và password.'
+            });
+        }
+
+        // Tìm tài khoản trong database theo email
+        const user = await models.Users.findOne({ where: { email } });
+        if (!user) {
+            return res.status(400).json({ message: 'Email hoặc mật khẩu không chính xác!' });
+        }
+
+        // So sánh mật khẩu người dùng nhập vào với mật khẩu đã băm trong database
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Email hoặc mật khẩu không chính xác!' });
+        }
+
+        // Kiểm tra trạng thái tài khoản (Chỉ cho phép trạng thái 'Active' đăng nhập)
+        if (user.status === 'Inactive') {
+            return res.status(403).json({ message: 'Tài khoản chưa được kích hoạt!' });
+        }
+        if (user.status === 'Locked') {
+            return res.status(403).json({ message: 'Tài khoản này hiện đang bị khóa!' });
+        }
+
+        // Tạo mã token JWT phục vụ cho việc lưu trạng thái và phân quyền ở Front-end
+        const token = jwt.sign(
+            { userId: user.user_id, roleId: user.role_id },
+            process.env.JWT_SECRET || 'BiMatSieuCap_SWP391',
+            { expiresIn: '1d' } // Hết hạn trong 1 ngày
+        );
+
+        // Trả về dữ liệu thành công cho Client/Postman
+        return res.status(200).json({
+            message: 'Đăng nhập thành công!',
+            token,
+            user: {
+                userId: user.user_id,
+                fullName: user.full_name,
+                email: user.email,
+                roleId: user.role_id,
+                status: user.status
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Lỗi Đăng nhập:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi đăng nhập!', error: error.message });
     }
+};
 
-    console.log('[DEBUG] login: found user', { user_id: user.user_id, email: user.email, password_hash: !!user.password_hash });
-    const match = await bcrypt.compare(password, user.password_hash);
-    console.log('[DEBUG] login: bcrypt.compare result =', match);
-    if (!match) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+// =====================================================
+// 3. HÀM GỬI EMAIL ĐẶT LẠI MẬT KHẨU QUA NODEMAILER
+// =====================================================
+const sendResetEmail = async (email, resetLink) => {
+    const transporter = nodemailer.createTransport({
+        service: process.env.EMAIL_SERVICE || 'gmail',
+        auth: {
+            user: process.env.EMAIL_USER || '',
+            pass: process.env.EMAIL_PASS || ''
+        }
+    });
+
+    const mailOptions = {
+        from: `"FxFitness Center" <${process.env.EMAIL_USER || 'no-reply@fxfitness.com'}>`,
+        to: email,
+        subject: 'Yêu cầu đặt lại mật khẩu - FxFitness Center',
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #ffffff;">
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <h2 style="color: #28a745; margin: 0;">FxFitness Center</h2>
+                    <p style="font-size: 14px; color: #666; margin: 5px 0 0 0;">Hệ thống tập luyện chuyên nghiệp</p>
+                </div>
+                <div style="line-height: 1.6; color: #333333;">
+                    <p>Xin chào,</p>
+                    <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản FxFitness của bạn. Vui lòng bấm vào liên kết dưới đây để thực hiện đổi mật khẩu mới (Liên kết này có hiệu lực trong vòng 15 phút):</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${resetLink}" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 16px; display: inline-block;">ĐẶT LẠI MẬT KHẨU</a>
+                    </div>
+                    <p>Hoặc bạn có thể sao chép liên kết này và dán vào trình duyệt:</p>
+                    <p style="word-break: break-all; color: #007bff; font-size: 13px;">${resetLink}</p>
+                    <p style="color: #666; font-size: 13px; margin-top: 20px;">Nếu bạn không yêu cầu thay đổi này, hãy bỏ qua email này. Tài khoản của bạn vẫn an toàn.</p>
+                </div>
+                <hr style="border: 0; border-top: 1px solid #eeeeee; margin: 20px 0;">
+                <div style="text-align: center; font-size: 12px; color: #999999;">
+                    <p>© 2026 FxFitness Center. All rights reserved.</p>
+                </div>
+            </div>
+        `
+    };
+
+    return transporter.sendMail(mailOptions);
+};
+
+// =====================================================
+// 4. API QUÊN MẬT KHẨU (GỬI LINK RESET QUA EMAIL HOẶC CONSOLE LOG)
+// =====================================================
+exports.forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ message: 'Vui lòng cung cấp email của tài khoản!' });
+        }
+
+        const user = await models.Users.findOne({ where: { email } });
+        if (!user) {
+            return res.status(404).json({ message: 'Không tìm thấy tài khoản với email này!' });
+        }
+
+        // Tạo reset token bảo mật dạng dynamic stateless token: JWT_SECRET + password_hash hiện tại
+        const secret = (process.env.JWT_SECRET || 'BiMatSieuCap_SWP391') + user.password_hash;
+        const resetToken = jwt.sign(
+            { userId: user.user_id, email: user.email },
+            secret,
+            { expiresIn: '15m' } // Reset link hết hạn sau 15 phút
+        );
+
+        // Tạo đường dẫn reset link trỏ tới trang chủ (frontend) để hiển thị form đặt lại
+        const host = req.get('host');
+        const protocol = req.protocol;
+        const resetLink = `${protocol}://${host}/index.html?action=reset-password&token=${resetToken}&userId=${user.user_id}`;
+
+        let emailSent = false;
+        let emailError = null;
+
+        // Nếu có tài khoản SMTP trong .env thì gửi đi thực tế
+        if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+            try {
+                await sendResetEmail(email, resetLink);
+                emailSent = true;
+            } catch (err) {
+                console.error('❌ Lỗi gửi email qua Nodemailer:', err.message);
+                emailError = err.message;
+            }
+        }
+
+        // Luôn ghi log chi tiết link đặt lại để hỗ trợ debug/test cục bộ ngay lập tức
+        console.log('\n=====================================================');
+        console.log('🔑 [PASSWORD RESET LINK DETECTED - DEV ONLY]');
+        console.log(`Email: ${email}`);
+        console.log(`Reset Link: ${resetLink}`);
+        console.log('=====================================================\n');
+
+        return res.status(200).json({
+            message: emailSent 
+                ? 'Đã gửi đường dẫn đặt lại mật khẩu đến email của bạn!' 
+                : 'Yêu cầu đặt lại mật khẩu đã được ghi nhận thành công! (Môi trường Dev: hãy sao chép Reset Link trong kết quả bên dưới để kiểm tra).',
+            resetLink: resetLink,
+            emailSent,
+            emailError
+        });
+    } catch (error) {
+        console.error('❌ Lỗi Quên Mật Khẩu:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi xử lý quên mật khẩu!', error: error.message });
     }
+};
 
-    const token = jwtUtil.sign({ id: user.user_id, email: user.email, roleId: user.role_id });
-    res.json({ user: { id: user.user_id, email: user.email, fullName: user.full_name, roleId: user.role_id }, token });
-  } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-}
+// =====================================================
+// 5. API ĐẶT LẠI MẬT KHẨU MỚI (RESET PASSWORD)
+// =====================================================
+exports.resetPassword = async (req, res) => {
+    try {
+        const { token, userId, newPassword } = req.body;
 
-async function me(req, res) {
-  // `authMiddleware` attaches `req.user` from token
-  if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
-  try {
-    const full = await userService.findById(req.user.id);
-    if (!full) return res.status(404).json({ message: 'User not found' });
-    // return safe fields only
-    const safe = { id: full.user_id, email: full.email, fullName: full.full_name, roleId: full.role_id };
-    res.json({ user: safe });
-  } catch (err) {
-    console.error('Get /me error:', err);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-}
+        if (!token || !userId || !newPassword) {
+            return res.status(400).json({ message: 'Vui lòng cung cấp đầy đủ thông tin: token, userId và newPassword.' });
+        }
 
-module.exports = { register, login, me };
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: 'Mật khẩu mới phải từ 6 ký tự trở lên!' });
+        }
+
+        const user = await models.Users.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'Không tìm thấy người dùng này!' });
+        }
+
+        // Xác thực token bằng khóa động (được ký bằng pass hash cũ của chính user đó)
+        const secret = (process.env.JWT_SECRET || 'BiMatSieuCap_SWP391') + user.password_hash;
+        try {
+            jwt.verify(token, secret);
+        } catch (err) {
+            return res.status(400).json({ message: 'Đường dẫn đặt lại mật khẩu đã hết hạn hoặc không hợp lệ!' });
+        }
+
+        // Tiến hành băm mật khẩu mới
+        const salt = await bcrypt.genSalt(10);
+        const newPasswordHash = await bcrypt.hash(newPassword, salt);
+
+        // Cập nhật thông tin mật khẩu mới
+        const previousStatus = user.status;
+        user.password_hash = newPasswordHash;
+        
+        // Tự động kích hoạt tài khoản nếu tài khoản đó đang Inactive để tiện cho họ đăng nhập ngay
+        if (user.status === 'Inactive') {
+            user.status = 'Active';
+        }
+        await user.save();
+
+        return res.status(200).json({
+            message: previousStatus === 'Inactive'
+                ? 'Đặt lại mật khẩu thành công và tài khoản đã được kích hoạt! Bạn có thể đăng nhập ngay.'
+                : 'Mật khẩu đã được cập nhật thành công! Vui lòng đăng nhập bằng mật khẩu mới.'
+        });
+    } catch (error) {
+        console.error('❌ Lỗi Reset Mật Khẩu:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi đặt lại mật khẩu!', error: error.message });
+    }
+};
+
+// =====================================================
+// 6. API ĐỔI MẬT KHẨU (ĐÒI HỎI ĐĂNG NHẬP / AUTHENTICATED)
+// =====================================================
+exports.changePassword = async (req, res) => {
+    try {
+        const { oldPassword, newPassword } = req.body;
+        const userId = req.user.userId; // Lấy từ token giải mã được qua middleware
+
+        if (!oldPassword || !newPassword) {
+            return res.status(400).json({ message: 'Vui lòng cung cấp đầy đủ cả mật khẩu cũ và mật khẩu mới.' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: 'Mật khẩu mới phải từ 6 ký tự trở lên!' });
+        }
+
+        const user = await models.Users.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'Không tìm thấy thông tin tài khoản người dùng!' });
+        }
+
+        // So sánh mật khẩu cũ
+        const isMatch = await bcrypt.compare(oldPassword, user.password_hash);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Mật khẩu cũ nhập vào không chính xác!' });
+        }
+
+        // Đảm bảo mật khẩu mới khác mật khẩu cũ
+        const isSame = await bcrypt.compare(newPassword, user.password_hash);
+        if (isSame) {
+            return res.status(400).json({ message: 'Mật khẩu mới không được trùng khớp với mật khẩu cũ!' });
+        }
+
+        // Băm và lưu mật khẩu mới
+        const salt = await bcrypt.genSalt(10);
+        user.password_hash = await bcrypt.hash(newPassword, salt);
+        await user.save();
+
+        return res.status(200).json({ message: 'Đổi mật khẩu thành công! Vui lòng đăng nhập lại.' });
+    } catch (error) {
+        console.error('❌ Lỗi Đổi Mật Khẩu:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi đổi mật khẩu!', error: error.message });
+    }
+};
