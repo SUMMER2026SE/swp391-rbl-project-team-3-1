@@ -3,26 +3,34 @@ import HomePage from './pages/HomePage/HomePage';
 import LoginPage from './pages/LoginPage/LoginPage';
 
 function App() {
+  const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
   useEffect(() => {
-    const handleLocationChange = () => {
-      setCurrentPath(window.location.pathname);
+    const handleLocationChange = () => setCurrentPath(window.location.pathname);
+    window.addEventListener('popstate', handleLocationChange);
+    return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
+
+  // Lắng nghe thay đổi token từ LoginPage (login / logout)
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setToken(localStorage.getItem('token') || '');
     };
 
-    // Lắng nghe sự kiện di chuyển lịch sử trang (back/forward hoặc pushState tự định nghĩa)
-    window.addEventListener('popstate', handleLocationChange);
-    
+    window.addEventListener('storage', handleStorageChange);
+
+    // Custom event để catch same-tab changes (vì 'storage' chỉ fire ở tab khác)
+    window.addEventListener('authChange', handleStorageChange);
+
     return () => {
-      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('authChange', handleStorageChange);
     };
   }, []);
 
-  // Điều hướng đơn giản (Simple State Routing)
-  if (currentPath === '/login') {
-    return <LoginPage />;
-  }
-
+  if (token) return <LoginPage />;
+  if (currentPath === '/login') return <LoginPage />;
   return <HomePage />;
 }
 

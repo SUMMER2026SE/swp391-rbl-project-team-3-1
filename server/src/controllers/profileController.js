@@ -1,0 +1,286 @@
+const fs = require('fs');
+const path = require('path');
+const { models } = require('../config/db');
+
+// Role trong SQL hiện tại:
+// 1 = Member, 2 = PT, 3 = Admin
+const ROLE = {
+    MEMBER: 1,
+    PT: 2,
+    ADMIN: 3
+};
+
+const buildAvatarUrl = (req, avatarPath) => {
+    if (!avatarPath) return null;
+    if (avatarPath.startsWith('http')) return avatarPath;
+    return `${req.protocol}://${req.get('host')}${avatarPath}`;
+};
+
+const removeOldLocalAvatar = (avatarUrl) => {
+    if (!avatarUrl || !avatarUrl.startsWith('/uploads/avatars/')) return;
+
+    const filePath = path.join(__dirname, '../../public', avatarUrl);
+
+    if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+    }
+};
+
+const getRoleName = (roleId) => {
+    if (roleId === ROLE.MEMBER) return 'Member';
+    if (roleId === ROLE.PT) return 'PT';
+    if (roleId === ROLE.ADMIN) return 'Admin';
+    return 'Unknown';
+};
+
+// =====================================================
+// 1. XEM PROFILE
+// GET /api/profile
+// Header: Authorization: Bearer <token>
+// =====================================================
+exports.getMyProfile = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+
+        const user = await models.Users.findByPk(userId, {
+            attributes: {
+                exclude: ['password_hash']
+            },
+            include: [
+                {
+                    model: models.Roles,
+                    as: 'role',
+                    attributes: ['role_id', 'role_name']
+                },
+                {
+                    model: models.Members,
+                    as: 'Member',
+                    required: false
+                },
+                {
+                    model: models.Trainers,
+                    as: 'Trainer',
+                    required: false
+                }
+            ]
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: 'Không tìm thấy người dùng!' });
+        }
+
+        if (user.status !== 'Active') {
+            return res.status(403).json({ message: 'Tài khoản không ở trạng thái Active!' });
+        }
+
+        return res.status(200).json({
+            message: 'Lấy thông tin profile thành công!',
+            profile: {
+                userId: user.user_id,
+                fullName: user.full_name,
+                email: user.email,
+                phoneNumber: user.phone_number,
+                gender: user.gender,
+                dateOfBirth: user.date_of_birth,
+                avatarUrl: buildAvatarUrl(req, user.avatar_url),
+                role: user.role || {
+                    role_id: user.role_id,
+                    role_name: getRoleName(user.role_id)
+                },
+                memberInfo: user.Member || null,
+                trainerInfo: user.Trainer || null
+            }
+        });
+    } catch (error) {
+        console.error('❌ Lỗi xem profile:', error.message);
+        return res.status(500).json({
+            message: 'Lỗi server khi xem profile!',
+            error: error.message
+        });
+    }
+};
+
+// =====================================================
+// 2. EDIT PROFILE
+// PUT /api/profile
+// Header: Authorization: Bearer <token>
+// Body chung: fullName, phoneNumber, gender, dateOfBirth
+// Body Member: height, weight, fitnessGoal, emergencyContact
+// Body PT: specialization, experienceYears, experienceDescription, bio
+// Admin chỉ sửa thông tin cơ bản ở bảng Users.
+// =====================================================
+exports.updateMyProfile = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+
+        const user = await models.Users.findByPk(userId, {
+            include: [
+                { model: models.Members, as: 'Member', required: false },
+                { model: models.Trainers, as: 'Trainer', required: false }
+            ]
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: 'Không tìm thấy người dùng!' });
+        }
+
+        if (user.status !== 'Active') {
+            return res.status(403).json({ message: 'Tài khoản không ở trạng thái Active!' });
+        }
+
+        const {
+            fullName,
+            phoneNumber,
+            gender,
+            dateOfBirth,
+            height,
+            weight,
+            fitnessGoal,
+            emergencyContact,
+            specialization,
+            experienceYears,
+            experienceDescription,
+            bio
+        } = req.body;
+
+        if (fullName !== undefined && String(fullName).trim() === '') {
+            return res.status(400).json({ message: 'Họ tên không được để trống!' });
+        }
+
+        await user.update({
+            full_name: fullName !== undefined ? fullName : user.full_name,
+            phone_number: phoneNumber !== undefined ? phoneNumber : user.phone_number,
+            gender: gender !== undefined ? gender : user.gender,
+            date_of_birth: dateOfBirth !== undefined ? dateOfBirth : user.date_of_birth
+        });
+
+        // Member được sửa thêm thông tin luyện tập cá nhân.
+        if (user.role_id === ROLE.MEMBER) {
+            let member = user.Member;
+
+            // Trường hợp data cũ chưa có dòng trong Members thì tạo bổ sung.
+            if (!member) {
+                member = await models.Members.create({ user_id: userId });
+            }
+
+            const parsedHeight = height !== undefined && height !== '' ? Number(height) : member.height;
+            const parsedWeight = weight !== undefined && weight !== '' ? Number(weight) : member.weight;
+
+            if (parsedHeight !== null && parsedHeight !== undefined && parsedHeight < 0) {
+                return res.status(400).json({ message: 'Chiều cao không hợp lệ!' });
+            }
+
+            if (parsedWeight !== null && parsedWeight !== undefined && parsedWeight < 0) {
+                return res.status(400).json({ message: 'Cân nặng không hợp lệ!' });
+            }
+
+            await member.update({
+                height: parsedHeight,
+                weight: parsedWeight,
+                fitness_goal: fitnessGoal !== undefined ? fitnessGoal : member.fitness_goal,
+                emergency_contact: emergencyContact !== undefined ? emergencyContact : member.emergency_contact
+            });
+        }
+
+        // PT được sửa thêm hồ sơ chuyên môn.
+        if (user.role_id === ROLE.PT) {
+            let trainer = user.Trainer;
+
+            // Trường hợp data cũ chưa có dòng trong Trainers thì tạo bổ sung.
+            if (!trainer) {
+                trainer = await models.Trainers.create({ user_id: userId });
+            }
+
+            const parsedExperienceYears = experienceYears !== undefined && experienceYears !== ''
+                ? Number(experienceYears)
+                : trainer.experience_years;
+
+            if (parsedExperienceYears !== null && parsedExperienceYears !== undefined && parsedExperienceYears < 0) {
+                return res.status(400).json({ message: 'Số năm kinh nghiệm không hợp lệ!' });
+            }
+
+            await trainer.update({
+                specialization: specialization !== undefined ? specialization : trainer.specialization,
+                experience_years: parsedExperienceYears,
+                experience_description: experienceDescription !== undefined ? experienceDescription : trainer.experience_description,
+                bio: bio !== undefined ? bio : trainer.bio
+            });
+        }
+
+        const updatedUser = await models.Users.findByPk(userId, {
+            attributes: { exclude: ['password_hash'] },
+            include: [
+                { model: models.Roles, as: 'role', attributes: ['role_id', 'role_name'] },
+                { model: models.Members, as: 'Member', required: false },
+                { model: models.Trainers, as: 'Trainer', required: false }
+            ]
+        });
+
+        return res.status(200).json({
+            message: 'Cập nhật profile thành công!',
+            profile: {
+                userId: updatedUser.user_id,
+                fullName: updatedUser.full_name,
+                email: updatedUser.email,
+                phoneNumber: updatedUser.phone_number,
+                gender: updatedUser.gender,
+                dateOfBirth: updatedUser.date_of_birth,
+                avatarUrl: buildAvatarUrl(req, updatedUser.avatar_url),
+                role: updatedUser.role || {
+                    role_id: updatedUser.role_id,
+                    role_name: getRoleName(updatedUser.role_id)
+                },
+                memberInfo: updatedUser.Member || null,
+                trainerInfo: updatedUser.Trainer || null
+            }
+        });
+    } catch (error) {
+        console.error('❌ Lỗi cập nhật profile:', error.message);
+        return res.status(500).json({
+            message: 'Lỗi server khi cập nhật profile!',
+            error: error.message
+        });
+    }
+};
+
+// =====================================================
+// 3. ĐỔI ẢNH ĐẠI DIỆN
+// PUT /api/profile/avatar
+// Header: Authorization: Bearer <token>
+// Form-data: avatar = file ảnh
+// =====================================================
+exports.updateMyAvatar = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+
+        if (!req.file) {
+            return res.status(400).json({ message: 'Vui lòng chọn file ảnh đại diện!' });
+        }
+
+        const user = await models.Users.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'Không tìm thấy người dùng!' });
+        }
+
+        if (user.status !== 'Active') {
+            return res.status(403).json({ message: 'Tài khoản không ở trạng thái Active!' });
+        }
+
+        const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+
+        removeOldLocalAvatar(user.avatar_url);
+
+        await user.update({ avatar_url: avatarUrl });
+
+        return res.status(200).json({
+            message: 'Đổi ảnh đại diện thành công!',
+            avatarUrl: buildAvatarUrl(req, avatarUrl)
+        });
+    } catch (error) {
+        console.error('❌ Lỗi đổi ảnh đại diện:', error.message);
+        return res.status(500).json({
+            message: 'Lỗi server khi đổi ảnh đại diện!',
+            error: error.message
+        });
+    }
+};
