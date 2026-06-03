@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const { sequelize } = require('./src/config/db');
@@ -12,18 +13,18 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Redirect trang chủ về home.html (phải đặt TRƯỚC express.static)
-app.get('/', (req, res) => {
-    res.redirect('/home.html');
-});
-
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Định tuyến API Auth
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/workout-plans', workoutRoutes);
 app.use('/api/meal-plans', mealRoutes);
+
+// Hỗ trợ Single Page Application (SPA) routing
+app.get('/*splat', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 const PORT = process.env.PORT || 5000;
 
