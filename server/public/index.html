@@ -704,6 +704,539 @@
       .avatar-upload-btn:active {
         transform: translateY(-3px);
       }
+
+      /* ===================================================
+           UPGRADED DASHBOARD LAYOUT & SIDEBAR
+         =================================================== */
+      .dash-card {
+        max-width: 1200px !important; /* Make card wider for workspace */
+        display: flex;
+        flex-direction: column;
+        min-height: 600px;
+        padding: 0 !important; /* Let children handle padding */
+        overflow: hidden;
+      }
+      
+      .dash-main-container {
+        display: flex;
+        flex-grow: 1;
+        min-height: 520px;
+      }
+      
+      /* Sidebar */
+      .dash-left-sidebar {
+        width: 260px;
+        background: #f8fafc;
+        border-right: 1.5px solid #f1f5f9;
+        display: flex;
+        flex-direction: column;
+        padding: 30px 20px;
+        flex-shrink: 0;
+      }
+      
+      .sidebar-menu {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 24px;
+        list-style: none;
+      }
+      
+      .sidebar-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-radius: 10px;
+        color: #64748b;
+        font-weight: 600;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: none;
+        background: none;
+        width: 100%;
+        text-align: left;
+        font-family: inherit;
+      }
+      
+      .sidebar-item:hover {
+        background: #f1f5f9;
+        color: var(--text);
+      }
+      
+      .sidebar-item.active {
+        background: var(--peach-light);
+        color: var(--orange);
+      }
+      
+      .sidebar-item i {
+        font-size: 1.1rem;
+        width: 20px;
+        text-align: center;
+      }
+      
+      /* Main content workspace */
+      .dash-workspace {
+        flex-grow: 1;
+        padding: 40px;
+        background: #fff;
+        overflow-y: auto;
+        min-width: 0; /* prevent flex blowout */
+      }
+      
+      .workspace-view {
+        display: none;
+        animation: fadeIn 0.3s ease;
+      }
+      
+      .workspace-view.active {
+        display: block;
+      }
+      
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      
+      /* View-specific headers */
+      .view-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 28px;
+      }
+      
+      .view-title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--text);
+      }
+      
+      .view-subtitle {
+        font-size: 0.88rem;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      
+      /* Button styles */
+      .btn-add {
+        padding: 10px 20px;
+        background: var(--orange);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-weight: 700;
+        font-size: 0.9rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: background 0.2s;
+        text-decoration: none;
+      }
+      
+      .btn-add:hover {
+        background: var(--orange-dk);
+      }
+      
+      /* Tables */
+      .premium-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+      }
+      
+      .premium-table th {
+        background: #f8fafc;
+        color: #64748b;
+        font-weight: 700;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 14px 20px;
+        text-align: left;
+        border-bottom: 1.5px solid #edf2f7;
+      }
+      
+      .premium-table td {
+        padding: 16px 20px;
+        border-bottom: 1px solid #edf2f7;
+        font-size: 0.92rem;
+        color: var(--text);
+      }
+      
+      .premium-table tr:hover td {
+        background: #fafafa;
+      }
+      
+      .table-actions {
+        display: flex;
+        gap: 8px;
+      }
+      
+      .btn-action {
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.2s;
+      }
+      
+      .btn-action.edit {
+        color: #3b82f6;
+        border-color: #bfdbfe;
+      }
+      .btn-action.edit:hover {
+        background: #eff6ff;
+      }
+      
+      .btn-action.delete {
+        color: #ef4444;
+        border-color: #fca5a5;
+      }
+      .btn-action.delete:hover {
+        background: #fef2f2;
+      }
+      
+      /* Workout & Meal cards (For Member) */
+      .plans-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 24px;
+        margin-top: 10px;
+      }
+      
+      .plan-card {
+        background: #fff;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 24px;
+        transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      }
+      
+      .plan-card:hover {
+        border-color: var(--orange);
+        box-shadow: 0 10px 15px -3px rgba(249, 115, 22, 0.1);
+        transform: translateY(-2px);
+      }
+      
+      .plan-header-ui {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+      
+      .plan-tag {
+        padding: 4px 10px;
+        background: #f0fdf4;
+        color: #16a34a;
+        border-radius: 20px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      
+      .plan-title-txt {
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: var(--text);
+        margin-top: 4px;
+      }
+      
+      .plan-desc-txt {
+        font-size: 0.88rem;
+        color: var(--mid);
+        line-height: 1.5;
+        white-space: pre-wrap;
+      }
+      
+      .plan-meta {
+        font-size: 0.8rem;
+        color: var(--muted);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding-top: 10px;
+        border-top: 1px solid #edf2f7;
+      }
+      
+      .plan-meta-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      
+      /* Calories bubble */
+      .calories-bubble {
+        padding: 12px;
+        background: linear-gradient(135deg, #fff7ed, #ffedd5);
+        border: 1px dashed var(--orange);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 8px;
+      }
+      
+      .calories-val {
+        font-size: 1.25rem;
+        font-weight: 900;
+        color: var(--orange);
+      }
+      
+      /* Exercises in card */
+      .exercise-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 8px;
+      }
+      
+      .exercise-item-ui {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 12px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 0.88rem;
+      }
+      
+      .exercise-name-ui {
+        font-weight: 700;
+        color: var(--text);
+      }
+      
+      .exercise-badges {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      
+      .badge-ui {
+        font-size: 0.72rem;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 6px;
+      }
+      
+      .badge-ui.sets-reps {
+        background: #eff6ff;
+        color: #2563eb;
+      }
+      
+      .badge-ui.duration {
+        background: #f0fdf4;
+        color: #16a34a;
+      }
+      
+      .badge-ui.calories {
+        background: #fff1f2;
+        color: #e11d48;
+      }
+      
+      /* Form / Modal styles */
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 2000;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        backdrop-filter: blur(4px);
+      }
+      
+      .modal-overlay.active {
+        display: flex;
+      }
+      
+      .modal-box {
+        background: #fff;
+        border-radius: 16px;
+        width: 100%;
+        max-width: 680px;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        animation: modalScale 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      
+      @keyframes modalScale {
+        from { transform: scale(0.95); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+      }
+      
+      .modal-header {
+        padding: 24px 28px;
+        border-bottom: 1px solid #edf2f7;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      
+      .modal-title {
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: var(--text);
+      }
+      
+      .modal-close {
+        font-size: 1.2rem;
+        color: #a0aec0;
+        cursor: pointer;
+        background: none;
+        border: none;
+        transition: color 0.2s;
+      }
+      .modal-close:hover {
+        color: var(--text);
+      }
+      
+      .modal-body {
+        padding: 28px;
+      }
+      
+      .modal-footer {
+        padding: 20px 28px;
+        border-top: 1px solid #edf2f7;
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+      
+      /* Exercise dynamic list builder */
+      .exercise-builder-title {
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--mid);
+        margin: 20px 0 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      
+      .exercise-row-builder {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr 1fr 1fr 40px;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      
+      .exercise-row-builder input {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1.5px solid var(--border);
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 0.88rem;
+        outline: none;
+      }
+      
+      .exercise-row-builder input:focus {
+        border-color: var(--orange);
+      }
+      
+      .btn-remove-row {
+        background: none;
+        border: none;
+        color: #ef4444;
+        cursor: pointer;
+        font-size: 1rem;
+        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 38px;
+      }
+      .btn-remove-row:hover {
+        color: #dc2626;
+      }
+      
+      .btn-add-row {
+        padding: 8px 14px;
+        background: #f1f5f9;
+        color: #475569;
+        border: none;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.8rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.2s;
+      }
+      .btn-add-row:hover {
+        background: #e2e8f0;
+      }
+      
+      .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        background: #f8fafc;
+        border-radius: 14px;
+        border: 1.5px dashed #cbd5e1;
+        color: var(--muted);
+      }
+      
+      .empty-state i {
+        font-size: 2.5rem;
+        color: #94a3b8;
+        margin-bottom: 12px;
+      }
+      
+      .form-select {
+        width: 100%;
+        padding: 13px 14px;
+        border: 1.5px solid var(--border);
+        border-radius: 8px;
+        font-family: inherit;
+        font-size: 0.95rem;
+        color: var(--text);
+        outline: none;
+        background: #fff;
+        transition: border-color 0.2s;
+      }
+      
+      .form-select:focus {
+        border-color: var(--orange);
+      }
+      
+      .form-textarea {
+        width: 100%;
+        padding: 13px 14px;
+        border: 1.5px solid var(--border);
+        border-radius: 8px;
+        font-family: inherit;
+        font-size: 0.95rem;
+        color: var(--text);
+        outline: none;
+        background: #fff;
+        resize: vertical;
+        min-height: 80px;
+        transition: border-color 0.2s;
+      }
+      
+      .form-textarea:focus {
+        border-color: var(--orange);
+      }
     </style>
   </head>
   <body>
@@ -1020,8 +1553,9 @@
           </button>
         </div>
 
-        <div class="dash-grid">
-          <div>
+        <div class="dash-main-container">
+          <!-- Sidebar -->
+          <div class="dash-left-sidebar">
             <div class="profile-card">
               <div class="p-avatar" id="avatarBox">
                 <i class="fa-solid fa-user-ninja" id="avatarIcon"></i>
@@ -1055,77 +1589,282 @@
               <div class="p-name" id="dName">Hội Viên FxFitness</div>
               <div class="p-role" id="dRole">MEMBER</div>
             </div>
-            <div class="info-list">
-              <div class="info-row">
-                <i class="fa-solid fa-envelope"></i>
+
+            <ul class="sidebar-menu">
+              <li>
+                <button class="sidebar-item active" id="btnProfileTab" onclick="switchDashboardTab('profileView')">
+                  <i class="fa-solid fa-user-gear"></i> Hồ sơ cá nhân
+                </button>
+              </li>
+              <li>
+                <button class="sidebar-item" id="btnWorkoutTab" onclick="switchDashboardTab('workoutView')">
+                  <i class="fa-solid fa-calendar-check"></i> Kế hoạch tập luyện
+                </button>
+              </li>
+              <li>
+                <button class="sidebar-item" id="btnMealTab" onclick="switchDashboardTab('mealView')">
+                  <i class="fa-solid fa-bowl-food"></i> Chế độ ăn uống
+                </button>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Workspace -->
+          <div class="dash-workspace">
+            
+            <!-- PROFILE VIEW -->
+            <div class="workspace-view active" id="profileView">
+              <div class="view-header">
                 <div>
-                  <div class="i-lbl">Email Hệ thống</div>
-                  <div class="i-val" id="dEmail">N/A</div>
+                  <div class="view-title">Hồ Sơ Cá Nhân</div>
+                  <div class="view-subtitle">Quản lý thông tin tài khoản và bảo mật</div>
                 </div>
               </div>
-              <div class="info-row">
-                <i class="fa-solid fa-shield"></i>
-                <div>
-                  <div class="i-lbl">Trạng thái bảo mật</div>
-                  <div class="i-val" style="color: var(--orange)">
-                    Đã kết nối JWT
+              <div class="dash-grid" style="display: grid; grid-template-columns: 1fr; gap: 30px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 36px;">
+                  <div>
+                    <div class="cpw-title" style="margin-bottom: 20px;">
+                      <i class="fa-solid fa-address-card"></i> Thông tin liên hệ
+                    </div>
+                    <div class="info-list">
+                      <div class="info-row">
+                        <i class="fa-solid fa-envelope"></i>
+                        <div>
+                          <div class="i-lbl">Email Hệ thống</div>
+                          <div class="i-val" id="dEmail">N/A</div>
+                        </div>
+                      </div>
+                      <div class="info-row">
+                        <i class="fa-solid fa-shield"></i>
+                        <div>
+                          <div class="i-lbl">Trạng thái bảo mật</div>
+                          <div class="i-val" style="color: var(--orange)">
+                            Đã kết nối JWT
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="cpw-title">
+                      <i class="fa-solid fa-user-shield"></i> Thay Đổi Mật Khẩu
+                    </div>
+                    <div id="alertCpw" class="alert"></div>
+                    <form id="fCpw" onsubmit="doChangePw(event)">
+                      <div class="field">
+                        <div class="field-head">
+                          <span class="lbl">Mật khẩu hiện tại</span>
+                        </div>
+                        <div class="inp-wrap">
+                          <input
+                            type="password"
+                            id="cpwOld"
+                            placeholder="Nhập mật khẩu cũ"
+                            required
+                          />
+                        </div>
+                      </div>
+                      <div class="field">
+                        <div class="field-head">
+                          <span class="lbl">Mật khẩu mới</span>
+                        </div>
+                        <div class="inp-wrap">
+                          <input
+                            type="password"
+                            id="cpwNew"
+                            placeholder="Tối thiểu 6 ký tự"
+                            required
+                          />
+                        </div>
+                      </div>
+                      <div class="field">
+                        <div class="field-head">
+                          <span class="lbl">Xác nhận mật khẩu mới</span>
+                        </div>
+                        <div class="inp-wrap">
+                          <input
+                            type="password"
+                            id="cpwConf"
+                            placeholder="Nhập lại mật khẩu mới"
+                            required
+                          />
+                        </div>
+                      </div>
+                      <button class="btn-primary" type="submit" style="margin-top: 4px">
+                        Cập Nhật Mật Khẩu
+                      </button>
+                    </form>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div>
-            <div class="cpw-title">
-              <i class="fa-solid fa-user-shield"></i> Thay Đổi Mật Khẩu
+            <!-- WORKOUT PLANS VIEW -->
+            <div class="workspace-view" id="workoutView">
+              <div class="view-header">
+                <div>
+                  <div class="view-title">Kế Hoạch Tập Luyện</div>
+                  <div class="view-subtitle" id="workoutViewSubtitle">Danh sách bài tập và lịch trình tập luyện của bạn</div>
+                </div>
+                <button class="btn-add hidden" id="btnAddWorkout" onclick="openWorkoutModal()">
+                  <i class="fa-solid fa-plus"></i> Tạo kế hoạch mới
+                </button>
+              </div>
+              
+              <!-- For Member -->
+              <div id="memberWorkoutView">
+                <div class="plans-grid" id="memberWorkoutGrid"></div>
+              </div>
+              
+              <!-- For Trainer/Admin -->
+              <div id="trainerWorkoutView" class="hidden">
+                <table class="premium-table">
+                  <thead>
+                    <tr>
+                      <th>Tiêu đề</th>
+                      <th>Hội viên</th>
+                      <th>Ngày tạo</th>
+                      <th>Số bài tập</th>
+                      <th>Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody id="trainerWorkoutTableBody"></tbody>
+                </table>
+              </div>
             </div>
-            <div id="alertCpw" class="alert"></div>
-            <form id="fCpw" onsubmit="doChangePw(event)">
-              <div class="field">
-                <div class="field-head">
-                  <span class="lbl">Mật khẩu hiện tại</span>
+
+            <!-- MEAL PLANS VIEW -->
+            <div class="workspace-view" id="mealView">
+              <div class="view-header">
+                <div>
+                  <div class="view-title">Chế Độ Dinh Dưỡng</div>
+                  <div class="view-subtitle" id="mealViewSubtitle">Kế hoạch ăn uống và mục tiêu dinh dưỡng hàng ngày</div>
                 </div>
-                <div class="inp-wrap">
-                  <input
-                    type="password"
-                    id="cpwOld"
-                    placeholder="Nhập mật khẩu cũ"
-                    required
-                  />
-                </div>
+                <button class="btn-add hidden" id="btnAddMeal" onclick="openMealModal()">
+                  <i class="fa-solid fa-plus"></i> Tạo kế hoạch ăn uống
+                </button>
               </div>
-              <div class="field">
-                <div class="field-head">
-                  <span class="lbl">Mật khẩu mới</span>
-                </div>
-                <div class="inp-wrap">
-                  <input
-                    type="password"
-                    id="cpwNew"
-                    placeholder="Tối thiểu 6 ký tự"
-                    required
-                  />
-                </div>
+
+              <!-- For Member -->
+              <div id="memberMealView">
+                <div class="plans-grid" id="memberMealGrid"></div>
               </div>
-              <div class="field">
-                <div class="field-head">
-                  <span class="lbl">Xác nhận mật khẩu mới</span>
-                </div>
-                <div class="inp-wrap">
-                  <input
-                    type="password"
-                    id="cpwConf"
-                    placeholder="Nhập lại mật khẩu mới"
-                    required
-                  />
-                </div>
+              
+              <!-- For Trainer/Admin -->
+              <div id="trainerMealView" class="hidden">
+                <table class="premium-table">
+                  <thead>
+                    <tr>
+                      <th>Tiêu đề</th>
+                      <th>Hội viên</th>
+                      <th>Calo / Ngày</th>
+                      <th>Ngày tạo</th>
+                      <th>Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody id="trainerMealTableBody"></tbody>
+                </table>
               </div>
-              <button class="btn-primary" type="submit" style="margin-top: 4px">
-                Cập Nhật Mật Khẩu
-              </button>
-            </form>
+            </div>
+
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+     WORKOUT PLAN MODAL (CREATE / EDIT)
+============================================================ -->
+    <div class="modal-overlay" id="workoutModal">
+      <div class="modal-box">
+        <div class="modal-header">
+          <div class="modal-title" id="workoutModalTitle">Tạo Kế Hoạch Tập Luyện</div>
+          <button class="modal-close" onclick="closeWorkoutModal()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form id="fWorkout" onsubmit="saveWorkoutPlan(event)">
+          <input type="hidden" id="workoutPlanIdVal" />
+          <div class="modal-body">
+            <div class="field">
+              <div class="field-head"><span class="lbl">Hội viên chỉ định</span></div>
+              <select class="form-select" id="workoutMemberSelect" required>
+                <!-- populated dynamically -->
+              </select>
+            </div>
+            
+            <div class="field">
+              <div class="field-head"><span class="lbl">Tiêu đề kế hoạch</span></div>
+              <div class="inp-wrap">
+                <input type="text" id="workoutTitle" placeholder="Ví dụ: Kế hoạch tăng cơ 4 tuần" required />
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-head"><span class="lbl">Mô tả / Hướng dẫn</span></div>
+              <textarea class="form-textarea" id="workoutDescription" placeholder="Mô tả mục tiêu tập luyện chung..."></textarea>
+            </div>
+
+            <div class="exercise-builder-title">
+              <span>Danh sách bài tập</span>
+              <button type="button" class="btn-add-row" onclick="addExerciseRow()">
+                <i class="fa-solid fa-plus"></i> Thêm bài
+              </button>
+            </div>
+
+            <div id="exerciseRowsContainer">
+              <!-- dynamic exercise rows -->
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary" style="margin-top:0" onclick="closeWorkoutModal()">Hủy</button>
+            <button type="submit" class="btn-primary" style="margin-top:0; width:auto; padding: 12px 24px;">Lưu lại</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ============================================================
+     MEAL PLAN MODAL (CREATE / EDIT)
+============================================================ -->
+    <div class="modal-overlay" id="mealModal">
+      <div class="modal-box">
+        <div class="modal-header">
+          <div class="modal-title" id="mealModalTitle">Tạo Kế Hoạch Ăn Uống</div>
+          <button class="modal-close" onclick="closeMealModal()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form id="fMeal" onsubmit="saveMealPlan(event)">
+          <input type="hidden" id="mealPlanIdVal" />
+          <div class="modal-body">
+            <div class="field">
+              <div class="field-head"><span class="lbl">Hội viên chỉ định</span></div>
+              <select class="form-select" id="mealMemberSelect" required>
+                <!-- populated dynamically -->
+              </select>
+            </div>
+            
+            <div class="field">
+              <div class="field-head"><span class="lbl">Tiêu đề kế hoạch</span></div>
+              <div class="inp-wrap">
+                <input type="text" id="mealTitle" placeholder="Ví dụ: Chế độ ăn kiêng giảm mỡ" required />
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-head"><span class="lbl">Lượng Calo khuyến nghị hàng ngày (Kcal)</span></div>
+              <div class="inp-wrap">
+                <input type="number" id="mealCalories" placeholder="Ví dụ: 2000" required min="0" />
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-head"><span class="lbl">Thực đơn chi tiết</span></div>
+              <textarea class="form-textarea" id="mealDescription" placeholder="Ví dụ: Bữa sáng: Ức gà + khoai lang, Bữa trưa: Bò áp chảo..."></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary" style="margin-top:0" onclick="closeMealModal()">Hủy</button>
+            <button type="submit" class="btn-primary" style="margin-top:0; width:auto; padding: 12px 24px;">Lưu lại</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -1221,6 +1960,468 @@
         switchTab("login");
       }
 
+      // ---- dashboard navigation ----
+      function switchDashboardTab(tabId) {
+        // Remove active class from all sidebar buttons
+        document.querySelectorAll('.sidebar-item').forEach(btn => btn.classList.remove('active'));
+        
+        // Add active class to selected button
+        if (tabId === 'profileView') $('btnProfileTab').classList.add('active');
+        if (tabId === 'workoutView') $('btnWorkoutTab').classList.add('active');
+        if (tabId === 'mealView') $('btnMealTab').classList.add('active');
+        
+        // Hide all views, show active one
+        document.querySelectorAll('.workspace-view').forEach(view => view.classList.remove('active'));
+        $(tabId).classList.add('active');
+        
+        // Fetch data if needed
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        
+        if (tabId === 'workoutView') {
+          fetchWorkouts(token);
+        } else if (tabId === 'mealView') {
+          fetchMeals(token);
+        }
+      }
+
+      // ---- member list for dropdown ----
+      let systemMembers = [];
+      async function loadMembersList(token) {
+        try {
+          const r = await fetch('/api/workout-plans/members', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (r.ok) {
+            systemMembers = await r.json();
+            populateMemberDropdowns();
+          }
+        } catch (e) {
+          console.error('Lỗi tải danh sách hội viên:', e);
+        }
+      }
+
+      function populateMemberDropdowns() {
+        const selects = [$('workoutMemberSelect'), $('mealMemberSelect')];
+        selects.forEach(select => {
+          if (!select) return;
+          select.innerHTML = '<option value="">-- Chọn Hội Viên --</option>';
+          systemMembers.forEach(m => {
+            select.innerHTML += `<option value="${m.member_id}">${m.fullName} (${m.email})</option>`;
+          });
+        });
+      }
+
+      // ---- Workouts CRUD & Rendering ----
+      async function fetchWorkouts(token) {
+        try {
+          const dec = parseJwt(token);
+          const r = await fetch('/api/workout-plans', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const plans = await r.json();
+          
+          if (dec.roleId === 1) {
+            // Render Member Cards
+            const grid = $('memberWorkoutGrid');
+            grid.innerHTML = '';
+            if (!plans || plans.length === 0) {
+              grid.innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">
+                <i class="fa-solid fa-calendar-xmark"></i>
+                <p>Bạn chưa có kế hoạch tập luyện nào được gán!</p>
+              </div>`;
+              return;
+            }
+            plans.forEach(plan => {
+              const exercisesHtml = plan.WorkoutExercises.map(ex => `
+                <div class="exercise-item-ui">
+                  <span class="exercise-name-ui">${ex.exercise_name}</span>
+                  <div class="exercise-badges">
+                    <span class="badge-ui sets-reps">${ex.sets} Sets x ${ex.reps} Reps</span>
+                    <span class="badge-ui duration">${ex.duration_minutes} Phút</span>
+                    <span class="badge-ui calories">${ex.calories_burned} Kcal</span>
+                  </div>
+                </div>
+              `).join('');
+
+              const dateStr = new Date(plan.created_at).toLocaleDateString('vi-VN');
+              grid.innerHTML += `
+                <div class="plan-card">
+                  <div class="plan-header-ui">
+                    <div>
+                      <span class="plan-tag">Tập luyện</span>
+                      <h3 class="plan-title-txt">${plan.title}</h3>
+                    </div>
+                  </div>
+                  <p class="plan-desc-txt">${plan.description || 'Không có mô tả chi tiết.'}</p>
+                  
+                  <div class="exercise-list">
+                    ${exercisesHtml}
+                  </div>
+                  
+                  <div class="plan-meta">
+                    <div class="plan-meta-item">
+                      <i class="fa-solid fa-user-tie"></i>
+                      <span>HLV: ${plan.trainer ? plan.trainer.user.full_name : 'Hệ thống'}</span>
+                    </div>
+                    <div class="plan-meta-item">
+                      <i class="fa-solid fa-clock"></i>
+                      <span>Ngày giao: ${dateStr}</span>
+                    </div>
+                  </div>
+                </div>
+              `;
+            });
+          } else {
+            // Render PT / Admin Table
+            const tbody = $('trainerWorkoutTableBody');
+            tbody.innerHTML = '';
+            if (!plans || plans.length === 0) {
+              tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#999;">Chưa có kế hoạch tập luyện nào. Bấm nút "Tạo kế hoạch mới" để bắt đầu!</td></tr>`;
+              return;
+            }
+            plans.forEach(plan => {
+              const dateStr = new Date(plan.created_at).toLocaleDateString('vi-VN');
+              tbody.innerHTML += `
+                <tr>
+                  <td style="font-weight:700;">${plan.title}</td>
+                  <td>${plan.member ? plan.member.user.full_name : 'N/A'}</td>
+                  <td>${dateStr}</td>
+                  <td><span class="badge-ui sets-reps">${plan.WorkoutExercises.length} bài tập</span></td>
+                  <td>
+                    <div class="table-actions">
+                      <button class="btn-action edit" onclick="openWorkoutModal(${plan.workout_plan_id})">
+                        <i class="fa-solid fa-pen"></i> Sửa
+                      </button>
+                      <button class="btn-action delete" onclick="deleteWorkoutPlan(${plan.workout_plan_id})">
+                        <i class="fa-solid fa-trash"></i> Xóa
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            });
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      // Exercises rows builder in Modal
+      function addExerciseRow(data = {}) {
+        const container = $('exerciseRowsContainer');
+        const row = document.createElement('div');
+        row.className = 'exercise-row-builder';
+        row.innerHTML = `
+          <input type="text" placeholder="Tên bài tập" class="ex-name" value="${data.exercise_name || ''}" required />
+          <input type="number" placeholder="Sets" class="ex-sets" value="${data.sets || ''}" required min="0" />
+          <input type="number" placeholder="Reps" class="ex-reps" value="${data.reps || ''}" required min="0" />
+          <input type="number" placeholder="Phút" class="ex-duration" value="${data.duration_minutes || ''}" required min="0" />
+          <input type="number" placeholder="Calo" class="ex-calories" value="${data.calories_burned || ''}" required min="0" />
+          <button type="button" class="btn-remove-row" onclick="removeExerciseRow(this)"><i class="fa-solid fa-trash"></i></button>
+        `;
+        container.appendChild(row);
+      }
+
+      function removeExerciseRow(btn) {
+        btn.closest('.exercise-row-builder').remove();
+      }
+
+      function openWorkoutModal(planId = null) {
+        const modal = $('workoutModal');
+        const select = $('workoutMemberSelect');
+        const titleInput = $('workoutTitle');
+        const descTextarea = $('workoutDescription');
+        const container = $('exerciseRowsContainer');
+        const idVal = $('workoutPlanIdVal');
+        
+        container.innerHTML = '';
+        idVal.value = planId || '';
+        
+        if (planId) {
+          $('workoutModalTitle').textContent = 'Sửa Kế Hoạch Tập Luyện';
+          const token = localStorage.getItem('token');
+          fetch(`/api/workout-plans/${planId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          })
+          .then(r => r.json())
+          .then(plan => {
+            select.value = plan.member_id;
+            select.disabled = true; // Can't change member once assigned
+            titleInput.value = plan.title;
+            descTextarea.value = plan.description;
+            if (plan.WorkoutExercises && plan.WorkoutExercises.length > 0) {
+              plan.WorkoutExercises.forEach(ex => addExerciseRow(ex));
+            } else {
+              addExerciseRow();
+            }
+            modal.classList.add('active');
+          });
+        } else {
+          $('workoutModalTitle').textContent = 'Tạo Kế Hoạch Tập Luyện';
+          select.value = '';
+          select.disabled = false;
+          titleInput.value = '';
+          descTextarea.value = '';
+          addExerciseRow();
+          modal.classList.add('active');
+        }
+      }
+
+      function closeWorkoutModal() {
+        $('workoutModal').classList.remove('active');
+      }
+
+      async function saveWorkoutPlan(e) {
+        e.preventDefault();
+        const token = localStorage.getItem('token');
+        const planId = $('workoutPlanIdVal').value;
+        
+        // Serialize exercises
+        const rows = document.querySelectorAll('#exerciseRowsContainer .exercise-row-builder');
+        const exercises = Array.from(rows).map(row => ({
+          exercise_name: row.querySelector('.ex-name').value,
+          sets: row.querySelector('.ex-sets').value,
+          reps: row.querySelector('.ex-reps').value,
+          duration_minutes: row.querySelector('.ex-duration').value,
+          calories_burned: row.querySelector('.ex-calories').value
+        }));
+
+        const bodyData = {
+          memberId: $('workoutMemberSelect').value,
+          title: $('workoutTitle').value,
+          description: $('workoutDescription').value,
+          exercises
+        };
+
+        const url = planId ? `/api/workout-plans/${planId}` : '/api/workout-plans';
+        const method = planId ? 'PUT' : 'POST';
+
+        try {
+          const r = await fetch(url, {
+            method,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(bodyData)
+          });
+          const d = await r.json();
+          if (r.ok) {
+            alert(d.message);
+            closeWorkoutModal();
+            fetchWorkouts(token);
+          } else {
+            alert(d.message || 'Lỗi lưu thông tin!');
+          }
+        } catch {
+          alert('Lỗi kết nối máy chủ!');
+        }
+      }
+
+      async function deleteWorkoutPlan(planId) {
+        if (!confirm('Bạn có chắc chắn muốn xóa kế hoạch tập luyện này?')) return;
+        const token = localStorage.getItem('token');
+        try {
+          const r = await fetch(`/api/workout-plans/${planId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const d = await r.json();
+          if (r.ok) {
+            alert(d.message);
+            fetchWorkouts(token);
+          } else {
+            alert(d.message);
+          }
+        } catch {
+          alert('Lỗi kết nối máy chủ!');
+        }
+      }
+
+      // ---- Meals CRUD & Rendering ----
+      async function fetchMeals(token) {
+        try {
+          const dec = parseJwt(token);
+          const r = await fetch('/api/meal-plans', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const plans = await r.json();
+          
+          if (dec.roleId === 1) {
+            // Member Cards
+            const grid = $('memberMealGrid');
+            grid.innerHTML = '';
+            if (!plans || plans.length === 0) {
+              grid.innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">
+                <i class="fa-solid fa-utensils"></i>
+                <p>Bạn chưa có kế hoạch ăn uống nào được gán!</p>
+              </div>`;
+              return;
+            }
+            plans.forEach(plan => {
+              const dateStr = new Date(plan.created_at).toLocaleDateString('vi-VN');
+              grid.innerHTML += `
+                <div class="plan-card">
+                  <div class="plan-header-ui">
+                    <div>
+                      <span class="plan-tag" style="background:#fff7ed; color:var(--orange);">Dinh dưỡng</span>
+                      <h3 class="plan-title-txt">${plan.title}</h3>
+                    </div>
+                  </div>
+                  
+                  <div class="calories-bubble">
+                    <span style="font-weight:700; font-size:0.83rem; color:var(--mid);">KHUYẾN NGHỊ:</span>
+                    <span class="calories-val">${plan.calories_per_day} Kcal/Ngày</span>
+                  </div>
+
+                  <p class="plan-desc-txt" style="margin-top:8px;">${plan.description || 'Không có thực đơn chi tiết.'}</p>
+                  
+                  <div class="plan-meta">
+                    <div class="plan-meta-item">
+                      <i class="fa-solid fa-user-tie"></i>
+                      <span>HLV: ${plan.trainer ? plan.trainer.user.full_name : 'Hệ thống'}</span>
+                    </div>
+                    <div class="plan-meta-item">
+                      <i class="fa-solid fa-clock"></i>
+                      <span>Ngày giao: ${dateStr}</span>
+                    </div>
+                  </div>
+                </div>
+              `;
+            });
+          } else {
+            // PT / Admin Table
+            const tbody = $('trainerMealTableBody');
+            tbody.innerHTML = '';
+            if (!plans || plans.length === 0) {
+              tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#999;">Chưa có kế hoạch ăn uống nào. Bấm nút "Tạo kế hoạch ăn uống" để bắt đầu!</td></tr>`;
+              return;
+            }
+            plans.forEach(plan => {
+              const dateStr = new Date(plan.created_at).toLocaleDateString('vi-VN');
+              tbody.innerHTML += `
+                <tr>
+                  <td style="font-weight:700;">${plan.title}</td>
+                  <td>${plan.member ? plan.member.user.full_name : 'N/A'}</td>
+                  <td><span class="badge-ui calories">${plan.calories_per_day} Kcal</span></td>
+                  <td>${dateStr}</td>
+                  <td>
+                    <div class="table-actions">
+                      <button class="btn-action edit" onclick="openMealModal(${plan.meal_plan_id})">
+                        <i class="fa-solid fa-pen"></i> Sửa
+                      </button>
+                      <button class="btn-action delete" onclick="deleteMealPlan(${plan.meal_plan_id})">
+                        <i class="fa-solid fa-trash"></i> Xóa
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            });
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      function openMealModal(planId = null) {
+        const modal = $('mealModal');
+        const select = $('mealMemberSelect');
+        const titleInput = $('mealTitle');
+        const calInput = $('mealCalories');
+        const descTextarea = $('mealDescription');
+        const idVal = $('mealPlanIdVal');
+        
+        idVal.value = planId || '';
+        
+        if (planId) {
+          $('mealModalTitle').textContent = 'Sửa Kế Hoạch Ăn Uống';
+          const token = localStorage.getItem('token');
+          fetch(`/api/meal-plans/${planId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          })
+          .then(r => r.json())
+          .then(plan => {
+            select.value = plan.member_id;
+            select.disabled = true; // Can't change member
+            titleInput.value = plan.title;
+            calInput.value = plan.calories_per_day;
+            descTextarea.value = plan.description;
+            modal.classList.add('active');
+          });
+        } else {
+          $('mealModalTitle').textContent = 'Tạo Kế Hoạch Ăn Uống';
+          select.value = '';
+          select.disabled = false;
+          titleInput.value = '';
+          calInput.value = '';
+          descTextarea.value = '';
+          modal.classList.add('active');
+        }
+      }
+
+      function closeMealModal() {
+        $('mealModal').classList.remove('active');
+      }
+
+      async function saveMealPlan(e) {
+        e.preventDefault();
+        const token = localStorage.getItem('token');
+        const planId = $('mealPlanIdVal').value;
+
+        const bodyData = {
+          memberId: $('mealMemberSelect').value,
+          title: $('mealTitle').value,
+          calories_per_day: $('mealCalories').value,
+          description: $('mealDescription').value
+        };
+
+        const url = planId ? `/api/meal-plans/${planId}` : '/api/meal-plans';
+        const method = planId ? 'PUT' : 'POST';
+
+        try {
+          const r = await fetch(url, {
+            method,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(bodyData)
+          });
+          const d = await r.json();
+          if (r.ok) {
+            alert(d.message);
+            closeMealModal();
+            fetchMeals(token);
+          } else {
+            alert(d.message || 'Lỗi lưu thông tin!');
+          }
+        } catch {
+          alert('Lỗi kết nối máy chủ!');
+        }
+      }
+
+      async function deleteMealPlan(planId) {
+        if (!confirm('Bạn có chắc chắn muốn xóa kế hoạch ăn uống này?')) return;
+        const token = localStorage.getItem('token');
+        try {
+          const r = await fetch(`/api/meal-plans/${planId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const d = await r.json();
+          if (r.ok) {
+            alert(d.message);
+            fetchMeals(token);
+          } else {
+            alert(d.message);
+          }
+        } catch {
+          alert('Lỗi kết nối máy chủ!');
+        }
+      }
+
       // ---- auth / dashboard ----
       function showDash() {
         $("authShell").style.display = "none";
@@ -1251,7 +2452,7 @@
             dec.roleId === 3
               ? "ADMIN"
               : dec.roleId === 2
-                ? "TRAINER"
+                ? "HLV / PT"
                 : "MEMBER";
         } else {
           $("dName").textContent = `Hội viên #${dec.userId}`;
@@ -1260,9 +2461,38 @@
             dec.roleId === 3
               ? "ADMIN"
               : dec.roleId === 2
-                ? "TRAINER"
+                ? "HLV / PT"
                 : "MEMBER";
         }
+
+        // Adjust layout and elements based on User Role
+        if (dec.roleId === 2 || dec.roleId === 3) {
+          // PT / Admin
+          $('btnAddWorkout').classList.remove('hidden');
+          $('btnAddMeal').classList.remove('hidden');
+          $('memberWorkoutView').classList.add('hidden');
+          $('trainerWorkoutView').classList.remove('hidden');
+          $('memberMealView').classList.add('hidden');
+          $('trainerMealView').classList.remove('hidden');
+          
+          $('workoutViewSubtitle').textContent = 'Quản lý, tạo và chỉnh sửa kế hoạch tập luyện cho các hội viên';
+          $('mealViewSubtitle').textContent = 'Quản lý, thiết lập chế độ thực đơn dinh dưỡng cho các hội viên';
+          
+          loadMembersList(token);
+        } else {
+          // Member
+          $('btnAddWorkout').classList.add('hidden');
+          $('btnAddMeal').classList.add('hidden');
+          $('memberWorkoutView').classList.remove('hidden');
+          $('trainerWorkoutView').classList.add('hidden');
+          $('memberMealView').classList.remove('hidden');
+          $('trainerMealView').classList.add('hidden');
+          
+          $('workoutViewSubtitle').textContent = 'Danh sách bài tập và lịch trình tập luyện của bạn';
+          $('mealViewSubtitle').textContent = 'Kế hoạch ăn uống và mục tiêu dinh dưỡng hàng ngày';
+        }
+
+        // Fetch user avatar
         fetch("/api/profile", {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -1277,6 +2507,9 @@
             }
           })
           .catch(() => {});
+
+        // Always show the profile view initially after loading dashboard
+        switchDashboardTab('profileView');
         showDash();
       }
 

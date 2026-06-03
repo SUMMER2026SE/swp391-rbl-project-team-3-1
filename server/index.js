@@ -5,6 +5,8 @@ require('dotenv').config();
 const { sequelize } = require('./src/config/db');
 const authRoutes = require('./src/routes/authRoutes');
 const profileRoutes = require('./src/routes/profileRoutes');
+const workoutRoutes = require('./src/routes/workoutRoutes');
+const mealRoutes = require('./src/routes/mealRoutes');
 
 const app = express();
 app.use(cors());
@@ -20,6 +22,8 @@ app.use(express.static('public'));
 // Định tuyến API Auth
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/api/workout-plans', workoutRoutes);
+app.use('/api/meal-plans', mealRoutes);
 
 const PORT = process.env.PORT || 5000;
 
