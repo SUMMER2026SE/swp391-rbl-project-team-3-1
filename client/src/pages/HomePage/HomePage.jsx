@@ -3,6 +3,21 @@ import './HomePage.css';
 
 function HomePage() {
   const [isScrolled, setIsScrolled] = useState(false);
+  const [token, setToken] = useState(localStorage.getItem('token') || '');
+  const [userInfo, setUserInfo] = useState(JSON.parse(localStorage.getItem('userInfo') || 'null'));
+
+  useEffect(() => {
+    const handleAuthChange = () => {
+      setToken(localStorage.getItem('token') || '');
+      setUserInfo(JSON.parse(localStorage.getItem('userInfo') || 'null'));
+    };
+    window.addEventListener('authChange', handleAuthChange);
+    window.addEventListener('storage', handleAuthChange);
+    return () => {
+      window.removeEventListener('authChange', handleAuthChange);
+      window.removeEventListener('storage', handleAuthChange);
+    };
+  }, []);
 
   useEffect(() => {
     // Navbar scroll effect
@@ -37,6 +52,13 @@ function HomePage() {
       observer.disconnect();
     };
   }, []);
+
+  // Navigate to checkout with selected plan
+  const goToCheckout = (planKey) => {
+    localStorage.setItem('checkoutPlan', planKey);
+    window.history.pushState({}, '', `/checkout?plan=${planKey}`);
+    window.dispatchEvent(new Event('popstate'));
+  };
 
   // Smooth scroll handler for anchor links
   const handleAnchorClick = (e, targetId) => {
@@ -87,20 +109,54 @@ function HomePage() {
         </ul>
 
         <div className="nav-actions">
-          <a
-            href="/login"
-            onClick={(e) => {
-              e.preventDefault();
-              window.history.pushState({}, '', '/login');
-              window.dispatchEvent(new Event('popstate'));
-            }}
-            className="btn-outline"
-          >
-            Đăng Nhập
-          </a>
-          <a href="#pricing" onClick={(e) => handleAnchorClick(e, '#pricing')} className="btn-primary-nav">
-            Mua Gói Tập
-          </a>
+          {token ? (
+            <>
+              <a
+                href="/login"
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.history.pushState({}, '', '/login');
+                  window.dispatchEvent(new Event('popstate'));
+                }}
+                className="btn-outline"
+                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                <i className="fa-solid fa-user"></i> {userInfo ? userInfo.fullName : 'Tài Khoản'}
+              </a>
+              <button
+                onClick={() => {
+                  localStorage.removeItem('token');
+                  localStorage.removeItem('userInfo');
+                  window.dispatchEvent(new Event('authChange'));
+                }}
+                className="btn-outline"
+                style={{
+                  background: 'transparent',
+                  padding: '8px 22px',
+                  cursor: 'pointer',
+                }}
+              >
+                Đăng xuất
+              </button>
+            </>
+          ) : (
+            <>
+              <a
+                href="/login"
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.history.pushState({}, '', '/login');
+                  window.dispatchEvent(new Event('popstate'));
+                }}
+                className="btn-outline"
+              >
+                Đăng Nhập
+              </a>
+              <a href="#pricing" onClick={(e) => handleAnchorClick(e, '#pricing')} className="btn-primary-nav">
+                Mua Gói Tập
+              </a>
+            </>
+          )}
         </div>
       </nav>
 
@@ -217,17 +273,12 @@ function HomePage() {
                 <i className="fas fa-circle"></i> Tham gia lớp Yoga
               </li>
             </ul>
-            <a
-              href="/login"
-              onClick={(e) => {
-                e.preventDefault();
-                window.history.pushState({}, '', '/login');
-                window.dispatchEvent(new Event('popstate'));
-              }}
+            <button
+              onClick={() => goToCheckout('monthly')}
               className="btn-plan"
             >
               Mua Ngay
-            </a>
+            </button>
           </div>
 
           {/* 3-Month Plan (Featured) */}
@@ -257,17 +308,12 @@ function HomePage() {
                 <i className="fas fa-check-circle"></i> Đo Inbody miễn phí 1 lần
               </li>
             </ul>
-            <a
-              href="/login"
-              onClick={(e) => {
-                e.preventDefault();
-                window.history.pushState({}, '', '/login');
-                window.dispatchEvent(new Event('popstate'));
-              }}
+            <button
+              onClick={() => goToCheckout('quarterly')}
               className="btn-plan btn-featured"
             >
               MUA NGAY
-            </a>
+            </button>
           </div>
 
           {/* Annual Plan */}
@@ -293,17 +339,12 @@ function HomePage() {
                 <i className="fas fa-check-circle"></i> Đo Inbody định kỳ
               </li>
             </ul>
-            <a
-              href="/login"
-              onClick={(e) => {
-                e.preventDefault();
-                window.history.pushState({}, '', '/login');
-                window.dispatchEvent(new Event('popstate'));
-              }}
+            <button
+              onClick={() => goToCheckout('annual')}
               className="btn-plan"
             >
               Mua Ngay
-            </a>
+            </button>
           </div>
         </div>
       </section>

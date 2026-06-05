@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import HomePage from './pages/HomePage/HomePage';
 import LoginPage from './pages/LoginPage/LoginPage';
+import CheckoutPage from './pages/CheckoutPage/CheckoutPage';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -29,9 +30,9 @@ function App() {
     };
   }, []);
 
-  if (token) return <LoginPage />;
   if (currentPath === '/login') return <LoginPage />;
+  if (currentPath === '/checkout') return <CheckoutPage />;
   return <HomePage />;
 }
 
-export default App;
+export default App;

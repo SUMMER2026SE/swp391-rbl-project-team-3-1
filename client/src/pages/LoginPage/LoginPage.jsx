@@ -27,6 +27,13 @@ function LoginPage() {
   const [cpwNew, setCpwNew] = useState('');
   const [cpwConf, setCpwConf] = useState('');
 
+  // First-time password change (admin) states
+  const [tempPassword, setTempPassword] = useState('');
+  const [firstNewPw, setFirstNewPw] = useState('');
+  const [firstConfPw, setFirstConfPw] = useState('');
+  const [firstAlert, setFirstAlert] = useState({ show: false, msg: '', ok: false });
+  const [isFirstChangeLoading, setIsFirstChangeLoading] = useState(false);
+
   // Profile fields (from server)
   const [avatarUrl, setAvatarUrl] = useState('');
 
@@ -105,6 +112,14 @@ function LoginPage() {
     setCurrentCard('login');
   };
 
+  // Helper: redirect to correct page based on role after login
+  const redirectByRole = (roleId) => {
+    // Hiện tại chỉ có trang chủ, mở rộng sau khi có trang admin/trainer riêng
+    // roleId=3 → Admin, roleId=2 → Trainer, roleId=1 → Member
+    window.history.pushState({}, '', '/');
+    window.dispatchEvent(new Event('popstate'));
+  };
+
   // Sign out
   const logout = () => {
     localStorage.removeItem('token');
@@ -129,12 +144,24 @@ function LoginPage() {
       });
       const d = await r.json();
       if (r.ok) {
+        // Nếu server trả về cờ yêu cầu đổi mật khẩu lần đầu
+        if (d.mustChangePassword) {
+          setTempPassword(loginPw);
+          setFirstNewPw('');
+          setFirstConfPw('');
+          setCurrentCard('firstChange');
+          setLoginAlert({ show: true, msg: d.message || 'Vui lòng đổi mật khẩu lần đầu.', ok: true });
+          return;
+        }
+
+        // must_change_password = 0: login thành công → redirect về trang theo role
         localStorage.setItem('token', d.token);
         localStorage.setItem('userInfo', JSON.stringify(d.user));
         setToken(d.token);
         setUserInfo(d.user);
         fetchProfile(d.token);
-        notifyAuthChange(); // ← tell App.jsx to re-render to dashboard
+        notifyAuthChange();
+        redirectByRole(d.user.roleId);
       } else {
         setLoginAlert({ show: true, msg: d.message || 'Đăng nhập thất bại!', ok: false });
       }
@@ -142,6 +169,49 @@ function LoginPage() {
       setLoginAlert({ show: true, msg: 'Không thể kết nối đến máy chủ FxFitness!', ok: false });
     }
   };
+
+  // Handle first-time password change (admin)
+  const doFirstChange = async (e) => {
+    e.preventDefault();
+    setFirstAlert({ show: false, msg: '', ok: false });
+
+    if (firstNewPw !== firstConfPw) {
+      setFirstAlert({ show: true, msg: 'Mật khẩu xác nhận không khớp!', ok: false });
+      return;
+    }
+
+    setIsFirstChangeLoading(true);
+    try {
+      const r = await fetch('/api/auth/first-change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, oldPassword: tempPassword, newPassword: firstNewPw }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        // Hiển thị thông báo thành công rõ ràng
+        setFirstAlert({ show: true, msg: '✅ Cập nhật mật khẩu thành công! Đang chuyển về trang đăng nhập...', ok: true });
+        // Sau 2 giây tự động chuyển về trang login
+        setTimeout(() => {
+          setCurrentCard('login');
+          setFirstNewPw('');
+          setFirstConfPw('');
+          setTempPassword('');
+          setLoginPw('');
+          setFirstAlert({ show: false, msg: '', ok: false });
+          setIsFirstChangeLoading(false);
+          setLoginAlert({ show: true, msg: 'Mật khẩu đã được cập nhật thành công. Vui lòng đăng nhập bằng mật khẩu mới.', ok: true });
+        }, 2000);
+      } else {
+        setFirstAlert({ show: true, msg: d.message || 'Đổi mật khẩu thất bại!', ok: false });
+        setIsFirstChangeLoading(false);
+      }
+    } catch (err) {
+      setFirstAlert({ show: true, msg: 'Lỗi kết nối máy chủ!', ok: false });
+      setIsFirstChangeLoading(false);
+    }
+  };
+
 
   // Handle Forgot Password submission
   const doForgot = async (e) => {
@@ -579,6 +649,44 @@ function LoginPage() {
                   <button className="btn-primary" type="submit">Cập Nhật Mật Khẩu</button>
                 </form>
                 <button className="btn-secondary" onClick={clearAndLogin}>Hủy & Về Đăng nhập</button>
+              </div>
+            )}
+
+            {/* FIRST-TIME CHANGE (Admin) */}
+            {currentCard === 'firstChange' && (
+              <div id="firstChangeCard">
+                <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text)', marginBottom: '6px' }}>Đổi Mật Khẩu Lần Đầu</h2>
+                <p style={{ color: '#999', fontSize: '0.88rem', marginBottom: '24px' }}>Tài khoản admin yêu cầu đổi mật khẩu lần đầu. Vui lòng nhập mật khẩu mới.</p>
+                {firstAlert.show && (
+                  <div className={`alert ${firstAlert.ok ? 'ok' : 'err'}`} style={{ display: 'flex' }}>
+                    <i className={`fa-solid ${firstAlert.ok ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
+                    <span>{firstAlert.msg}</span>
+                  </div>
+                )}
+                <form id="fFirstChange" onSubmit={doFirstChange}>
+                  <div className="field">
+                    <div className="field-head"><span className="lbl">Email</span></div>
+                    <div className="inp-wrap">
+                      <input type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} required />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <div className="field-head"><span className="lbl">Mật khẩu mới</span></div>
+                    <div className="inp-wrap">
+                      <input type="password" placeholder="Tối thiểu 6 ký tự" value={firstNewPw} onChange={(e) => setFirstNewPw(e.target.value)} required />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <div className="field-head"><span className="lbl">Xác nhận mật khẩu mới</span></div>
+                    <div className="inp-wrap">
+                      <input type="password" placeholder="Nhập lại mật khẩu mới" value={firstConfPw} onChange={(e) => setFirstConfPw(e.target.value)} required />
+                    </div>
+                  </div>
+                  <button className="btn-primary" type="submit" disabled={isFirstChangeLoading}>
+                    {isFirstChangeLoading ? 'Đang xử lý...' : 'Cập Nhật Mật Khẩu'}
+                  </button>
+                </form>
+                <button className="btn-secondary" disabled={isFirstChangeLoading} onClick={() => { setCurrentCard('login'); setTempPassword(''); setFirstNewPw(''); setFirstConfPw(''); }}>Hủy & Về Đăng nhập</button>
               </div>
             )}
           </div>
