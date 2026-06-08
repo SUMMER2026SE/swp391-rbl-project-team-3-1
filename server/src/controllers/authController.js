@@ -70,6 +70,20 @@ exports.login = async (req, res) => {
             return res.status(400).json({ message: 'Email hoặc mật khẩu không chính xác!' });
         }
 
+        // Nếu tài khoản yêu cầu đổi mật khẩu lần đầu (ví dụ: admin được tạo sẵn)
+        if (user.must_change_password || user.status === 'MustChangePassword') {
+            return res.status(200).json({
+                message: 'Tài khoản cần đổi mật khẩu lần đầu.',
+                mustChangePassword: true,
+                user: {
+                    userId: user.user_id,
+                    email: user.email,
+                    roleId: user.role_id,
+                    status: user.status
+                }
+            });
+        }
+
         // Kiểm tra trạng thái tài khoản (Chỉ cho phép trạng thái 'Active' đăng nhập)
         if (user.status === 'Inactive') {
             return res.status(403).json({ message: 'Tài khoản chưa được kích hoạt!' });
@@ -306,4 +320,48 @@ exports.changePassword = async (req, res) => {
         console.error('❌ Lỗi Đổi Mật Khẩu:', error.message);
         return res.status(500).json({ message: 'Lỗi server khi đổi mật khẩu!', error: error.message });
     }
-};
+};
+
+// =====================================================
+// 7. API ĐỔI MẬT KHẨU LẦN ĐẦU (KHÔNG CẦN TOKEN) - DÙNG CHO ADMIN MỚI
+// Yêu cầu: { email, oldPassword, newPassword }
+// =====================================================
+exports.firstTimeChangePassword = async (req, res) => {
+    try {
+        const { email, oldPassword, newPassword } = req.body;
+
+        if (!email || !oldPassword || !newPassword) {
+            return res.status(400).json({ message: 'Vui lòng cung cấp email, mật khẩu hiện tại và mật khẩu mới.' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: 'Mật khẩu mới phải từ 6 ký tự trở lên!' });
+        }
+
+        const user = await models.Users.findOne({ where: { email } });
+        if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng.' });
+
+        if (!(user.must_change_password || user.status === 'MustChangePassword')) {
+            return res.status(400).json({ message: 'Tài khoản không cần đổi mật khẩu lần đầu.' });
+        }
+
+        const isMatch = await bcrypt.compare(oldPassword, user.password_hash);
+        if (!isMatch) return res.status(400).json({ message: 'Mật khẩu hiện tại không chính xác.' });
+
+        const isSame = await bcrypt.compare(newPassword, user.password_hash);
+        if (isSame) return res.status(400).json({ message: 'Mật khẩu mới không được trùng với mật khẩu hiện tại.' });
+
+        const salt = await bcrypt.genSalt(10);
+        user.password_hash = await bcrypt.hash(newPassword, salt);
+        user.status = 'Active';
+        user.must_change_password = false;
+        await user.save();
+
+        return res.status(200).json({ message: 'Đổi mật khẩu lần đầu thành công. Vui lòng đăng nhập lại.' });
+    } catch (error) {
+        console.error('❌ Lỗi firstTimeChangePassword:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi đổi mật khẩu lần đầu!', error: error.message });
+    }
+};
+
+

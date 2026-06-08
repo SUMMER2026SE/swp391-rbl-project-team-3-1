@@ -1,30 +1,51 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import './CheckoutPage.css';
 
 // ─── Dữ liệu gói tập mặc định (fallback nếu API chưa có data) ────────────────
 const FALLBACK_PLANS = [
   {
-    planId: 'monthly',
-    planName: 'Gói Tháng',
-    durationMonths: 1,
-    price: 499000,
-    features: ['Truy cập đầy đủ thiết bị', 'Tủ đồ cá nhân', 'Miễn phí giữ xe'],
+    planId: 1,
+    planName: 'Gym 3 Tháng',
+    sportType: 'Gym',
+    durationMonths: 3,
+    price: 5000,
+    features: ['Tập tự do khu vực Gym trong 3 tháng'],
     featured: false,
   },
   {
-    planId: 'quarterly',
-    planName: 'Gói 3 Tháng',
-    durationMonths: 3,
-    price: 1299000,
-    features: ['Truy cập đầy đủ thiết bị', 'Tủ đồ VIP', 'Miễn phí giữ xe', 'Tham gia lớp Yoga', 'Đo Inbody miễn phí 1 lần'],
+    planId: 2,
+    planName: 'Gym 6 Tháng',
+    sportType: 'Gym',
+    durationMonths: 6,
+    price: 10000,
+    features: ['Tập tự do khu vực Gym trong 6 tháng'],
+    featured: false,
+  },
+  {
+    planId: 3,
+    planName: 'Yoga 6 Tháng',
+    sportType: 'Yoga',
+    durationMonths: 6,
+    price: 15000,
+    features: ['Tham gia các lớp Yoga không giới hạn'],
     featured: true,
   },
   {
-    planId: 'annual',
-    planName: 'Gói Năm',
+    planId: 4,
+    planName: 'Boxing 12 Tháng',
+    sportType: 'Boxing',
     durationMonths: 12,
-    price: 3999000,
-    features: ['Mọi quyền lợi Gói 3 Tháng', 'Tặng thêm 1 tháng tập', 'Tặng 2 buổi cùng PT', 'Đo Inbody định kỳ'],
+    price: 30000,
+    features: ['Gói tập Boxing chuyên nghiệp 1 năm'],
+    featured: false,
+  },
+  {
+    planId: 5,
+    planName: 'Premium Toàn Diện 12 Tháng',
+    sportType: 'Mixed',
+    durationMonths: 12,
+    price: 60000,
+    features: ['Sử dụng tất cả dịch vụ Gym, Yoga, Boxing'],
     featured: false,
   },
 ];
@@ -32,16 +53,16 @@ const FALLBACK_PLANS = [
 // ─── Fallback trainers (nếu DB chưa có trainer) ────────────────────────────────
 const FALLBACK_TRAINERS = [
   { userId: 't1', fullName: 'Nguyễn Văn Hùng', specialization: 'Giảm Cân', rating: 4.9, avatarUrl: null },
-  { userId: 't2', fullName: 'Trần Thị Mai',    specialization: 'Yoga',    rating: 4.8, avatarUrl: null },
-  { userId: 't3', fullName: 'Lê Minh Khoa',    specialization: 'Tăng Cơ', rating: 5.0, avatarUrl: null },
-  { userId: 't4', fullName: 'Phạm Thu Hà',     specialization: 'Pilates', rating: 4.7, avatarUrl: null },
+  { userId: 't2', fullName: 'Trần Thị Mai', specialization: 'Yoga', rating: 4.8, avatarUrl: null },
+  { userId: 't3', fullName: 'Lê Minh Khoa', specialization: 'Tăng Cơ', rating: 5.0, avatarUrl: null },
+  { userId: 't4', fullName: 'Phạm Thu Hà', specialization: 'Pilates', rating: 4.7, avatarUrl: null },
 ];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 const fmt = (n) => n?.toLocaleString('vi-VN') + 'đ';
 
 const getPeriodLabel = (months) => {
-  if (months === 1)  return '/tháng';
+  if (months === 1) return '/tháng';
   if (months === 12) return '/năm';
   return `/${months} tháng`;
 };
@@ -51,34 +72,43 @@ const getInitials = (name = '') =>
 
 // ─── MAIN COMPONENT ────────────────────────────────────────────────────────────
 function CheckoutPage() {
+  // ── Auth states ────────────────────────────────────────────────────
+  const [token, setToken] = useState(localStorage.getItem('token') || '');
+  const isLoggedIn = !!token;
+
+  // ── Step control ───────────────────────────────────────────────────
+  const [step, setStep] = useState(1); // 1 = Chọn Gói, 2 = QR Code Payment, 3 = Register Account (Guest only)
+
   // ── Data states ────────────────────────────────────────────────────
-  const [plans, setPlans]       = useState(FALLBACK_PLANS);
+  const [plans, setPlans] = useState(FALLBACK_PLANS);
   const [trainers, setTrainers] = useState([]);
   const [isLoadingTrainers, setIsLoadingTrainers] = useState(true);
 
   // ── Selection states ───────────────────────────────────────────────
-  const [selectedPlan, setSelectedPlan]       = useState(null);   // plan object
+  const [selectedPlan, setSelectedPlan] = useState(null);   // plan object
   const [selectedTrainer, setSelectedTrainer] = useState(null);   // trainer object | null
-  const [showPlanPicker, setShowPlanPicker]   = useState(false);
+  const [showPlanPicker, setShowPlanPicker] = useState(false);
 
-  // ── Modal states ───────────────────────────────────────────────────
-  const [showRegModal, setShowRegModal] = useState(false);
-  const [regSuccess, setRegSuccess]     = useState(false);
+  // ── Form & Loading states ──────────────────────────────────────────
+  const [regEmail, setRegEmail] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regPw, setRegPw] = useState('');
+  const [regConfPw, setRegConfPw] = useState('');
+  const [showRegPw, setShowRegPw] = useState(false);
+  const [showRegConf, setShowRegConf] = useState(false);
 
-  // ── Registration form ───────────────────────────────────────────────
-  const [regFullName,  setRegFullName]  = useState('');
-  const [regEmail,     setRegEmail]     = useState('');
-  const [regPhone,     setRegPhone]     = useState('');
-  const [regPw,        setRegPw]        = useState('');
-  const [regConfPw,    setRegConfPw]    = useState('');
-  const [showRegPw,    setShowRegPw]    = useState(false);
-  const [showRegConf,  setShowRegConf]  = useState(false);
-  const [regAlert,     setRegAlert]     = useState({ show: false, msg: '', ok: false });
-  const [isRegLoading, setIsRegLoading] = useState(false);
+  const [alert, setAlert] = useState({ show: false, msg: '', type: 'error' });
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+  const [isCreatingPayment, setIsCreatingPayment] = useState(false);
+  const [payosPayment, setPayosPayment] = useState(null);
+  const [hasDetectedPayment, setHasDetectedPayment] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+  const [regSuccess, setRegSuccess] = useState(false);
 
   // ── Init: read plan from URL / localStorage ─────────────────────────
   useEffect(() => {
-    const params  = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(window.location.search);
     const planKey = params.get('plan');   // e.g. 'monthly', 'quarterly', 'annual'
     const storedPlan = localStorage.getItem('checkoutPlan');
 
@@ -102,14 +132,15 @@ function CheckoutPage() {
           setSelectedPlan(matched || apiPlans[0]);
         } else {
           // fallback
-          const matchIdx = planKey === 'annual' ? 2 : planKey === 'quarterly' ? 1 : 0;
-          setSelectedPlan(FALLBACK_PLANS[matchIdx]);
+          const matchIdx = FALLBACK_PLANS.find(p => String(p.planId) === planKey);
+setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
         }
       })
-      .catch(() => {
-        const matchIdx = planKey === 'annual' ? 2 : planKey === 'quarterly' ? 1 : 0;
-        setSelectedPlan(FALLBACK_PLANS[matchIdx]);
-      });
+
+  .catch(() => {
+    const matched = FALLBACK_PLANS.find(p => String(p.planId) === planKey);
+    setSelectedPlan(matched || FALLBACK_PLANS[0]);
+});
 
     // 2. Load trainers
     fetch('/api/checkout/trainers')
@@ -125,6 +156,51 @@ function CheckoutPage() {
       .finally(() => setIsLoadingTrainers(false));
   }, []);
 
+  // Listen to auth changes
+  useEffect(() => {
+    const handleAuthChange = () => {
+      setToken(localStorage.getItem('token') || '');
+    };
+    window.addEventListener('storage', handleAuthChange);
+    window.addEventListener('authChange', handleAuthChange);
+    return () => {
+      window.removeEventListener('storage', handleAuthChange);
+      window.removeEventListener('authChange', handleAuthChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (step !== 2 || !selectedPlan) return;
+
+    const createPayosPayment = async () => {
+      setAlert({ show: false, msg: '', type: 'error' });
+      setIsCreatingPayment(true);
+      setPayosPayment(null);
+      setHasDetectedPayment(false);
+
+      try {
+        const res = await fetch('/api/checkout/payos/create-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ planId: selectedPlan.planId })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.payment) {
+          setPayosPayment(data.payment);
+        } else {
+          setAlert({ show: true, msg: data.message || 'Khong the tao thanh toan payOS!', type: 'error' });
+        }
+      } catch {
+        setAlert({ show: true, msg: 'Khong the ket noi toi payOS!', type: 'error' });
+      } finally {
+        setIsCreatingPayment(false);
+      }
+    };
+
+    createPayosPayment();
+  }, [step, selectedPlan]);
+
   // ── Navigation helpers ─────────────────────────────────────────────
   const goHome = () => {
     window.history.pushState({}, '', '/');
@@ -135,55 +211,204 @@ function CheckoutPage() {
     window.dispatchEvent(new Event('popstate'));
   };
 
-  // ── Registration submit ────────────────────────────────────────────
-  const doRegister = async (e) => {
-    e.preventDefault();
-    setRegAlert({ show: false, msg: '', ok: false });
-
-    if (!regFullName.trim()) {
-      setRegAlert({ show: true, msg: 'Vui lòng nhập họ và tên!', ok: false }); return;
-    }
-    if (!regEmail.trim()) {
-      setRegAlert({ show: true, msg: 'Vui lòng nhập email!', ok: false }); return;
-    }
-    if (!regPhone.trim()) {
-      setRegAlert({ show: true, msg: 'Vui lòng nhập số điện thoại!', ok: false }); return;
-    }
-    if (regPw.length < 6) {
-      setRegAlert({ show: true, msg: 'Mật khẩu phải từ 6 ký tự trở lên!', ok: false }); return;
-    }
-    if (regPw !== regConfPw) {
-      setRegAlert({ show: true, msg: 'Mật khẩu xác nhận không khớp!', ok: false }); return;
-    }
-
-    setIsRegLoading(true);
+  // ── Payment simulation ─────────────────────────────────────────────
+  const handleLoggedInCheckout = useCallback(async () => {
+    setIsVerifyingPayment(true);
     try {
-      const r = await fetch('/api/auth/register', {
+      const res = await fetch('/api/checkout/loggedIn-checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
-          fullName: regFullName.trim(),
-          email: regEmail.trim(),
-          password: regPw,
-          phoneNumber: regPhone.trim(),
-        }),
+          planId: selectedPlan.planId,
+          trainerId: selectedTrainer?.userId || null,
+          payosOrderCode: payosPayment?.orderCode
+        })
       });
-      const d = await r.json();
-      if (r.ok || r.status === 201) {
-        setRegSuccess(true);
+      const data = await res.json();
+      setIsVerifyingPayment(false);
+      if (res.ok) {
+        setCheckoutSuccess(true);
       } else {
-        setRegAlert({ show: true, msg: d.message || 'Đăng ký thất bại!', ok: false });
+        setAlert({ show: true, msg: data.message || 'Thanh toán thất bại!', type: 'error' });
       }
     } catch {
-      setRegAlert({ show: true, msg: 'Không thể kết nối đến máy chủ!', ok: false });
-    } finally {
-      setIsRegLoading(false);
+      setIsVerifyingPayment(false);
+      setAlert({ show: true, msg: 'Không thể kết nối tới server!', type: 'error' });
+    }
+  }, [payosPayment, selectedPlan, selectedTrainer, token]);
+
+  // ── Guest Submit Registration ──────────────────────────────────────
+  useEffect(() => {
+    if (step !== 2 || !payosPayment?.orderCode || hasDetectedPayment) return;
+
+    let isCancelled = false;
+    let isChecking = false;
+
+    const checkPayosStatus = async () => {
+      if (isChecking || isCancelled) return;
+      isChecking = true;
+
+      try {
+        const res = await fetch(`/api/checkout/payos/status/${payosPayment.orderCode}`);
+        const data = await res.json();
+
+        if (isCancelled || !res.ok || data.payment?.status !== 'PAID') return;
+
+        setHasDetectedPayment(true);
+        setAlert({ show: false, msg: '', type: 'error' });
+
+        if (isLoggedIn) {
+          await handleLoggedInCheckout();
+        } else {
+          setStep(3); // Go to step 3 to register!
+        }
+      } catch {
+        // PayOS can take a moment to confirm the transaction; keep polling quietly.
+      } finally {
+        isChecking = false;
+      }
+    };
+
+    checkPayosStatus();
+    const intervalId = setInterval(checkPayosStatus, 3000);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [step, payosPayment?.orderCode, hasDetectedPayment, isLoggedIn, handleLoggedInCheckout]);
+
+  const doGuestRegisterAndCheckout = async (e) => {
+    e.preventDefault();
+    setAlert({ show: false, msg: '', type: 'error' });
+
+    if (!regEmail.trim()) {
+      setAlert({ show: true, msg: 'Vui lòng nhập tên đăng nhập (Email)!', type: 'error' });
+      return;
+    }
+    if (!regPhone.trim()) {
+      setAlert({ show: true, msg: 'Vui lòng nhập số điện thoại!', type: 'error' });
+      return;
+    }
+    if (regPw.length < 6) {
+      setAlert({ show: true, msg: 'Mật khẩu phải từ 6 ký tự trở lên!', type: 'error' });
+      return;
+    }
+    if (regPw !== regConfPw) {
+      setAlert({ show: true, msg: 'Mật khẩu xác nhận không khớp!', type: 'error' });
+      return;
+    }
+
+    if (!payosPayment?.orderCode) {
+      setAlert({ show: true, msg: 'Thiếu mã giao dịch payOS. Vui lòng quay lại bước thanh toán!', type: 'error' });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/checkout/guest-register-checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: regEmail.trim(),
+          phoneNumber: regPhone.trim(),
+          password: regPw,
+          planId: selectedPlan.planId,
+          trainerId: selectedTrainer?.userId || null,
+          payosOrderCode: payosPayment?.orderCode
+        })
+      });
+      const data = await res.json();
+      setIsSubmitting(false);
+      if (res.ok) {
+        // Lưu token và thông tin user để tự động đăng nhập luôn
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('userInfo', JSON.stringify(data.user));
+        localStorage.setItem('showProfileSetup', 'true');
+        setToken(data.token);
+        window.dispatchEvent(new Event('authChange'));
+        setRegSuccess(true);
+      } else {
+        setAlert({ show: true, msg: data.message || 'Đăng ký thất bại!', type: 'error' });
+      }
+    } catch {
+      setIsSubmitting(false);
+      setAlert({ show: true, msg: 'Không thể kết nối tới server để tạo tài khoản!', type: 'error' });
     }
   };
 
   // ─── Computed values ───────────────────────────────────────────────
-  const planPrice   = selectedPlan?.price || 0;
-  const totalPrice  = planPrice;
+  const planPrice = selectedPlan?.price || 0;
+  const totalPrice = planPrice;
+
+  const qrCodeUrl = payosPayment?.qrCode
+    ? `https://quickchart.io/qr?size=240&text=${encodeURIComponent(payosPayment.qrCode)}`
+    : '';
+
+  // Render Success page if checkout/registration is complete
+  if (checkoutSuccess) {
+    return (
+      <div className="checkout-page">
+        <nav className="co-navbar">
+          <div className="co-nav-brand" onClick={goHome}>
+            <i className="fa-solid fa-dumbbell brand-icon"></i>
+            <span className="brand-name">FX <span>FITNESS</span></span>
+          </div>
+        </nav>
+        <div className="checkout-success-container">
+          <div className="checkout-success-card">
+            <div className="success-icon-wrap">
+              <i className="fa-solid fa-check"></i>
+            </div>
+            <h2>Thanh Toán Thành Công!</h2>
+            <p>Gói tập <strong>{selectedPlan?.planName}</strong> của bạn đã được kích hoạt thành công.</p>
+            {selectedTrainer && (
+              <p className="trainer-success-info">
+                Huấn luyện viên đồng hành: <strong>{selectedTrainer.fullName}</strong>. Lộ trình tập luyện đã được tạo sẵn trong hệ thống.
+              </p>
+            )}
+            <button className="btn-success-home" onClick={goHome}>
+              <i className="fa-solid fa-house"></i> Về Trang Chủ
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (regSuccess) {
+    return (
+      <div className="checkout-page">
+        <nav className="co-navbar">
+          <div className="co-nav-brand" onClick={goHome}>
+            <i className="fa-solid fa-dumbbell brand-icon"></i>
+            <span className="brand-name">FX <span>FITNESS</span></span>
+          </div>
+        </nav>
+        <div className="checkout-success-container">
+          <div className="checkout-success-card">
+            <div className="success-icon-wrap">
+              <i className="fa-solid fa-check"></i>
+            </div>
+            <h2>Đăng Ký & Thanh Toán Thành Công!</h2>
+            <p>Tài khoản của bạn đã được đăng ký và kích hoạt gói tập <strong>{selectedPlan?.planName}</strong> thành công.</p>
+            <p>Hãy thiết lập hồ sơ cá nhân để chúng tôi tạo lộ trình tập luyện tốt nhất cho bạn.</p>
+            <button className="btn-success-login" style={{ background: 'var(--orange)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px 24px', fontSize: '1rem' }} onClick={() => {
+              window.history.pushState({}, '', '/');
+              window.dispatchEvent(new Event('popstate'));
+            }}>
+              <i className="fa-solid fa-user-gear"></i> Thiết Lập Hồ Sơ Ngay
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ══════════════════════════════════════════════════════════════════
   return (
@@ -201,178 +426,418 @@ function CheckoutPage() {
 
       {/* ── STEP INDICATOR ── */}
       <div className="co-steps">
-        <div className="co-step done">
-          <div className="step-bubble"><i className="fa-solid fa-check"></i></div>
-          <span className="step-label">Chọn Gói</span>
+        <div className={`co-step ${step > 1 ? 'done' : 'active'}`}>
+          <div className="step-bubble">{step > 1 ? <i className="fa-solid fa-check"></i> : 1}</div>
+          <span className="step-label">Chọn Gói & HLV</span>
         </div>
-        <div className="co-step active">
-          <div className="step-bubble">2</div>
-          <span className="step-label">Hoàn Tất Đăng Ký</span>
+        <div className={`co-step ${step === 2 ? 'active' : step > 2 ? 'done' : ''}`}>
+          <div className="step-bubble">{step > 2 ? <i className="fa-solid fa-check"></i> : 2}</div>
+          <span className="step-label">Thanh Toán QR</span>
         </div>
-        <div className="co-step">
-          <div className="step-bubble">3</div>
-          <span className="step-label">Thanh Toán</span>
-        </div>
+        {!isLoggedIn && (
+          <div className={`co-step ${step === 3 ? 'active' : ''}`}>
+            <div className="step-bubble">3</div>
+            <span className="step-label">Đăng Ký Tài Khoản</span>
+          </div>
+        )}
       </div>
 
       {/* ── PAGE HEADER ── */}
       <div style={{ padding: '28px 40px 0', maxWidth: 1200, margin: '0 auto' }}>
         <h1 style={{ fontSize: '1.6rem', fontWeight: 900, color: 'var(--text)', margin: 0 }}>
-          Hoàn Tất Đăng Ký
+          {step === 1 ? 'Chọn Gói Tập & Huấn Luyện Viên' : step === 2 ? 'Thanh Toán Gói Tập qua PayOS' : 'Đăng Ký Tài Khoản Thành Viên'}
         </h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: 4, marginBottom: 0 }}>
-          Vui lòng kiểm tra lại thông tin và tiến hành thanh toán.
+          {step === 1
+            ? 'Vui lòng kiểm tra gói tập bạn muốn đăng ký và tùy chọn huấn luyện viên đồng hành.'
+            : step === 2
+              ? 'Quét mã PayOS dưới đây hoặc mở trang thanh toán PayOS để hoàn tất giao dịch.'
+              : 'Thiết lập mật khẩu và số điện thoại để tạo tài khoản đăng nhập.'}
         </p>
       </div>
+
+      {/* ── VERIFY PAYMENT LOADER OVERLAY ── */}
+      {isVerifyingPayment && (
+        <div className="payment-verify-overlay">
+          <div className="verify-content">
+            <i className="fa-solid fa-spinner fa-spin verify-spinner"></i>
+            <h3>Đang kiểm tra giao dịch...</h3>
+            <p>Hệ thống đang kiểm tra thanh toán của bạn trên ngân hàng. Vui lòng chờ trong giây lát.</p>
+          </div>
+        </div>
+      )}
 
       {/* ── MAIN CONTENT ── */}
       <main className="co-main">
 
         {/* ════════════ LEFT COLUMN ════════════ */}
         <div className="co-left">
-
-          {/* ── SECTION 1: GÓI TẬP ĐÃ CHỌN ── */}
-          <div className="co-section">
-            <div className="co-section-header">
-              <div className="co-section-title">
-                <i className="fa-solid fa-tag"></i> Gói Tập Đã Chọn
-              </div>
-              <button className="btn-change-plan" onClick={() => setShowPlanPicker(v => !v)}>
-                <i className="fa-solid fa-pen"></i>
-                {showPlanPicker ? 'Ẩn bớt' : 'Thay đổi gói'}
-              </button>
+          {alert.show && (
+            <div className={`reg-alert ${alert.type === 'success' ? 'ok' : 'err'}`} style={{ width: '100%', boxSizing: 'border-box' }}>
+              <i className={`fa-solid ${alert.type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
+              <span>{alert.msg}</span>
             </div>
+          )}
 
-            <div className="co-section-body">
-              {/* Selected plan display */}
-              {selectedPlan && (
-                <div className="selected-plan-card">
-                  <div className="plan-info-left">
-                    <p className="plan-name">{selectedPlan.planName}</p>
-                    <p className="plan-price-tag">
-                      {fmt(selectedPlan.price)}
-                      <span className="period">{getPeriodLabel(selectedPlan.durationMonths)}</span>
-                    </p>
-                    <ul className="plan-features">
-                      {(selectedPlan.features || []).slice(0, 4).map((f, i) => (
-                        <li key={i}><i className="fa-solid fa-circle-check"></i>{f}</li>
-                      ))}
-                    </ul>
+          {/* ── STEP 1: CHỌN GÓI & HLV ── */}
+          {step === 1 && (
+            <>
+              {/* Selected plan details */}
+              <div className="co-section">
+                <div className="co-section-header">
+                  <div className="co-section-title">
+                    <i className="fa-solid fa-tag"></i> Gói Tập Đã Chọn
                   </div>
+                  <button className="btn-change-plan" onClick={() => setShowPlanPicker(v => !v)}>
+                    <i className="fa-solid fa-pen"></i>
+                    {showPlanPicker ? 'Ẩn bớt' : 'Thay đổi gói'}
+                  </button>
                 </div>
-              )}
 
-              {/* Plan picker grid */}
-              {showPlanPicker && (
-                <div className="plan-picker-grid" style={{ marginTop: 16 }}>
-                  {plans.map(p => (
-                    <div
-                      key={p.planId}
-                      className={`plan-picker-card${p.featured ? ' featured-pick' : ''}${selectedPlan?.planId === p.planId ? ' selected' : ''}`}
-                      onClick={() => { setSelectedPlan(p); setShowPlanPicker(false); }}
-                    >
-                      {p.featured && <span className="pick-badge">Phổ biến nhất</span>}
-                      <div className="pick-check"><i className="fa-solid fa-check"></i></div>
-                      <p className="pick-name">{p.planName}</p>
-                      <p className="pick-price">
-                        {fmt(p.price)}
-                        <span className="pick-period">{getPeriodLabel(p.durationMonths)}</span>
-                      </p>
-                      <p className="pick-duration">{p.durationMonths} tháng</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ── SECTION 2: CHỌN HUẤN LUYỆN VIÊN ── */}
-          <div className="co-section">
-            <div className="co-section-header">
-              <div className="co-section-title">
-                <i className="fa-solid fa-user-tie"></i> Chọn Huấn Luyện Viên
-              </div>
-              <span className="trainer-optional-label">Tùy chọn</span>
-            </div>
-
-            <div className="co-section-body">
-              {isLoadingTrainers ? (
-                <div className="trainers-grid">
-                  {[1,2,3,4].map(i => (
-                    <div key={i} className="trainer-skeleton">
-                      <div className="sk-circle"></div>
-                      <div className="sk-lines">
-                        <div className="sk-line"></div>
-                        <div className="sk-line short"></div>
+                <div className="co-section-body">
+                  {selectedPlan && (
+                    <div className="selected-plan-card">
+                      <div className="plan-info-left">
+                        <p className="plan-name">{selectedPlan.planName}</p>
+                        <p className="plan-price-tag">
+                          {fmt(selectedPlan.price)}
+                          <span className="period">{getPeriodLabel(selectedPlan.durationMonths)}</span>
+                        </p>
+                        <ul className="plan-features">
+                          {(selectedPlan.features || []).slice(0, 4).map((f, i) => (
+                            <li key={i}><i className="fa-solid fa-circle-check"></i>{f}</li>
+                          ))}
+                        </ul>
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : trainers.length === 0 ? (
-                <div className="co-empty">
-                  <i className="fa-solid fa-user-slash"></i>
-                  Hiện chưa có huấn luyện viên.
-                </div>
-              ) : (
-                <>
-                  <div className="trainers-grid">
-                    {trainers.map(t => (
-                      <div
-                        key={t.userId}
-                        className={`trainer-card${selectedTrainer?.userId === t.userId ? ' selected' : ''}`}
-                        onClick={() => setSelectedTrainer(
-                          selectedTrainer?.userId === t.userId ? null : t
-                        )}
-                      >
-                        <div className="trainer-avatar">
-                          {t.avatarUrl
-                            ? <img src={t.avatarUrl} alt={t.fullName} />
-                            : getInitials(t.fullName)
-                          }
+                  )}
+
+                  {/* Plan picker grid */}
+                  {showPlanPicker && (
+                    <div className="plan-picker-grid" style={{ marginTop: 16 }}>
+                      {plans.map(p => (
+                        <div
+                          key={p.planId}
+                          className={`plan-picker-card${p.featured ? ' featured-pick' : ''}${selectedPlan?.planId === p.planId ? ' selected' : ''}`}
+                          onClick={() => { setSelectedPlan(p); setShowPlanPicker(false); }}
+                        >
+                          {p.featured && <span className="pick-badge">Phổ biến nhất</span>}
+                          <div className="pick-check"><i className="fa-solid fa-check"></i></div>
+                          <p className="pick-name">{p.planName}</p>
+                          <p className="pick-price">
+                            {fmt(p.price)}
+                            <span className="pick-period">{getPeriodLabel(p.durationMonths)}</span>
+                          </p>
+                          <p className="pick-duration">{p.durationMonths} tháng</p>
                         </div>
-                        <div className="trainer-info">
-                          <div className="trainer-name">{t.fullName}</div>
-                          <div className="trainer-spec">{t.specialization || 'Gym tổng hợp'}</div>
-                          <div className="trainer-rating">
-                            <i className="fa-solid fa-star"></i>
-                            {(t.rating || 4.5).toFixed(1)}
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Trainer list details */}
+              <div className="co-section">
+                <div className="co-section-header">
+                  <div className="co-section-title">
+                    <i className="fa-solid fa-user-tie"></i> Chọn Huấn Luyện Viên
+                  </div>
+                  <span className="trainer-optional-label">Tùy chọn</span>
+                </div>
+
+                <div className="co-section-body">
+                  {isLoadingTrainers ? (
+                    <div className="trainers-grid">
+                      {[1, 2, 3, 4].map(i => (
+                        <div key={i} className="trainer-skeleton">
+                          <div className="sk-circle"></div>
+                          <div className="sk-lines">
+                            <div className="sk-line"></div>
+                            <div className="sk-line short"></div>
                           </div>
                         </div>
-                        <div className="trainer-select-btn">
-                          {selectedTrainer?.userId === t.userId
-                            ? <i className="fa-solid fa-check"></i>
-                            : <i className="fa-solid fa-plus"></i>
-                          }
-                        </div>
+                      ))}
+                    </div>
+                  ) : trainers.length === 0 ? (
+                    <div className="co-empty">
+                      <i className="fa-solid fa-user-slash"></i>
+                      Hiện chưa có huấn luyện viên.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="trainers-grid">
+                        {trainers.map(t => (
+                          <div
+                            key={t.userId}
+                            className={`trainer-card${selectedTrainer?.userId === t.userId ? ' selected' : ''}`}
+                            onClick={() => setSelectedTrainer(
+                              selectedTrainer?.userId === t.userId ? null : t
+                            )}
+                          >
+                            <div className="trainer-avatar">
+                              {t.avatarUrl
+                                ? <img src={t.avatarUrl} alt={t.fullName} />
+                                : getInitials(t.fullName)
+                              }
+                            </div>
+                            <div className="trainer-info">
+                              <div className="trainer-name">{t.fullName}</div>
+                              <div className="trainer-spec">{t.specialization || 'Gym tổng hợp'}</div>
+                              <div className="trainer-rating">
+                                <i className="fa-solid fa-star"></i>
+                                {(t.rating || 4.5).toFixed(1)}
+                              </div>
+                            </div>
+                            <div className="trainer-select-btn">
+                              {selectedTrainer?.userId === t.userId
+                                ? <i className="fa-solid fa-check"></i>
+                                : <i className="fa-solid fa-plus"></i>
+                              }
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                  <div
-                    className={`no-trainer-btn${selectedTrainer === null ? ' selected' : ''}`}
-                    onClick={() => setSelectedTrainer(null)}
-                  >
-                    <i className="fa-solid fa-times" style={{ marginRight: 6 }}></i>
-                    Chưa cần HLV lúc này
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+                      <div
+                        className={`no-trainer-btn${selectedTrainer === null ? ' selected' : ''}`}
+                        onClick={() => setSelectedTrainer(null)}
+                      >
+                        <i className="fa-solid fa-times" style={{ marginRight: 6 }}></i>
+                        Chưa cần HLV lúc này
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
+          {/* ── STEP 2: THANH TOÁN QR ── */}
+          {step === 2 && (
+            <div className="co-section">
+              <div className="co-section-header">
+                <div className="co-section-title">
+                  <i className="fa-solid fa-qrcode"></i> Quét Mã PayOS Thanh Toán
+                </div>
+              </div>
+
+              <div className="co-section-body qr-section-body">
+                <div className="qr-container">
+                  <div className="qr-image-wrapper">
+                    {isCreatingPayment && (
+                      <div className="payos-loading">
+                        <i className="fa-solid fa-spinner fa-spin"></i>
+                        <span>Đang tạo thanh toán PayOS...</span>
+                      </div>
+                    )}
+                    {!isCreatingPayment && qrCodeUrl && (
+                      <img src={qrCodeUrl} alt="PayOS QR Code" className="payos-qr-img" />
+                    )}
+                    <div className="qr-scan-guide">
+                      <i className="fa-solid fa-expandscan"></i>
+                      <span>Sử dụng ứng dụng Ngân hàng quét mã QR PayOS để thanh toán</span>
+                    </div>
+                    {payosPayment?.checkoutUrl && (
+                      <a className="btn-payos-link" href={payosPayment.checkoutUrl} target="_blank" rel="noreferrer">
+                        <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                        Mở trang PayOS
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="bank-details-wrapper">
+                    <h3>Thông Tin PayOS</h3>
+                    <div className="bank-details-grid">
+                      <div className="bd-row">
+                        <span className="bd-label">Ngân hàng:</span>
+                        <span className="bd-value">{payosPayment?.bin || 'PayOS'}</span>
+                      </div>
+                      <div className="bd-row">
+                        <span className="bd-label">Số tài khoản:</span>
+                        <span className="bd-value highlight">{payosPayment?.accountNumber || 'Đang tạo...'}</span>
+                      </div>
+                      <div className="bd-row">
+                        <span className="bd-label">Tên tài khoản:</span>
+                        <span className="bd-value">{payosPayment?.accountName || 'Đang tạo...'}</span>
+                      </div>
+                      <div className="bd-row">
+                        <span className="bd-label">Số tiền:</span>
+                        <span className="bd-value highlight-price">{fmt(totalPrice)}</span>
+                      </div>
+                      <div className="bd-row">
+                        <span className="bd-label">Mã đơn PayOS:</span>
+                        <span className="bd-value highlight">{payosPayment?.orderCode || 'Đang tạo...'}</span>
+                      </div>
+                      <div className="bd-row">
+                        <span className="bd-label">Nội dung:</span>
+                        <span className="bd-value highlight-desc">{payosPayment?.description || 'Đang tạo...'}</span>
+                      </div>
+                    </div>
+
+                    <div className="bank-notice">
+                      <i className="fa-solid fa-circle-info"></i>
+                      <span>Hệ thống sẽ tự động kiểm tra PayOS. Sau khi thanh toán thành công, bạn sẽ được chuyển sang bước tiếp theo.</span>
+                    </div>
+
+                    {/* Nút giả lập thanh toán dùng khi dev local */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setHasDetectedPayment(true);
+                        setAlert({ show: false, msg: '', type: 'error' });
+                        if (isLoggedIn) {
+                          await handleLoggedInCheckout();
+                        } else {
+                          setStep(3); // Chuyển sang Bước 3 để điền thông tin đăng ký
+                        }
+                      }}
+                      style={{
+                        marginTop: '16px',
+                        padding: '10px 16px',
+                        backgroundColor: '#ff9800',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      <i className="fa-solid fa-circle-play"></i>
+                      ⚠️ [DEV] Giả Lập Thanh Toán Thành Công
+                    </button>
+                  </div>
+                </div>
+
+                <div className="qr-actions">
+                  <button className="btn-back-step" onClick={() => setStep(1)}>
+                    <i className="fa-solid fa-arrow-left"></i> Quay lại
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 3: ĐĂNG KÝ TÀI KHOẢN (GUEST ONLY) ── */}
+          {step === 3 && !isLoggedIn && (
+            <div className="co-section">
+              <div className="co-section-header">
+                <div className="co-section-title">
+                  <i className="fa-solid fa-user-plus"></i> Đăng Ký Tài Khoản Hội Viên
+                </div>
+              </div>
+
+              <div className="co-section-body">
+                <form id="guestRegisterForm" onSubmit={doGuestRegisterAndCheckout}>
+                  <div className="reg-field">
+                    <label>Tên đăng nhập (Email)</label>
+                    <div className="reg-inp-wrap">
+                      <i className="fa-solid fa-envelope inp-icon"></i>
+                      <input
+                        type="email"
+                        placeholder="Nhập email của bạn (ví dụ: name@gmail.com)"
+                        value={regEmail}
+                        onChange={e => setRegEmail(e.target.value)}
+                        required
+                        disabled={isSubmitting}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="reg-field">
+                    <label>Số điện thoại</label>
+                    <div className="reg-inp-wrap">
+                      <i className="fa-solid fa-phone inp-icon"></i>
+                      <input
+                        type="tel"
+                        placeholder="Nhập số điện thoại (ví dụ: 0987654321)"
+                        value={regPhone}
+                        onChange={e => setRegPhone(e.target.value)}
+                        required
+                        disabled={isSubmitting}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="reg-field">
+                    <label>Mật khẩu</label>
+                    <div className="reg-inp-wrap">
+                      <i className="fa-solid fa-lock inp-icon"></i>
+                      <input
+                        type={showRegPw ? 'text' : 'password'}
+                        placeholder="Tạo mật khẩu đăng nhập (Tối thiểu 6 ký tự)"
+                        value={regPw}
+                        onChange={e => setRegPw(e.target.value)}
+                        required
+                        disabled={isSubmitting}
+                      />
+                      <button type="button" className="eye-btn" onClick={() => setShowRegPw(!showRegPw)}>
+                        <i className={`fa-regular ${showRegPw ? 'fa-eye' : 'fa-eye-slash'}`}></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="reg-field">
+                    <label>Xác nhận mật khẩu</label>
+                    <div className="reg-inp-wrap">
+                      <i className="fa-solid fa-lock inp-icon"></i>
+                      <input
+                        type={showRegConf ? 'text' : 'password'}
+                        placeholder="Nhập lại mật khẩu"
+                        value={regConfPw}
+                        onChange={e => setRegConfPw(e.target.value)}
+                        required
+                        disabled={isSubmitting}
+                      />
+                      <button type="button" className="eye-btn" onClick={() => setShowRegConf(!showRegConf)}>
+                        <i className={`fa-regular ${showRegConf ? 'fa-eye' : 'fa-eye-slash'}`}></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="guest-reg-actions" style={{ display: 'flex', gap: '12px' }}>
+                    <button
+                      className="btn-back-step"
+                      type="button"
+                      onClick={() => setStep(2)}
+                      disabled={isSubmitting}
+                      style={{ flex: 1 }}
+                    >
+                      <i className="fa-solid fa-arrow-left"></i> Quay lại
+                    </button>
+                    <button
+                      className="btn-reg-submit"
+                      type="submit"
+                      disabled={isSubmitting}
+                      style={{ flex: 1 }}
+                    >
+                      {isSubmitting
+                        ? <><i className="fa-solid fa-spinner fa-spin"></i> Đang xử lý...</>
+                        : <><i className="fa-solid fa-circle-check"></i> Hoàn Tất Đăng Ký</>
+                      }
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* ════════════ RIGHT COLUMN: PAYMENT SUMMARY ════════════ */}
+        {/* ════════════ RIGHT COLUMN: BILLING SUMMARY ════════════ */}
         <div className="co-right">
           <div className="pay-summary-card">
             <div className="pay-summary-header">
               <i className="fa-solid fa-receipt"></i>
-              <h3>Thanh Toán</h3>
+              <h3>Hóa Đơn Thanh Toán</h3>
             </div>
 
             <div className="pay-summary-body">
               <div className="pay-row">
-                <span className="label">{selectedPlan?.planName || '—'}</span>
-                <span className="value">{fmt(planPrice)}</span>
+                <span className="label">Gói tập:</span>
+                <span className="value">{selectedPlan?.planName || '—'}</span>
               </div>
 
               {selectedTrainer && (
@@ -395,193 +860,44 @@ function CheckoutPage() {
 
               <div className="pay-divider"></div>
               <div className="pay-total-row">
-                <span className="total-label">Tổng cộng</span>
+                <span className="total-label">Tổng thanh toán:</span>
                 <span className="total-value">{fmt(totalPrice)}</span>
               </div>
 
-              <button
-                className="btn-confirm-pay"
-                disabled={!selectedPlan}
-                onClick={() => { setRegAlert({ show: false, msg: '', ok: false }); setShowRegModal(true); }}
-              >
-                <i className="fa-solid fa-arrow-right"></i>
-                Tiếp Theo: Đăng Ký Tài Khoản
-              </button>
+              {step === 1 && (
+                <button
+                  className="btn-confirm-pay"
+                  disabled={!selectedPlan}
+                  onClick={() => setStep(2)}
+                >
+                  <i className="fa-solid fa-arrow-right"></i>
+                  Tiếp Tục Thanh Toán
+                </button>
+              )}
+
+              {step === 3 && !isLoggedIn && (
+                <button
+                  className="btn-confirm-pay"
+                  form="guestRegisterForm"
+                  type="submit"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting
+                    ? <><i className="fa-solid fa-spinner fa-spin"></i> Đang xử lý...</>
+                    : <><i className="fa-solid fa-circle-check"></i> Hoàn Tất Đăng Ký</>
+                  }
+                </button>
+              )}
 
               <p className="pay-note">
                 <i className="fa-solid fa-circle-info"></i>
-                Sau khi đăng ký, tài khoản Member sẽ được tạo và kích hoạt trong vòng 5 phút sau khi thanh toán hoàn tất.
+                Hội viên FxFitness được hưởng toàn bộ đặc quyền đi kèm gói tập. Mọi thắc mắc xin vui lòng liên hệ quầy lễ tân để được hỗ trợ.
               </p>
             </div>
           </div>
         </div>
 
       </main>
-
-      {/* ════════════ REGISTRATION MODAL ════════════ */}
-      {showRegModal && (
-        <div className="reg-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget && !isRegLoading) setShowRegModal(false); }}>
-          <div className="reg-modal">
-
-            {regSuccess ? (
-              /* ── Success screen ── */
-              <div className="success-screen">
-                <div className="success-icon-wrap">
-                  <i className="fa-solid fa-check"></i>
-                </div>
-                <h3>Đăng Ký Thành Công!</h3>
-                <p>
-                  Tài khoản của bạn đã được tạo thành công.<br />
-                  Vui lòng đăng nhập và hoàn tất thanh toán để kích hoạt gói tập.
-                </p>
-                <button className="btn-go-login" onClick={goLogin}>
-                  <i className="fa-solid fa-right-to-bracket"></i>
-                  Đăng Nhập Ngay
-                </button>
-              </div>
-            ) : (
-              <>
-                {/* ── Header ── */}
-                <div className="reg-modal-header">
-                  <div className="rm-icon">
-                    <i className="fa-solid fa-user-plus"></i>
-                  </div>
-                  <h2>Tạo Tài Khoản Thành Viên</h2>
-                  <p>Điền thông tin bên dưới để đăng ký và trở thành hội viên FxFitness.</p>
-                </div>
-
-                {/* ── Body ── */}
-                <div className="reg-modal-body">
-                  {/* Plan strip */}
-                  {selectedPlan && (
-                    <div className="reg-plan-strip">
-                      <i className="fa-solid fa-tag"></i>
-                      <div>
-                        <div className="rps-name">{selectedPlan.planName}</div>
-                        <div className="rps-price">{fmt(selectedPlan.price)}{getPeriodLabel(selectedPlan.durationMonths)}</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Alert */}
-                  {regAlert.show && (
-                    <div className={`reg-alert ${regAlert.ok ? 'ok' : 'err'}`}>
-                      <i className={`fa-solid ${regAlert.ok ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
-                      <span>{regAlert.msg}</span>
-                    </div>
-                  )}
-
-                  <form id="fRegister" onSubmit={doRegister}>
-                    {/* Họ và tên */}
-                    <div className="reg-field">
-                      <label>Họ và Tên</label>
-                      <div className="reg-inp-wrap">
-                        <i className="fa-solid fa-user inp-icon"></i>
-                        <input
-                          type="text"
-                          placeholder="Nhập họ và tên đầy đủ"
-                          value={regFullName}
-                          onChange={e => setRegFullName(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    {/* Email */}
-                    <div className="reg-field">
-                      <label>Email (dùng để đăng nhập)</label>
-                      <div className="reg-inp-wrap">
-                        <i className="fa-solid fa-envelope inp-icon"></i>
-                        <input
-                          type="email"
-                          placeholder="ví dụ: ten@email.com"
-                          value={regEmail}
-                          onChange={e => setRegEmail(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    {/* Số điện thoại */}
-                    <div className="reg-field">
-                      <label>Số Điện Thoại</label>
-                      <div className="reg-inp-wrap">
-                        <i className="fa-solid fa-phone inp-icon"></i>
-                        <input
-                          type="tel"
-                          placeholder="0xxxxxxxxx"
-                          value={regPhone}
-                          onChange={e => setRegPhone(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    {/* Mật khẩu */}
-                    <div className="reg-field">
-                      <label>Mật Khẩu</label>
-                      <div className="reg-inp-wrap">
-                        <i className="fa-solid fa-lock inp-icon"></i>
-                        <input
-                          type={showRegPw ? 'text' : 'password'}
-                          placeholder="Tối thiểu 6 ký tự"
-                          value={regPw}
-                          onChange={e => setRegPw(e.target.value)}
-                          required
-                        />
-                        <button type="button" className="eye-btn" onClick={() => setShowRegPw(v => !v)}>
-                          <i className={`fa-regular ${showRegPw ? 'fa-eye' : 'fa-eye-slash'}`}></i>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Xác nhận mật khẩu */}
-                    <div className="reg-field">
-                      <label>Xác Nhận Mật Khẩu</label>
-                      <div className="reg-inp-wrap">
-                        <i className="fa-solid fa-lock inp-icon"></i>
-                        <input
-                          type={showRegConf ? 'text' : 'password'}
-                          placeholder="Nhập lại mật khẩu"
-                          value={regConfPw}
-                          onChange={e => setRegConfPw(e.target.value)}
-                          required
-                        />
-                        <button type="button" className="eye-btn" onClick={() => setShowRegConf(v => !v)}>
-                          <i className={`fa-regular ${showRegConf ? 'fa-eye' : 'fa-eye-slash'}`}></i>
-                        </button>
-                      </div>
-                    </div>
-                  </form>
-                </div>
-
-                {/* ── Footer ── */}
-                <div className="reg-modal-footer">
-                  <button
-                    className="btn-reg-cancel"
-                    disabled={isRegLoading}
-                    onClick={() => setShowRegModal(false)}
-                  >
-                    Hủy
-                  </button>
-                  <button
-                    className="btn-reg-submit"
-                    form="fRegister"
-                    type="submit"
-                    disabled={isRegLoading}
-                  >
-                    {isRegLoading
-                      ? <><i className="fa-solid fa-spinner fa-spin"></i> Đang xử lý...</>
-                      : <><i className="fa-solid fa-user-plus"></i> Đăng Ký Ngay</>
-                    }
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }

@@ -1,4 +1,5 @@
 const Sequelize = require('sequelize');
+
 module.exports = function(sequelize, DataTypes) {
   return sequelize.define('Users', {
     user_id: {
@@ -45,9 +46,14 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: true,
       defaultValue: "Active"
     },
-        avatar_url: {
+    avatar_url: {
       type: DataTypes.STRING(255),
       allowNull: true
+    },
+    must_change_password: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
     }
   }, {
     sequelize,
@@ -59,16 +65,16 @@ module.exports = function(sequelize, DataTypes) {
         name: "PK__Users__B9BE370FFCC18A38",
         unique: true,
         fields: [
-          { name: "user_id" },
+          { name: "user_id" }
         ]
       },
       {
         name: "UQ__Users__AB6E616437AC55B3",
         unique: true,
         fields: [
-          { name: "email" },
+          { name: "email" }
         ]
-      },
+      }
     ]
   });
 };

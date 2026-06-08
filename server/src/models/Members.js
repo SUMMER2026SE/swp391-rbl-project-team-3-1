@@ -40,6 +40,10 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(100),
       allowNull: true
     },
+    fitness_level: {
+      type: DataTypes.STRING(50),
+      allowNull: true
+    },
     emergency_contact: {
       type: DataTypes.STRING(20),
       allowNull: true

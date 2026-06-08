@@ -9,6 +9,9 @@ router.post('/register', authController.register);
 // 2. Tuyến đường Đăng nhập mới thêm vào hệ thống
 router.post('/login', authController.login);
 
+// Route hỗ trợ đổi mật khẩu lần đầu cho admin (không cần token)
+router.post('/first-change-password', authController.firstTimeChangePassword);
+
 // 3. Các tuyến đường đổi mật khẩu và quên/đặt lại mật khẩu mới
 router.post('/change-password', authMiddleware, authController.changePassword);
 router.post('/forgot-password', authController.forgotPassword);

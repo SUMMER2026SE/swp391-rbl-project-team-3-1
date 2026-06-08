@@ -1,12 +1,13 @@
 const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
+// Khởi tạo Sequelize (nếu project dùng ORM ở một số chỗ)
 const sequelize = new Sequelize(
     process.env.DB_NAME,
     process.env.DB_USER,
-    process.env.DB_PASS,
+    process.env.DB_PASSWORD || process.env.DB_PASS,
     {
-        host: process.env.DB_HOST || '127.0.0.1',
+        host: process.env.DB_SERVER || process.env.DB_HOST || '127.0.0.1',
         port: parseInt(process.env.DB_PORT) || 1433,
         dialect: 'mssql',
         logging: false,
@@ -37,4 +38,34 @@ try {
     console.error('❌ Lỗi khi khởi tạo Models:', error.message);
 }
 
-module.exports = { sequelize, models };
+// Đồng thời export một connection pool dùng `mssql` để các service hiện có (đang dùng poolPromise)
+const sql = require('mssql');
+
+const mssqlConfig = {
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD || process.env.DB_PASS,
+  server: process.env.DB_SERVER || process.env.DB_HOST || '127.0.0.1',
+  database: process.env.DB_NAME,
+  port: parseInt(process.env.DB_PORT, 10) || 1433,
+  options: {
+    encrypt: false,
+    trustServerCertificate: true
+  },
+  pool: {
+    max: 5,
+    min: 0,
+    idleTimeoutMillis: 10000
+  }
+};
+
+const poolPromise = sql.connect(mssqlConfig)
+  .then(pool => {
+    console.log('✅ MSSQL pool connected');
+    return pool;
+  })
+  .catch(err => {
+    console.error('❌ MSSQL pool connection error:', err && err.message ? err.message : err);
+    return null;
+  });
+
+module.exports = { sequelize, models, poolPromise, sql };

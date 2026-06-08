@@ -6,10 +6,22 @@ function HomePage() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [userInfo, setUserInfo] = useState(JSON.parse(localStorage.getItem('userInfo') || 'null'));
 
+  // Trạng thái cho bảng thiết lập hồ sơ (Profile Setup Modal)
+  const [showSetupModal, setShowSetupModal] = useState(localStorage.getItem('showProfileSetup') === 'true');
+  const [setupHeight, setSetupHeight] = useState('170');
+  const [setupWeight, setSetupWeight] = useState('65');
+  const [setupGender, setSetupGender] = useState('Nam');
+  const [setupDob, setSetupDob] = useState('');
+  const [setupGoals, setSetupGoals] = useState(['Giảm cân']);
+  const [setupLevel, setSetupLevel] = useState('Người mới bắt đầu');
+  const [setupError, setSetupError] = useState('');
+  const [isSavingSetup, setIsSavingSetup] = useState(false);
+
   useEffect(() => {
     const handleAuthChange = () => {
       setToken(localStorage.getItem('token') || '');
       setUserInfo(JSON.parse(localStorage.getItem('userInfo') || 'null'));
+      setShowSetupModal(localStorage.getItem('showProfileSetup') === 'true');
     };
     window.addEventListener('authChange', handleAuthChange);
     window.addEventListener('storage', handleAuthChange);
@@ -69,6 +81,81 @@ function HomePage() {
     }
   };
 
+  // Thay đổi lựa chọn mục tiêu (đa chọn)
+  const toggleGoal = (goal) => {
+    if (setupGoals.includes(goal)) {
+      if (setupGoals.length > 1) {
+        setSetupGoals(setupGoals.filter(g => g !== goal));
+      }
+    } else {
+      setSetupGoals([...setupGoals, goal]);
+    }
+  };
+
+  // Gửi thông tin thiết lập hồ sơ lên server
+  const handleSetupSubmit = async (e) => {
+    e.preventDefault();
+    setSetupError('');
+    setIsSavingSetup(true);
+
+    if (!setupHeight || Number(setupHeight) <= 0) {
+      setSetupError('Chiều cao không hợp lệ!');
+      setIsSavingSetup(false);
+      return;
+    }
+    if (!setupWeight || Number(setupWeight) <= 0) {
+      setSetupError('Cân nặng không hợp lệ!');
+      setIsSavingSetup(false);
+      return;
+    }
+    if (!setupDob) {
+      setSetupError('Vui lòng chọn ngày sinh!');
+      setIsSavingSetup(false);
+      return;
+    }
+
+    try {
+      // Chiều cao lưu trong DB dạng MÉT (ví dụ 1.70), còn UI nhập dạng CM (ví dụ 170)
+      const heightInMeters = Number(setupHeight) / 100;
+      const goalStr = setupGoals.join(', ');
+
+      const res = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          height: heightInMeters,
+          weight: Number(setupWeight),
+          gender: setupGender,
+          dateOfBirth: setupDob,
+          fitnessGoal: goalStr,
+          fitnessLevel: setupLevel
+        })
+      });
+
+      const data = await res.json();
+      setIsSavingSetup(false);
+      if (res.ok) {
+        localStorage.removeItem('showProfileSetup');
+        setShowSetupModal(false);
+        alert('Hồ sơ của bạn đã được thiết lập thành công! Hãy sẵn sàng bắt đầu tập luyện.');
+      } else {
+        setSetupError(data.message || 'Cập nhật thông tin thất bại!');
+      }
+    } catch (err) {
+      setIsSavingSetup(false);
+      setSetupError('Không thể kết nối đến server!');
+    }
+  };
+
+  // Bỏ qua thiết lập hồ sơ
+  const handleSetupSkip = () => {
+    localStorage.removeItem('showProfileSetup');
+    setShowSetupModal(false);
+  };
+
   return (
     <div className="homepage-container">
       {/* ========================================== */}
@@ -106,6 +193,20 @@ function HomePage() {
               Huấn Luyện Viên
             </a>
           </li>
+          {token && (
+            <li>
+              <a
+                href="/login"
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.history.pushState({}, '', '/login');
+                  window.dispatchEvent(new Event('popstate'));
+                }}
+              >
+                Bảng Điều Khiển
+              </a>
+            </li>
+          )}
         </ul>
 
         <div className="nav-actions">
@@ -255,7 +356,7 @@ function HomePage() {
             <p className="plan-name">Gói Tháng</p>
             <div className="plan-price">
               <div className="price-amount">
-                499.000đ<span className="price-period">/tháng</span>
+                5.000đ<span className="price-period">/tháng</span>
               </div>
             </div>
             <div className="plan-divider"></div>
@@ -287,7 +388,7 @@ function HomePage() {
             <p className="plan-name featured-name">Gói 3 Tháng</p>
             <div className="plan-price">
               <div className="price-amount">
-                1.299.000đ<span className="price-period">/3 tháng</span>
+                10.000đ<span className="price-period">/3 tháng</span>
               </div>
             </div>
             <div className="plan-divider"></div>
@@ -321,7 +422,7 @@ function HomePage() {
             <p className="plan-name">Gói Năm</p>
             <div className="plan-price">
               <div className="price-amount">
-                3.999.000đ<span className="price-period">/năm</span>
+                15.000đ<span className="price-period">/năm</span>
               </div>
             </div>
             <div className="plan-divider"></div>
@@ -364,6 +465,177 @@ function HomePage() {
           <a href="#contact">Liên Hệ</a>
         </div>
       </footer>
+
+      {/* ONBOARDING PROFILE SETUP MODAL OVERLAY */}
+      {showSetupModal && (
+        <div className="setup-modal-overlay">
+          <div className="setup-modal-card animate-slide-up">
+            
+            {/* Steps indicator */}
+            <div className="setup-step-indicator">
+              BƯỚC 1 / 1 — THIẾT LẬP HỒ SƠ
+            </div>
+
+            {/* Header */}
+            <h2 className="setup-modal-title">Hãy cho chúng tôi biết về bạn</h2>
+            <p className="setup-modal-subtitle">
+              Thông tin này giúp chúng tôi tạo lộ trình luyện tập phù hợp nhất cho bạn
+            </p>
+
+            {setupError && (
+              <div className="setup-alert-error animate-fade-in">
+                <i className="fa-solid fa-circle-exclamation"></i>
+                <span>{setupError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSetupSubmit} className="setup-form">
+              
+              {/* Row for Height & Weight */}
+              <div className="setup-form-row">
+                <div className="setup-field">
+                  <label>CHIỀU CAO (CM)</label>
+                  <input
+                    type="number"
+                    placeholder="170"
+                    value={setupHeight}
+                    onChange={(e) => setSetupHeight(e.target.value)}
+                    required
+                    disabled={isSavingSetup}
+                  />
+                </div>
+                <div className="setup-field">
+                  <label>CÂN NẶNG (KG)</label>
+                  <input
+                    type="number"
+                    placeholder="65"
+                    value={setupWeight}
+                    onChange={(e) => setSetupWeight(e.target.value)}
+                    required
+                    disabled={isSavingSetup}
+                  />
+                </div>
+              </div>
+
+              {/* Gender selection */}
+              <div className="setup-field">
+                <label>GIỚI TÍNH</label>
+                <div className="setup-gender-buttons">
+                  {['Nam', 'Nữ', 'Khác'].map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      className={`setup-gender-btn ${setupGender === g ? 'active' : ''}`}
+                      onClick={() => setSetupGender(g)}
+                      disabled={isSavingSetup}
+                    >
+                      {g.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Date of Birth */}
+              <div className="setup-field">
+                <label>NGÀY SINH</label>
+                <input
+                  type="date"
+                  value={setupDob}
+                  onChange={(e) => setSetupDob(e.target.value)}
+                  required
+                  disabled={isSavingSetup}
+                />
+              </div>
+
+              {/* Fitness Goals (Multi-select tags) */}
+              <div className="setup-field">
+                <label>MỤC TIÊU LUYỆN TẬP</label>
+                <div className="setup-goal-tags">
+                  {['Giảm cân', 'Tăng cơ', 'Cải thiện sức bền', 'Linh hoạt & Dẻo dai', 'Sức khỏe tổng thể'].map((goal) => {
+                    const isSelected = setupGoals.includes(goal);
+                    return (
+                      <button
+                        key={goal}
+                        type="button"
+                        className={`setup-goal-tag ${isSelected ? 'active' : ''}`}
+                        onClick={() => toggleGoal(goal)}
+                        disabled={isSavingSetup}
+                      >
+                        {goal}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Current level selection cards */}
+              <div className="setup-field">
+                <label>CẤP ĐỘ HIỆN TẠI</label>
+                <div className="setup-level-cards">
+                  {[
+                    {
+                      name: 'Người mới bắt đầu',
+                      desc: 'Chưa từng tập hoặc tập không thường xuyên',
+                      icon: 'fa-solid fa-arrow-trend-up'
+                    },
+                    {
+                      name: 'Trung cấp',
+                      desc: 'Đã tập luyện đều đặn từ 6-12 tháng',
+                      icon: 'fa-solid fa-bolt'
+                    },
+                    {
+                      name: 'Nâng cao',
+                      desc: 'Tập luyện cường độ cao trên 1 năm',
+                      icon: 'fa-solid fa-person-running'
+                    }
+                  ].map((level) => {
+                    const isSelected = setupLevel === level.name;
+                    return (
+                      <div
+                        key={level.name}
+                        className={`setup-level-card ${isSelected ? 'active' : ''}`}
+                        onClick={() => !isSavingSetup && setSetupLevel(level.name)}
+                      >
+                        <div className="setup-level-icon-wrap">
+                          <i className={level.icon}></i>
+                        </div>
+                        <div className="setup-level-text">
+                          <h4>{level.name}</h4>
+                          <p>{level.desc}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <button
+                type="submit"
+                className="setup-submit-btn"
+                disabled={isSavingSetup}
+              >
+                {isSavingSetup ? (
+                  <>
+                    <i className="fa-solid fa-spinner fa-spin"></i> ĐANG LƯU HỒ SƠ...
+                  </>
+                ) : (
+                  'BẮT ĐẦU HÀNH TRÌNH'
+                )}
+              </button>
+
+              <button
+                type="button"
+                className="setup-skip-btn"
+                onClick={handleSetupSkip}
+                disabled={isSavingSetup}
+              >
+                BỎ QUA, THIẾT LẬP SAU
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

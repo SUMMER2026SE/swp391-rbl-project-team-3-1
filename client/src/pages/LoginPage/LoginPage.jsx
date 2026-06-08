@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './LoginPage.css';
+import MemberDashboard from '../dashboard/member/MemberDashboard';
+import TrainerDashboard from '../dashboard/trainer/TrainerDashboard';
+import AdminDashboard from '../dashboard/admin/AdminDashboard';
 
 // Helper: notify App.jsx that auth state changed (same-tab)
 const notifyAuthChange = () => window.dispatchEvent(new Event('authChange'));
@@ -36,6 +39,8 @@ function LoginPage() {
 
   // Profile fields (from server)
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [profileData, setProfileData] = useState(null);
+  const [activeTab, setActiveTab] = useState('tongquan');
 
   // Alerts
   const [loginAlert, setLoginAlert] = useState({ show: false, msg: '', ok: false });
@@ -70,8 +75,11 @@ function LoginPage() {
             if (r.ok) {
               setToken(t);
               return r.json().then((d) => {
-                if (d.profile && d.profile.avatarUrl) {
-                  setAvatarUrl(d.profile.avatarUrl);
+                if (d.profile) {
+                  setProfileData(d.profile);
+                  if (d.profile.avatarUrl) {
+                    setAvatarUrl(d.profile.avatarUrl);
+                  }
                 }
               });
             } else {
@@ -95,8 +103,11 @@ function LoginPage() {
     })
       .then((r) => r.json())
       .then((d) => {
-        if (d.profile && d.profile.avatarUrl) {
-          setAvatarUrl(d.profile.avatarUrl);
+        if (d.profile) {
+          setProfileData(d.profile);
+          if (d.profile.avatarUrl) {
+            setAvatarUrl(d.profile.avatarUrl);
+          }
         }
       })
       .catch((err) => console.error('Lỗi khi tải thông tin cá nhân:', err));
@@ -386,6 +397,51 @@ function LoginPage() {
 
   // ─── Authenticated Dashboard ───────────────────────────────────────────────
   if (token) {
+    if (userInfo?.roleId === 1) {
+      return (
+        <MemberDashboard
+          token={token}
+          userInfo={userInfo}
+          logout={logout}
+          avatarUrl={avatarUrl}
+          uploadAvatar={uploadAvatar}
+          fileInputRef={fileInputRef}
+          profileData={profileData}
+          fetchProfile={fetchProfile}
+        />
+      );
+    }
+
+    if (userInfo?.roleId === 2) {
+      return (
+        <TrainerDashboard
+          token={token}
+          userInfo={userInfo}
+          logout={logout}
+          avatarUrl={avatarUrl}
+          uploadAvatar={uploadAvatar}
+          fileInputRef={fileInputRef}
+          profileData={profileData}
+          fetchProfile={fetchProfile}
+        />
+      );
+    }
+
+    if (userInfo?.roleId === 3) {
+      return (
+        <AdminDashboard
+          token={token}
+          userInfo={userInfo}
+          logout={logout}
+          avatarUrl={avatarUrl}
+          uploadAvatar={uploadAvatar}
+          fileInputRef={fileInputRef}
+          profileData={profileData}
+          fetchProfile={fetchProfile}
+        />
+      );
+    }
+
     return (
       <div className="loginpage-container">
         <div className="dash-shell" id="dashShell">
