@@ -7,16 +7,10 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-<<<<<<< HEAD
-node_modules
-dist
-dist-ssr
-=======
 # Dependency directories
 node_modules/
 dist/
 dist-ssr/
->>>>>>> tue1
 *.local
 
 # Editor directories and files
@@ -25,11 +19,7 @@ dist-ssr/
 .idea
 .DS_Store
 *.suo
-<<<<<<< HEAD
-*.ntvs*
-=======
 *.ntvsca*
->>>>>>> tue1
 *.njsproj
 *.sln
 *.sw?
