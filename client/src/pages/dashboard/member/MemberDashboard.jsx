@@ -60,26 +60,51 @@ function MemberDashboard({
   const [newHistoryWeight, setNewHistoryWeight] = useState('');
   const [newHistoryDate, setNewHistoryDate] = useState('');
 
+  // AI Consultation state variables
+  const [aiHistory, setAiHistory] = useState([]);
+  const [aiAge, setAiAge] = useState('25');
+  const [aiGender, setAiGender] = useState('Nam');
+  const [aiHeight, setAiHeight] = useState('');
+  const [aiWeight, setAiWeight] = useState('');
+  const [aiFitnessGoal, setAiFitnessGoal] = useState('Tăng cơ');
+  const [aiConsultationType, setAiConsultationType] = useState('General Fitness');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiLoadingStep, setAiLoadingStep] = useState('');
+  const [aiResult, setAiResult] = useState(null);
+  const [aiError, setAiError] = useState('');
+
   // Synchronize edit fields when profileData loads
   useEffect(() => {
     if (profileData) {
       setEditFullName(profileData.fullName || '');
       setEditPhone(profileData.phoneNumber || '');
       setEditGender(profileData.gender || 'Nam');
+      setAiGender(profileData.gender || 'Nam');
       
       if (profileData.dateOfBirth) {
         setEditDob(profileData.dateOfBirth.split('T')[0]);
+        const birthYear = new Date(profileData.dateOfBirth).getFullYear();
+        const currentYear = new Date().getFullYear();
+        setAiAge((currentYear - birthYear).toString());
       } else {
         setEditDob('');
       }
 
       if (profileData.memberInfo) {
         // height in DB is in meters, convert to cm (multiply by 100)
-        setEditHeight(profileData.memberInfo.height ? Math.round(profileData.memberInfo.height * 100).toString() : '');
-        setEditWeight(profileData.memberInfo.weight ? profileData.memberInfo.weight.toString() : '');
+        const hCm = profileData.memberInfo.height ? Math.round(profileData.memberInfo.height * 100).toString() : '';
+        const wKg = profileData.memberInfo.weight ? profileData.memberInfo.weight.toString() : '';
+        setEditHeight(hCm);
+        setEditWeight(wKg);
+        setAiHeight(hCm);
+        setAiWeight(wKg);
         
         const goalStr = profileData.memberInfo.fitness_goal || '';
         setEditGoals(goalStr ? goalStr.split(',').map(g => g.trim()) : []);
+        if (goalStr) {
+          const firstGoal = goalStr.split(',')[0].trim();
+          setAiFitnessGoal(firstGoal);
+        }
         setEditLevel(profileData.memberInfo.fitness_level || 'Người mới bắt đầu');
         setEditEmergency(profileData.memberInfo.emergency_contact || '');
 
@@ -158,10 +183,129 @@ function MemberDashboard({
       .catch(err => console.error('Error fetching meal plans:', err));
   };
 
+  const reloadAiHistory = () => {
+    if (!token || token === 'mock-preview-token') return;
+    fetch('/api/ai/history', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.history) {
+          setAiHistory(data.history);
+        }
+      })
+      .catch(err => console.error('Error fetching AI history:', err));
+  };
+
   useEffect(() => {
     reloadMemberAppointments();
     reloadPlans();
+    reloadAiHistory();
   }, [token]);
+
+  // --- ACTIONS & HANDLERS ---
+  const handleAiConsult = async (e) => {
+    e.preventDefault();
+    setAiError('');
+    setAiResult(null);
+    setAiLoading(true);
+
+    if (!aiHeight || Number(aiHeight) <= 0) {
+      setAiError('Chiều cao không hợp lệ!');
+      setAiLoading(false);
+      return;
+    }
+    if (!aiWeight || Number(aiWeight) <= 0) {
+      setAiError('Cân nặng không hợp lệ!');
+      setAiLoading(false);
+      return;
+    }
+
+    const steps = [
+      'Đang gửi thông tin phân tích...',
+      'AI đang tính toán chỉ số cơ thể & BMI...',
+      'AI đang lập lộ trình dinh dưỡng & rèn luyện...',
+      'Đang chuẩn bị hiển thị kết quả...'
+    ];
+
+    let currentStepIdx = 0;
+    setAiLoadingStep(steps[0]);
+    const stepInterval = setInterval(() => {
+      currentStepIdx++;
+      if (currentStepIdx < steps.length) {
+        setAiLoadingStep(steps[currentStepIdx]);
+      }
+    }, 1200);
+
+    try {
+      const res = await fetch('/api/ai/consult', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          age: aiAge,
+          gender: aiGender,
+          height: aiHeight,
+          weight: aiWeight,
+          fitnessGoal: aiFitnessGoal,
+          consultationType: aiConsultationType
+        })
+      });
+
+      clearInterval(stepInterval);
+      const data = await res.json();
+      setAiLoading(false);
+
+      if (res.ok) {
+        setAiResult(data.consultation);
+        reloadAiHistory();
+      } else {
+        setAiError(data.message || 'Yêu cầu tư vấn thất bại!');
+      }
+    } catch (err) {
+      clearInterval(stepInterval);
+      setAiLoading(false);
+      setAiError('Không thể kết nối đến máy chủ AI!');
+    }
+  };
+
+  const handleApplyAiMetricsToProfile = async () => {
+    if (!aiResult) return;
+    const confirmApply = window.confirm(`Bạn có muốn áp dụng chiều cao ${aiResult.height}cm và cân nặng ${aiResult.weight}kg này vào hồ sơ chính thức của mình không?`);
+    if (confirmApply) {
+      try {
+        const heightInMeters = Number(aiResult.height) / 100;
+        const res = await fetch('/api/profile', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            fullName: editFullName,
+            phoneNumber: editPhone,
+            gender: editGender,
+            dateOfBirth: editDob,
+            height: heightInMeters,
+            weight: Number(aiResult.weight),
+            fitnessGoal: aiFitnessGoal,
+            fitnessLevel: editLevel,
+            emergencyContact: editEmergency
+          })
+        });
+        if (res.ok) {
+          alert('Cập nhật chỉ số hồ sơ thành công!');
+          fetchProfile(token);
+        } else {
+          alert('Không thể cập nhật hồ sơ!');
+        }
+      } catch (err) {
+        alert('Lỗi kết nối máy chủ khi cập nhật hồ sơ!');
+      }
+    }
+  };
 
   // --- ACTIONS & HANDLERS ---
   const handleProfileUpdate = async (e) => {
@@ -440,7 +584,15 @@ function MemberDashboard({
     return `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]} năm ${now.getFullYear()}`;
   };
 
-  const totalExs = 5;
+  // Dynamic exercises count from dbWorkoutPlans
+  let totalExs = 0;
+  dbWorkoutPlans.forEach(plan => {
+    if (plan.WorkoutExercises) {
+      totalExs += plan.WorkoutExercises.length;
+    }
+  });
+  if (totalExs === 0) totalExs = 5; // Fallback if no plans yet
+
   const completedExsCount = Object.keys(completedExercises).filter(k => completedExercises[k]).length;
   const workoutProgressPct = Math.round((completedExsCount / totalExs) * 100);
 
@@ -450,10 +602,18 @@ function MemberDashboard({
     { key: 'evening', name: 'Tối', desc: 'Salad + cá hồi', kcal: 520, carbs: '20g', protein: '35g', fat: '18g' }
   ];
   
-  const eatenKcal = mealsData.reduce((sum, meal) => {
-    return sum + (completedMeals[meal.key] ? meal.kcal : 0);
-  }, 0);
-  const targetKcal = 1620;
+  const targetKcal = dbMealPlans.length > 0
+    ? Number(dbMealPlans[0].calories_per_day) || 2000
+    : 1620;
+
+  const eatenKcal = dbMealPlans.length > 0
+    ? dbMealPlans.reduce((sum, plan) => {
+        const key = `db-meal-${plan.meal_plan_id}`;
+        return sum + (completedMeals[key] ? plan.calories_per_day : 0);
+      }, 0)
+    : mealsData.reduce((sum, meal) => {
+        return sum + (completedMeals[meal.key] ? meal.kcal : 0);
+      }, 0);
 
   const unreadNotifsCount = notifications.filter(n => n.unread).length;
 
@@ -540,15 +700,27 @@ function MemberDashboard({
                   <span className="member-link-action" onClick={() => setActiveTab('meal')}>Xem chi tiết</span>
                 </div>
                 <div className="member-menu-meal-list">
-                  {mealsData.map((meal) => (
-                    <div className="member-menu-meal-item" key={meal.key}>
-                      <div>
-                        <div className="member-meal-time">{meal.name}</div>
-                        <div className="member-meal-desc">{meal.desc}</div>
+                  {dbMealPlans.length > 0 ? (
+                    dbMealPlans.map((plan) => (
+                      <div className="member-menu-meal-item" key={plan.meal_plan_id} style={{ borderLeft: '3px solid #10b981', paddingLeft: '8px', marginBottom: '8px' }}>
+                        <div>
+                          <div className="member-meal-time" style={{ color: '#10b981', fontWeight: 'bold' }}>{plan.title}</div>
+                          <div className="member-meal-desc" style={{ fontSize: '0.8rem', color: '#64748b' }}>{plan.description}</div>
+                        </div>
+                        <div className="member-meal-kcal" style={{ minWidth: '70px', textAlign: 'right', fontWeight: 'bold' }}>{plan.calories_per_day} kcal</div>
                       </div>
-                      <div className="member-meal-kcal">{meal.kcal} kcal</div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    mealsData.map((meal) => (
+                      <div className="member-menu-meal-item" key={meal.key}>
+                        <div>
+                          <div className="member-meal-time">{meal.name}</div>
+                          <div className="member-meal-desc">{meal.desc}</div>
+                        </div>
+                        <div className="member-meal-kcal">{meal.kcal} kcal</div>
+                      </div>
+                    ))
+                  )}
                 </div>
                 <div className="member-menu-total-row">
                   <span className="member-menu-total-lbl">Tổng calories</span>
@@ -730,35 +902,14 @@ function MemberDashboard({
                   </div>
                 ))
               ) : (
-                <div className="member-workout-day-card">
-                  <h4 className="member-workout-day-title">
-                    <i className="fa-solid fa-calendar-day"></i> CHƯƠNG TRÌNH TẬP HÔM NAY (CARDIO & TOÀN THÂN - MẪU)
+                <div className="member-workout-day-card" style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
+                  <i className="fa-solid fa-dumbbell" style={{ fontSize: '2.5rem', color: '#cbd5e1', marginBottom: '16px' }}></i>
+                  <h4 className="member-workout-day-title" style={{ justifyContent: 'center' }}>
+                    Chưa có giáo án tập luyện
                   </h4>
-                  <div className="member-workout-ex-list">
-                    {[
-                      { id: 1, name: 'Chạy bộ khởi động trên máy (Treadmill)', specs: '5-10 phút | Tốc độ nhẹ nhàng' },
-                      { id: 2, name: 'Squat (Gánh đùi không tạ)', specs: '4 hiệp x 15 lần | Nghỉ 60s giữa hiệp' },
-                      { id: 3, name: 'Incline Push-up (Hít đất chống cao)', specs: '3 hiệp x 12 lần | Nghỉ 45s' },
-                      { id: 4, name: 'Dumbbell Row (Kéo tạ đôi tập lưng)', specs: '3 hiệp x 12 lần | Tạ 4-6kg mỗi bên' },
-                      { id: 5, name: 'Plank giữ cơ bụng cơ bản', specs: '3 hiệp x 45 giây | Nghỉ 60s' }
-                    ].map((ex) => (
-                      <div className={`member-workout-ex-item ${completedExercises[ex.id] ? 'completed' : ''}`} key={ex.id}>
-                        <div className="member-workout-ex-left">
-                          <input 
-                            type="checkbox" 
-                            className="member-workout-ex-checkbox"
-                            checked={!!completedExercises[ex.id]}
-                            onChange={() => toggleExercise(ex.id)}
-                          />
-                          <div>
-                            <div className="member-workout-ex-name">{ex.name}</div>
-                            <div className="member-workout-ex-specs">{ex.specs}</div>
-                          </div>
-                        </div>
-                        <i className={`fa-solid ${completedExercises[ex.id] ? 'fa-circle-check' : 'fa-circle'}`} style={{ color: completedExercises[ex.id] ? '#22c55e' : '#cbd5e1' }}></i>
-                      </div>
-                    ))}
-                  </div>
+                  <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '8px' }}>
+                    Hiện tại chưa có giáo án nào được phân công cho bạn. Vui lòng liên hệ Huấn luyện viên (PT) để được giao giáo án tập luyện.
+                  </p>
                 </div>
               )}
             </div>
@@ -780,44 +931,40 @@ function MemberDashboard({
               </div>
 
               {dbMealPlans.length > 0 ? (
-                dbMealPlans.map((plan) => (
-                  <div className="member-meal-plan-card completed" key={plan.meal_plan_id} style={{ borderLeft: '4px solid #10b981' }}>
-                    <div className="member-meal-plan-body" style={{ paddingLeft: '8px' }}>
-                      <div className="member-meal-plan-header">
-                        <span className="member-meal-plan-title" style={{ color: '#10b981', fontWeight: 'bold' }}>{plan.title}</span>
-                        <span className="member-meal-plan-kcal" style={{ background: '#d1fae5', color: '#065f46', padding: '3px 8px', borderRadius: '12px', fontSize: '0.78rem' }}>{plan.calories_per_day || 2000} kcal</span>
-                      </div>
-                      <div className="member-meal-plan-desc" style={{ marginTop: '8px', fontSize: '0.85rem', color: '#475569' }}>{plan.description}</div>
-                      <div className="member-meal-plan-nutrients" style={{ marginTop: '10px', fontSize: '0.78rem', color: '#94a3b8', display: 'flex', gap: '12px' }}>
-                        <span>HLV phân công: {plan.trainer?.user?.full_name || 'Hệ thống'}</span>
-                        <span>Ngày giao: {plan.created_at ? new Date(plan.created_at).toLocaleDateString('vi-VN') : 'Mới'}</span>
+                dbMealPlans.map((plan) => {
+                  const key = `db-meal-${plan.meal_plan_id}`;
+                  return (
+                    <div className={`member-meal-plan-card ${completedMeals[key] ? 'completed' : ''}`} key={plan.meal_plan_id} style={{ borderLeft: '4px solid #10b981' }}>
+                      <input 
+                        type="checkbox" 
+                        className="member-meal-plan-checkbox"
+                        checked={!!completedMeals[key]}
+                        onChange={() => toggleMeal(key)}
+                      />
+                      <div className="member-meal-plan-body" style={{ paddingLeft: '8px' }}>
+                        <div className="member-meal-plan-header">
+                          <span className="member-meal-plan-title" style={{ color: '#10b981', fontWeight: 'bold' }}>{plan.title}</span>
+                          <span className="member-meal-plan-kcal" style={{ background: '#d1fae5', color: '#065f46', padding: '3px 8px', borderRadius: '12px', fontSize: '0.78rem' }}>{plan.calories_per_day || 2000} kcal</span>
+                        </div>
+                        <div className="member-meal-plan-desc" style={{ marginTop: '8px', fontSize: '0.85rem', color: '#475569' }}>{plan.description}</div>
+                        <div className="member-meal-plan-nutrients" style={{ marginTop: '10px', fontSize: '0.78rem', color: '#94a3b8', display: 'flex', gap: '12px' }}>
+                          <span>HLV phân công: {plan.trainer?.user?.full_name || 'Hệ thống'}</span>
+                          <span>Ngày giao: {plan.created_at ? new Date(plan.created_at).toLocaleDateString('vi-VN') : 'Mới'}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
-                mealsData.map((meal) => (
-                  <div className={`member-meal-plan-card ${completedMeals[meal.key] ? 'completed' : ''}`} key={meal.key}>
-                    <input 
-                      type="checkbox" 
-                      className="member-meal-plan-checkbox"
-                      checked={!!completedMeals[meal.key]}
-                      onChange={() => toggleMeal(meal.key)}
-                    />
-                    <div className="member-meal-plan-body">
-                      <div className="member-meal-plan-header">
-                        <span className="member-meal-plan-title">{meal.name}</span>
-                        <span className="member-meal-plan-kcal">{meal.kcal} kcal</span>
-                      </div>
-                      <div className="member-meal-plan-desc">{meal.desc}</div>
-                      <div className="member-meal-plan-nutrients">
-                        <span>Carbs: {meal.carbs}</span>
-                        <span>Protein: {meal.protein}</span>
-                        <span>Fat: {meal.fat}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))
+                <div className="member-meal-plan-card" style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b', gridColumn: 'span 2', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <i className="fa-solid fa-utensils" style={{ fontSize: '2.5rem', color: '#cbd5e1', marginBottom: '16px' }}></i>
+                  <h4 className="member-meal-plan-title" style={{ color: '#64748b' }}>
+                    Chưa có thực đơn dinh dưỡng
+                  </h4>
+                  <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '8px' }}>
+                    Hiện tại chưa có thực đơn dinh dưỡng nào được thiết lập cho bạn. Vui lòng liên hệ Huấn luyện viên (PT) để nhận thực đơn.
+                  </p>
+                </div>
               )}
             </div>
 
@@ -1155,6 +1302,267 @@ function MemberDashboard({
           </div>
         );
 
+      case 'tuvan_ai':
+        {
+          const renderBmiGauge = (bmiVal) => {
+            let bmiPct = 50;
+            if (bmiVal < 18.5) {
+              bmiPct = (bmiVal / 18.5) * 25;
+            } else if (bmiVal >= 18.5 && bmiVal < 25) {
+              bmiPct = 25 + ((bmiVal - 18.5) / 6.5) * 35;
+            } else if (bmiVal >= 25 && bmiVal < 30) {
+              bmiPct = 60 + ((bmiVal - 25) / 5) * 20;
+            } else {
+              bmiPct = 80 + Math.min(((bmiVal - 30) / 10) * 20, 20);
+            }
+
+            let bmiFeedback = 'Cân nặng bình thường';
+            let bmiFeedbackColor = '#10b981';
+            if (bmiVal < 18.5) {
+              bmiFeedback = 'Hơi gầy - Cần bổ sung dinh dưỡng';
+              bmiFeedbackColor = '#3b82f6';
+            } else if (bmiVal >= 25 && bmiVal < 30) {
+              bmiFeedback = 'Thừa cân - Nên duy trì thâm hụt calo nhẹ';
+              bmiFeedbackColor = '#f59e0b';
+            } else if (bmiVal >= 30) {
+              bmiFeedback = 'Béo phì - Cần kiểm soát ăn uống & nâng tập';
+              bmiFeedbackColor = '#ef4444';
+            }
+
+            return (
+              <div className="member-card-panel" style={{ marginTop: '20px' }}>
+                <h3 className="member-card-title">Chỉ số BMI tư vấn</h3>
+                <div style={{ textAlign: 'center', marginTop: '20px' }}>
+                  <span style={{ fontSize: '3rem', fontWeight: 900, color: bmiFeedbackColor }}>{bmiVal}</span>
+                  <div style={{ fontWeight: 700, color: bmiFeedbackColor, marginTop: '4px' }}>{bmiFeedback}</div>
+                </div>
+
+                <div className="member-bmi-indicator-bar">
+                  <div className="member-bmi-pointer" style={{ left: `${bmiPct}%` }}></div>
+                </div>
+                <div className="member-bmi-labels">
+                  <span>Gầy (&lt;18.5)</span>
+                  <span>Bình thường (18.5-25)</span>
+                  <span>Béo phì (&gt;30)</span>
+                </div>
+              </div>
+            );
+          };
+
+          return (
+            <div className="member-ai-consultation-layout">
+              {/* Form & Current result column */}
+              <div className="ai-main-column">
+                <div className="member-card-panel">
+                  <div className="member-card-header" style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '16px' }}>
+                    <h3 className="member-card-title">
+                      <i className="fa-solid fa-robot" style={{ marginRight: '8px', color: 'var(--orange)' }}></i>
+                      Trợ lý Sức khỏe AI thông minh
+                    </h3>
+                  </div>
+
+                  {aiError && (
+                    <div className="alert err" style={{ display: 'flex', marginTop: '16px' }}>
+                      <i className="fa-solid fa-circle-exclamation"></i>
+                      <span>{aiError}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleAiConsult} className="ai-consult-form" style={{ marginTop: '20px' }}>
+                    <div className="member-form-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
+                      <div className="member-form-group">
+                        <label className="member-form-label">Tuổi (năm)</label>
+                        <input 
+                          type="number" 
+                          className="member-form-input" 
+                          value={aiAge} 
+                          onChange={(e) => setAiAge(e.target.value)} 
+                          required
+                          disabled={aiLoading}
+                        />
+                      </div>
+                      <div className="member-form-group">
+                        <label className="member-form-label">Giới tính</label>
+                        <select 
+                          className="member-form-select" 
+                          value={aiGender} 
+                          onChange={(e) => setAiGender(e.target.value)}
+                          disabled={aiLoading}
+                        >
+                          <option value="Nam">Nam</option>
+                          <option value="Nữ">Nữ</option>
+                          <option value="Khác">Khác</option>
+                        </select>
+                      </div>
+                      <div className="member-form-group">
+                        <label className="member-form-label">Chiều cao (cm)</label>
+                        <input 
+                          type="number" 
+                          className="member-form-input" 
+                          placeholder="170" 
+                          value={aiHeight} 
+                          onChange={(e) => setAiHeight(e.target.value)} 
+                          required
+                          disabled={aiLoading}
+                        />
+                      </div>
+                      <div className="member-form-group">
+                        <label className="member-form-label">Cân nặng (kg)</label>
+                        <input 
+                          type="number" 
+                          className="member-form-input" 
+                          placeholder="65" 
+                          value={aiWeight} 
+                          onChange={(e) => setAiWeight(e.target.value)} 
+                          required
+                          disabled={aiLoading}
+                        />
+                      </div>
+                      <div className="member-form-group">
+                        <label className="member-form-label">Mục tiêu luyện tập</label>
+                        <select 
+                          className="member-form-select" 
+                          value={aiFitnessGoal} 
+                          onChange={(e) => setAiFitnessGoal(e.target.value)}
+                          disabled={aiLoading}
+                        >
+                          <option value="Giảm cân">Giảm cân</option>
+                          <option value="Tăng cơ">Tăng cơ</option>
+                          <option value="Cải thiện sức bền">Cải thiện sức bền</option>
+                          <option value="Linh hoạt & Dẻo dai">Linh hoạt & Dẻo dai</option>
+                          <option value="Sức khỏe tổng thể">Sức khỏe tổng thể</option>
+                        </select>
+                      </div>
+                      <div className="member-form-group">
+                        <label className="member-form-label">Phương thức tư vấn</label>
+                        <select 
+                          className="member-form-select" 
+                          value={aiConsultationType} 
+                          onChange={(e) => setAiConsultationType(e.target.value)}
+                          disabled={aiLoading}
+                        >
+                          <option value="BMI">Chỉ số BMI thể chất</option>
+                          <option value="General Fitness">Luyện tập thể hình</option>
+                          <option value="Weight Loss">Kế hoạch giảm mỡ</option>
+                          <option value="Muscle Gain">Kế hoạch tăng cơ</option>
+                          <option value="Relaxation">Yoga & Phục hồi</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <button 
+                      type="submit" 
+                      className="member-btn-submit" 
+                      style={{ width: '100%', marginTop: '20px', padding: '12px' }}
+                      disabled={aiLoading}
+                    >
+                      {aiLoading ? (
+                        <span><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px' }}></i> Đang xử lý...</span>
+                      ) : 'Nhận tư vấn sức khỏe từ AI'}
+                    </button>
+                  </form>
+                </div>
+
+                {aiLoading && (
+                  <div className="member-card-panel" style={{ marginTop: '20px', textAlign: 'center', padding: '40px 20px' }}>
+                    <div className="ai-pulse-loader">
+                      <i className="fa-solid fa-robot fa-bounce" style={{ fontSize: '3rem', color: 'var(--orange)' }}></i>
+                    </div>
+                    <h4 style={{ marginTop: '20px', color: '#1e293b' }}>{aiLoadingStep}</h4>
+                    <p style={{ color: '#94a3b8', fontSize: '0.86rem', marginTop: '8px' }}>Quá trình phân tích chỉ số có thể mất vài giây...</p>
+                  </div>
+                )}
+
+                {aiResult && !aiLoading && (
+                  <div className="ai-results-wrapper animate-slide-up" style={{ marginTop: '20px' }}>
+                    {renderBmiGauge(Number(aiResult.bmi))}
+
+                    <div className="member-stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginTop: '20px', gap: '16px' }}>
+                      <div className="member-stat-card" style={{ borderLeft: '4px solid var(--orange)' }}>
+                        <span className="member-stat-label">Môn thể thao khuyên dùng</span>
+                        <span className="member-stat-value" style={{ fontSize: '1.25rem', marginTop: '10px', color: '#1e293b' }}>{aiResult.recommended_sport}</span>
+                        <i className="fa-solid fa-person-running member-stat-icon"></i>
+                      </div>
+                      <div className="member-stat-card" style={{ borderLeft: '4px solid #10b981' }}>
+                        <span className="member-stat-label">Gói tập đề xuất</span>
+                        <span className="member-stat-value" style={{ fontSize: '1.25rem', marginTop: '10px', color: '#1e293b' }}>{aiResult.recommended_membership}</span>
+                        <i className="fa-solid fa-address-card member-stat-icon"></i>
+                      </div>
+                    </div>
+
+                    <div className="member-card-panel" style={{ marginTop: '20px' }}>
+                      <h4 className="member-card-title"><i className="fa-solid fa-calendar-alt" style={{ marginRight: '8px', color: 'var(--orange)' }}></i>Lịch trình rèn luyện tuần gợi ý</h4>
+                      <p style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', marginTop: '12px', fontSize: '0.9rem', color: '#334155', fontWeight: '500', borderLeft: '3px solid var(--orange)' }}>
+                        {aiResult.recommended_schedule}
+                      </p>
+                    </div>
+
+                    <div className="member-card-panel" style={{ marginTop: '20px' }}>
+                      <h4 className="member-card-title"><i className="fa-solid fa-heart-pulse" style={{ marginRight: '8px', color: '#ef4444' }}></i>Lời khuyên chi tiết từ AI</h4>
+                      <p style={{ marginTop: '12px', fontSize: '0.9rem', color: '#475569', lineHeight: '1.6', textAlign: 'justify' }}>
+                        {aiResult.recommendation_detail}
+                      </p>
+                    </div>
+
+                    <button 
+                      onClick={handleApplyAiMetricsToProfile} 
+                      className="member-btn-submit" 
+                      style={{ width: '100%', marginTop: '20px', backgroundColor: '#3b82f6', border: 'none', padding: '12px' }}
+                    >
+                      <i className="fa-solid fa-user-check" style={{ marginRight: '8px' }}></i> Áp dụng chỉ số cơ thể vào Hồ sơ chính thức
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* History Sidebar column */}
+              <div className="ai-history-column">
+                <div className="member-card-panel" style={{ height: '100%', minHeight: '350px' }}>
+                  <h3 className="member-card-title" style={{ marginBottom: '16px', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px' }}>
+                    <i className="fa-solid fa-clock-rotate-left" style={{ marginRight: '8px', color: '#64748b' }}></i>
+                    Lịch sử tư vấn
+                  </h3>
+                  <div className="ai-history-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '550px', overflowY: 'auto' }}>
+                    {aiHistory.map((item, idx) => (
+                      <div 
+                        key={item.id || idx} 
+                        className={`ai-history-item ${aiResult?.id === item.id ? 'active' : ''}`}
+                        onClick={() => {
+                          setAiResult({
+                            id: item.id,
+                            bmi: item.bmi,
+                            height: item.height,
+                            weight: item.weight,
+                            recommended_sport: item.recommendedSport,
+                            recommended_membership: item.recommendedMembership,
+                            recommended_schedule: item.recommendedSchedule,
+                            recommendation_detail: item.recommendationDetail
+                          });
+                        }}
+                        style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s ease-in-out' }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#64748b' }}>
+                          <span>{new Date(item.createdAt).toLocaleDateString('vi-VN')}</span>
+                          <span style={{ fontWeight: '600', color: 'var(--orange)' }}>{item.consultationType}</span>
+                        </div>
+                        <div style={{ fontWeight: 'bold', marginTop: '6px', fontSize: '0.86rem', color: '#1e293b' }}>
+                          BMI: {item.bmi} ({item.weight}kg / {item.height}cm)
+                        </div>
+                        <div style={{ fontSize: '0.76rem', color: '#475569', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          Môn: {item.recommendedSport}
+                        </div>
+                      </div>
+                    ))}
+                    {aiHistory.length === 0 && (
+                      <div style={{ color: '#94a3b8', fontSize: '0.86rem', textAlign: 'center', marginTop: '30px' }}>Chưa có lịch sử tư vấn nào</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
       default:
         return <div>Vui lòng chọn tab hợp lệ.</div>;
     }
@@ -1242,6 +1650,14 @@ function MemberDashboard({
                 onClick={() => setActiveTab('tiendo')}
               >
                 <i className="fa-solid fa-person-running"></i> Tiến độ
+              </button>
+            </li>
+            <li>
+              <button 
+                className={`member-menu-item ${activeTab === 'tuvan_ai' ? 'active' : ''}`}
+                onClick={() => setActiveTab('tuvan_ai')}
+              >
+                <i className="fa-solid fa-robot" style={{ color: 'var(--orange)' }}></i> Tư vấn AI
               </button>
             </li>
             <li>

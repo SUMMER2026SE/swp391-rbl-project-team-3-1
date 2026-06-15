@@ -1244,6 +1244,18 @@
   background-color: #fff8f1;
 }
 
+.trainer-template-card.active {
+  border-color: var(--orange);
+  background-color: #fff8f1;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
+}
+
+.trainer-template-card.active-meal {
+  border-color: #10b981;
+  background-color: #f0fdf4;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+
 .trainer-template-card-title {
   font-size: 0.9rem;
   font-weight: 850;
@@ -1385,4 +1397,78 @@
   .trainer-banner-right {
     max-width: 100%;
   }
+}
+
+/* --- Success Notification Modal --- */
+.trainer-success-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.trainer-success-modal-box {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  width: 320px;
+  text-align: center;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  animation: scaleUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.trainer-success-modal-icon {
+  font-size: 3rem;
+  color: #10b981;
+  margin-bottom: 12px;
+}
+
+.trainer-success-modal-title {
+  font-size: 1.15rem;
+  font-weight: 850;
+  color: #0f172a;
+  margin: 0 0 8px 0;
+}
+
+.trainer-success-modal-msg {
+  font-size: 0.88rem;
+  color: #64748b;
+  margin: 0 0 20px 0;
+  line-height: 1.4;
+}
+
+.trainer-success-modal-btn {
+  width: 100%;
+  padding: 10px;
+  background-color: var(--orange);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.trainer-success-modal-btn:hover {
+  background-color: var(--orange-dk);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleUp {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }

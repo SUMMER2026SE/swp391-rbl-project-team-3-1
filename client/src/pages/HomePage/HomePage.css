@@ -434,9 +434,9 @@
 
 .services-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 24px;
-    max-width: 1000px;
+    max-width: 1140px;
     margin: 0 auto;
 }
 
@@ -861,6 +861,7 @@
     letter-spacing: 1px;
 }
 
+.setup-field input[type="text"],
 .setup-field input[type="number"],
 .setup-field input[type="date"] {
     width: 100%;
@@ -875,11 +876,38 @@
     background: var(--gray-50);
 }
 
+.setup-field input[type="text"]:focus,
 .setup-field input[type="number"]:focus,
 .setup-field input[type="date"]:focus {
     border-color: var(--orange);
     background: var(--white);
     box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
+}
+
+/* Floating Close Button for Modals */
+.modal-close-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: transparent;
+    border: none;
+    font-size: 1.3rem;
+    color: var(--gray-400);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    z-index: 10;
+}
+
+.modal-close-btn:hover {
+    background: var(--gray-100);
+    color: var(--orange);
+    transform: rotate(90deg);
 }
 
 /* Gender Selection Buttons */
@@ -1114,3 +1142,40 @@
 .setup-modal-card::-webkit-scrollbar-thumb:hover {
     background: var(--gray-400);
 }
+
+/* --- Guest AI Consultation Styles & Keyframes --- */
+.ai-pulse-loader {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    background: #fff6ed;
+    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4);
+    animation: pulse-orange 1.8s infinite;
+}
+
+@keyframes pulse-orange {
+    0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.7);
+    }
+    70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 15px rgba(249, 115, 22, 0);
+    }
+    100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(249, 115, 22, 0);
+    }
+}
+
+/* Tablet view adjustment for services grid */
+@media (max-width: 1100px) and (min-width: 901px) {
+    .services-grid {
+        grid-template-columns: repeat(2, 1fr);
+        max-width: 680px;
+    }
+}
+

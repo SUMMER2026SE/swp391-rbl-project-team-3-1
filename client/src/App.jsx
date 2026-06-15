@@ -5,6 +5,9 @@ import CheckoutPage from './pages/CheckoutPage/CheckoutPage';
 import MemberDashboard from './pages/dashboard/member/MemberDashboard';
 import TrainerDashboard from './pages/dashboard/trainer/TrainerDashboard';
 import AdminDashboard from './pages/dashboard/admin/AdminDashboard';
+import GymDetail from './pages/detail/GymDetail';
+import YogaDetail from './pages/detail/YogaDetail';
+import PtDetail from './pages/detail/PtDetail';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -35,6 +38,9 @@ function App() {
 
   if (currentPath === '/login') return <LoginPage />;
   if (currentPath === '/checkout') return <CheckoutPage />;
+  if (currentPath === '/detail/gym') return <GymDetail />;
+  if (currentPath === '/detail/yoga') return <YogaDetail />;
+  if (currentPath === '/detail/pt') return <PtDetail />;
   
   // Developer preview routes for dashboards without login
   if (currentPath === '/trainer-dashboard') {

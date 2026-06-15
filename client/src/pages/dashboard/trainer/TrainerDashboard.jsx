@@ -67,6 +67,7 @@ function TrainerDashboard({
   // Assign plans builders inputs
   const [customWorkoutName, setCustomWorkoutName] = useState('');
   const [customMealName, setCustomMealName] = useState('');
+  const [successModal, setSuccessModal] = useState({ show: false, message: '' });
 
   // Fetch Trainer dashboard data from backend
   const reloadTrainerDashboardData = () => {
@@ -340,7 +341,10 @@ function TrainerDashboard({
     })
       .then(res => res.json())
       .then(data => {
-        alert(data.message || `Đã giao giáo án "${templateName}"!`);
+        setSuccessModal({
+          show: true,
+          message: data.message || `Đã giao giáo án "${templateName}" thành công!`
+        });
         reloadTrainerDashboardData();
       })
       .catch(err => console.error('Error assigning workout:', err));
@@ -366,7 +370,10 @@ function TrainerDashboard({
     })
       .then(res => res.json())
       .then(data => {
-        alert(data.message || `Đã giao thực đơn "${templateName}"!`);
+        setSuccessModal({
+          show: true,
+          message: data.message || `Đã giao thực đơn "${templateName}" thành công!`
+        });
         reloadTrainerDashboardData();
       })
       .catch(err => console.error('Error assigning meal:', err));
@@ -693,8 +700,8 @@ function TrainerDashboard({
                         ].map((temp, idx) => (
                           <div 
                             key={idx} 
-                            className="trainer-template-card"
-                            onClick={() => handleAssignWorkoutTemplate(temp.title)}
+                            className={`trainer-template-card ${customWorkoutName === temp.title ? 'active' : ''}`}
+                            onClick={() => setCustomWorkoutName(temp.title)}
                           >
                             <div className="trainer-template-card-title">{temp.title}</div>
                             <div className="trainer-template-card-desc">{temp.desc}</div>
@@ -729,8 +736,8 @@ function TrainerDashboard({
                         ].map((temp, idx) => (
                           <div 
                             key={idx} 
-                            className="trainer-template-card"
-                            onClick={() => handleAssignMealTemplate(temp.title)}
+                            className={`trainer-template-card ${customMealName === temp.title ? 'active-meal' : ''}`}
+                            onClick={() => setCustomMealName(temp.title)}
                           >
                             <div className="trainer-template-card-title">{temp.title}</div>
                             <div className="trainer-template-card-desc">{temp.desc}</div>
@@ -1250,6 +1257,21 @@ function TrainerDashboard({
         {/* Active view */}
         {renderTabContent()}
       </main>
+
+      {successModal.show && (
+        <div className="trainer-success-modal-overlay">
+          <div className="trainer-success-modal-box">
+            <div className="trainer-success-modal-icon">
+              <i className="fa-solid fa-circle-check"></i>
+            </div>
+            <h4 className="trainer-success-modal-title">Giao thành công!</h4>
+            <p className="trainer-success-modal-msg">{successModal.message}</p>
+            <button className="trainer-success-modal-btn" onClick={() => setSuccessModal({ show: false, message: '' })}>
+              Đồng ý
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
