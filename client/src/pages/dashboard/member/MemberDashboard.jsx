@@ -37,6 +37,10 @@ function MemberDashboard({
   const [bookingNote, setBookingNote] = useState('');
   const [isBookingLoading, setIsBookingLoading] = useState(false);
 
+  // Active trainers list & chosen trainer state
+  const [trainersList, setTrainersList] = useState([]);
+  const [selectedTrainerId, setSelectedTrainerId] = useState('');
+
   // Password change states
   const [cpwOld, setCpwOld] = useState('');
   const [cpwNew, setCpwNew] = useState('');
@@ -158,9 +162,27 @@ function MemberDashboard({
       .catch(err => console.error('Error fetching meal plans:', err));
   };
 
+  const fetchTrainers = () => {
+    if (!token || token === 'mock-preview-token') return;
+    fetch('/api/checkout/trainers', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.trainers) {
+          setTrainersList(data.trainers);
+          if (data.trainers.length > 0) {
+            setSelectedTrainerId(data.trainers[0].trainerId);
+          }
+        }
+      })
+      .catch(err => console.error('Error fetching trainers:', err));
+  };
+
   useEffect(() => {
     reloadMemberAppointments();
     reloadPlans();
+    fetchTrainers();
   }, [token]);
 
   // --- ACTIONS & HANDLERS ---
@@ -246,7 +268,8 @@ function MemberDashboard({
         date: bookingDate,
         time: bookingTime,
         type: bookingType,
-        note: bookingNote
+        note: bookingNote,
+        trainerId: selectedTrainerId
       })
     })
       .then(res => {
@@ -508,14 +531,14 @@ function MemberDashboard({
                       </tr>
                     </thead>
                     <tbody>
-                      {appointmentsList.filter(a => a.status !== 'cancelled').slice(0, 4).map((ap) => (
+                      {appointmentsList.filter(a => a.status !== 'cancelled' && a.status !== 'rejected').slice(0, 4).map((ap) => (
                         <tr key={ap.id}>
                           <td>{ap.time}</td>
                           <td>{ap.trainer}</td>
                           <td>{ap.type}</td>
                           <td>
                             <span className={`member-badge-status ${ap.status}`}>
-                              {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : 'Đã hủy'}
+                              {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : ap.status === 'rejected' ? 'Bị từ chối' : 'Đã hủy'}
                             </span>
                           </td>
                           <td>
@@ -523,7 +546,7 @@ function MemberDashboard({
                           </td>
                         </tr>
                       ))}
-                      {appointmentsList.filter(a => a.status !== 'cancelled').length === 0 && (
+                      {appointmentsList.filter(a => a.status !== 'cancelled' && a.status !== 'rejected').length === 0 && (
                         <tr>
                           <td colSpan="5" className="member-no-data">Không có lịch hẹn nào sắp tới</td>
                         </tr>
@@ -596,6 +619,25 @@ function MemberDashboard({
                   </select>
                 </div>
                 <div className="member-form-group">
+                  <label className="member-form-label">Chọn Huấn Luyện Viên (PT)</label>
+                  <select 
+                    className="member-form-select" 
+                    value={selectedTrainerId} 
+                    onChange={(e) => setSelectedTrainerId(e.target.value)}
+                    required
+                  >
+                    {trainersList.length > 0 ? (
+                      trainersList.map(t => (
+                        <option key={t.trainerId} value={t.trainerId}>
+                          {t.fullName} ({t.specialization})
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">Đang tải danh sách HLV...</option>
+                    )}
+                  </select>
+                </div>
+                <div className="member-form-group">
                   <label className="member-form-label">Loại hình tập luyện</label>
                   <select 
                     className="member-form-select" 
@@ -650,11 +692,11 @@ function MemberDashboard({
                         <td>{ap.type}</td>
                         <td>
                           <span className={`member-badge-status ${ap.status}`}>
-                            {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : 'Đã hủy'}
+                            {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : ap.status === 'rejected' ? 'Bị từ chối' : 'Đã hủy'}
                           </span>
                         </td>
                         <td>
-                          {ap.status !== 'cancelled' ? (
+                          {ap.status !== 'cancelled' && ap.status !== 'rejected' ? (
                             <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
                           ) : (
                             <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Đã đóng</span>

@@ -672,8 +672,8 @@ function AdminDashboard({ token, userInfo, logout }) {
                       <td>{app.time}</td>
                       <td>{app.date}</td>
                       <td>
-                        <span className={`admin-complaint-status-badge ${app.status.toLowerCase() === 'scheduled' ? 'pending' : app.status.toLowerCase() === 'completed' ? 'resolved' : 'cancelled'}`}>
-                          {app.status === 'Scheduled' ? 'Đã lên lịch' : app.status === 'Completed' ? 'Đã hoàn thành' : 'Đã hủy'}
+                        <span className={`admin-complaint-status-badge ${app.status.toLowerCase() === 'scheduled' ? 'pending' : app.status.toLowerCase() === 'completed' ? 'resolved' : app.status.toLowerCase() === 'rejected' ? 'rejected' : 'cancelled'}`}>
+                          {app.status === 'Scheduled' ? 'Đã lên lịch' : app.status === 'Completed' ? 'Đã hoàn thành' : app.status === 'Rejected' ? 'Bị từ chối' : 'Đã hủy'}
                         </span>
                       </td>
                       <td>

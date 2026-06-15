@@ -1165,6 +1165,12 @@
   color: #b91c1c;
 }
 
+.admin-complaint-status-badge.rejected {
+  background-color: #fce8e6;
+  color: #c53030;
+  border: 1px solid #feb2b2;
+}
+
 .admin-complaint-actions {
   display: flex;
   flex-direction: column;
