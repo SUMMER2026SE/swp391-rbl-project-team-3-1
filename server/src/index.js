@@ -85,3 +85,11 @@ app.use('/api/workout-plans', workoutRoutes);
 // Mount meal routes
 const mealRoutes = require('./routes/mealRoutes');
 app.use('/api/meal-plans', mealRoutes);
+
+// Mount certification routes
+const certificationRoutes = require('./routes/certificationRoutes');
+app.use('/api/certifications', certificationRoutes);
+
+// Mount progress tracking routes
+const progressRoutes = require('./routes/progressRoutes');
+app.use('/api/progress', progressRoutes);

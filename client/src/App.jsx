@@ -6,12 +6,18 @@ import MemberDashboard from './pages/dashboard/member/MemberDashboard';
 import TrainerDashboard from './pages/dashboard/trainer/TrainerDashboard';
 import AdminDashboard from './pages/dashboard/admin/AdminDashboard';
 
+import VerifyEmailPage from './pages/VerifyEmailPage/VerifyEmailPage';
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [currentSearch, setCurrentSearch] = useState(window.location.search);
 
   useEffect(() => {
-    const handleLocationChange = () => setCurrentPath(window.location.pathname);
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname);
+      setCurrentSearch(window.location.search);
+    };
     window.addEventListener('popstate', handleLocationChange);
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
@@ -33,6 +39,10 @@ function App() {
     };
   }, []);
 
+  const urlParams = new URLSearchParams(currentSearch);
+  const isVerifyEmail = urlParams.get('action') === 'verify-email';
+
+  if (isVerifyEmail) return <VerifyEmailPage />;
   if (currentPath === '/login') return <LoginPage />;
   if (currentPath === '/checkout') return <CheckoutPage />;
   

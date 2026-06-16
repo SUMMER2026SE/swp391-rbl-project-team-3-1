@@ -287,8 +287,14 @@ exports.createTrainer = async (req, res) => {
 
     await transaction.commit();
 
+    // Send email notification to trainer (async, non-blocking)
+    const { sendTrainerAccountEmail } = require('../utils/emailService');
+    sendTrainerAccountEmail(email, name, '123456').catch(err => {
+      console.error('⚠️ Gửi email thông báo PT thất bại:', err.message);
+    });
+
     return res.status(201).json({
-      message: 'Tạo tài khoản PT thành công! Mật khẩu mặc định là: 123456',
+      message: 'Tạo tài khoản PT thành công! Email thông báo đã được gửi đến ' + email,
       user: {
         id: newUser.user_id,
         name: newUser.full_name,

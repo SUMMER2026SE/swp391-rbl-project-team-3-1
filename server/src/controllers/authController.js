@@ -364,4 +364,89 @@ exports.firstTimeChangePassword = async (req, res) => {
     }
 };
 
+// =====================================================
+// 8. XÁC THỰC EMAIL (Email Verification)
+// GET /api/auth/verify-email?token=...
+// =====================================================
+exports.verifyEmail = async (req, res) => {
+    try {
+        const { token } = req.query;
+
+        if (!token) {
+            return res.status(400).json({ message: 'Thiếu mã xác thực!' });
+        }
+
+        // Verify JWT token
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET || 'BiMatSieuCap_SWP391');
+        } catch (err) {
+            return res.status(400).json({ message: 'Link xác thực đã hết hạn hoặc không hợp lệ!' });
+        }
+
+        const user = await models.Users.findByPk(decoded.userId);
+        if (!user) {
+            return res.status(404).json({ message: 'Không tìm thấy người dùng!' });
+        }
+
+        if (user.status === 'Active') {
+            return res.status(200).json({ message: 'Tài khoản đã được xác thực trước đó!', alreadyVerified: true });
+        }
+
+        // Verify token matches
+        if (user.email_verification_token !== token) {
+            return res.status(400).json({ message: 'Mã xác thực không hợp lệ!' });
+        }
+
+        // Activate the account
+        await user.update({
+            status: 'Active',
+            email_verification_token: null
+        });
+
+        // Send welcome email with plan details
+        const { sendWelcomeEmail } = require('../utils/emailService');
+        try {
+            // Get member and membership info
+            const member = await models.Members.findOne({
+                where: { user_id: user.user_id },
+                include: [{
+                    model: models.MemberMemberships,
+                    as: 'MemberMemberships',
+                    include: [{ model: models.MembershipPlans, as: 'membership_plan' }]
+                }]
+            });
+
+            if (member) {
+                const activeMembership = member.MemberMemberships?.find(m => m.membership_status === 'Active');
+                if (activeMembership && activeMembership.membership_plan) {
+                    const plan = activeMembership.membership_plan;
+                    const formatDate = (d) => {
+                        const date = new Date(d);
+                        return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+                    };
+                    const formatPrice = (p) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p);
+
+                    await sendWelcomeEmail(user.email, user.full_name, plan.plan_name, {
+                        duration: plan.duration_months,
+                        price: formatPrice(plan.price),
+                        startDate: formatDate(activeMembership.start_date),
+                        endDate: formatDate(activeMembership.end_date)
+                    });
+                }
+            }
+        } catch (emailErr) {
+            console.error('⚠️ Gửi email chào mừng thất bại:', emailErr.message);
+        }
+
+        return res.status(200).json({
+            message: 'Xác thực email thành công! Tài khoản đã được kích hoạt. Bạn có thể đăng nhập ngay.',
+            verified: true
+        });
+    } catch (error) {
+        console.error('❌ Lỗi xác thực email:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi xác thực email!', error: error.message });
+    }
+};
+
 

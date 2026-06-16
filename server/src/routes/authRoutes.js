@@ -17,4 +17,7 @@ router.post('/change-password', authMiddleware, authController.changePassword);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password', authController.resetPassword);
 
+// 4. Xác thực email
+router.get('/verify-email', authController.verifyEmail);
+
 module.exports = router;

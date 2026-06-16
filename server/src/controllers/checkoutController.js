@@ -2,6 +2,7 @@ const { models, sequelize } = require('../config/db');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const { sendVerificationEmail } = require('../utils/emailService');
 
 const PAYOS_CONFIG = {
     clientId: process.env.PAYOS_CLIENT_ID || '9dee94bc-3ae5-4281-b1b2-68d9a92ba510',
@@ -148,6 +149,32 @@ exports.getPlans = async (req, res) => {
 };
 
 // =====================================================
+// 2b. LẤY DANH SÁCH DỊCH VỤ (PUBLIC)
+// GET /api/checkout/services
+// =====================================================
+exports.getServices = async (req, res) => {
+    try {
+        const services = await models.Services.findAll({
+            where: { status: 'Active' },
+            order: [['price', 'ASC']]
+        });
+
+        const result = services.map(s => ({
+            serviceId: s.service_id,
+            serviceName: s.service_name,
+            sportType: s.sport_type,
+            price: parseFloat(s.price),
+            description: s.description,
+        }));
+
+        return res.status(200).json({ services: result });
+    } catch (error) {
+        console.error('❌ Lỗi lấy dịch vụ:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi lấy dịch vụ!', error: error.message });
+    }
+};
+
+// =====================================================
 // 3. ĐĂNG KÝ VÀ THANH TOÁN CHO GUEST (PUBLIC)
 // POST /api/checkout/guest-register-checkout
 // =====================================================
@@ -246,7 +273,7 @@ exports.getPayosStatus = async (req, res) => {
 exports.guestCheckoutAndRegister = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const { email, phoneNumber, password, planId, trainerId, payosOrderCode } = req.body;
+        const { email, fullName, phoneNumber, password, planId, trainerId, serviceIds, payosOrderCode } = req.body;
 
         // 1. Validate input
         if (!email || !password || !planId) {
@@ -273,8 +300,6 @@ exports.guestCheckoutAndRegister = async (req, res) => {
         try {
             payosPayment = await ensurePayosPaid(payosOrderCode, amount);
         } catch (payosError) {
-            // Nếu đang dev local và PayOS không verify được, vẫn cho phép tiếp tục
-            // XÓA đoạn này khi lên production!
             if (process.env.NODE_ENV === 'production') {
                 await t.rollback();
                 return res.status(400).json({
@@ -290,7 +315,6 @@ exports.guestCheckoutAndRegister = async (req, res) => {
         if (trainerId) {
             trainerRecord = await models.Trainers.findOne({ where: { user_id: trainerId } });
             if (!trainerRecord) {
-                // Fallback, check if trainerId is trainer_id
                 trainerRecord = await models.Trainers.findByPk(trainerId);
             }
             if (!trainerRecord) {
@@ -299,37 +323,51 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             }
         }
 
-        // 5. Create new User with status 'Active'
+        // 5. Create verification token
+        const verificationToken = jwt.sign(
+            { userId: null, email: email, purpose: 'email-verification' },
+            process.env.JWT_SECRET || 'BiMatSieuCap_SWP391',
+            { expiresIn: '24h' }
+        );
+
+        // 6. Create new User with status 'PendingVerification'
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(password, salt);
 
-        // Derive full name from email prefix
-        const emailPrefix = email.split('@')[0];
-        const fullName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
+        const derivedName = fullName || (email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1));
 
         const newUser = await models.Users.create({
-            full_name: fullName,
+            full_name: derivedName,
             email: email,
             password_hash: passwordHash,
             phone_number: phoneNumber || null,
-            role_id: 1, // Member
-            status: 'Active',
-            must_change_password: false
+            role_id: 1,
+            status: 'Inactive',
+            must_change_password: false,
+            email_verification_token: verificationToken
         }, { transaction: t });
 
-        // 6. Create Member profile
+        // Update verification token with real userId
+        const realToken = jwt.sign(
+            { userId: newUser.user_id, email: email, purpose: 'email-verification' },
+            process.env.JWT_SECRET || 'BiMatSieuCap_SWP391',
+            { expiresIn: '24h' }
+        );
+        await newUser.update({ email_verification_token: realToken }, { transaction: t });
+
+        // 7. Create Member profile
         const newMember = await models.Members.create({
             user_id: newUser.user_id,
             joined_date: formatDateToYYYYMMDD(new Date())
         }, { transaction: t });
 
-        // 7. Calculate membership start and end date
+        // 8. Calculate membership dates
         const startDate = new Date();
         const durationMonths = parseInt(plan.duration_months) || 1;
         const endDate = new Date();
         endDate.setMonth(endDate.getMonth() + durationMonths);
 
-        // 8. Create MemberMembership
+        // 9. Create MemberMembership
         await models.MemberMemberships.create({
             member_id: newMember.member_id,
             membership_plan_id: plan.membership_plan_id,
@@ -338,7 +376,7 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             membership_status: 'Active'
         }, { transaction: t });
 
-        // 9. Record Payment
+        // 10. Record Payment
         const transactionCode = payosPayment.orderCode || payosOrderCode || `FXGUEST-${Date.now()}`;
         await models.Payments.create({
             member_id: newMember.member_id,
@@ -349,7 +387,7 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             transaction_code: transactionCode
         }, { transaction: t });
 
-        // 10. Link trainer in WorkoutPlans if trainer is selected
+        // 11. Link trainer
         if (trainerRecord) {
             await models.WorkoutPlans.create({
                 trainer_id: trainerRecord.trainer_id,
@@ -359,20 +397,41 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             }, { transaction: t });
         }
 
+        // 12. Register services if selected
+        if (serviceIds && Array.isArray(serviceIds) && serviceIds.length > 0) {
+            for (const svcId of serviceIds) {
+                const service = await models.Services.findByPk(svcId);
+                if (service && service.status === 'Active') {
+                    await models.MemberServices.create({
+                        member_id: newMember.member_id,
+                        service_id: service.service_id,
+                        start_date: formatDateToYYYYMMDD(new Date()),
+                        service_status: 'Active'
+                    }, { transaction: t });
+                }
+            }
+        }
+
         // Commit transaction
         await t.commit();
 
-        // Generate JWT token for auto-login
-        const token = jwt.sign(
-            { userId: newUser.user_id, roleId: newUser.role_id },
-            process.env.JWT_SECRET || 'BiMatSieuCap_SWP391',
-            { expiresIn: '1d' }
-        );
+        // 13. Send verification email (async, non-blocking)
+        const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+        const verificationLink = `${clientUrl}/?action=verify-email&token=${realToken}`;
+        sendVerificationEmail(email, derivedName, verificationLink).catch(err => {
+            console.error('⚠️ Gửi email xác thực thất bại:', err.message);
+        });
+
+        console.log('\n=====================================================');
+        console.log('🔗 [VERIFICATION LINK - DEV]');
+        console.log(`Email: ${email}`);
+        console.log(`Link: ${verificationLink}`);
+        console.log('=====================================================\n');
 
         return res.status(201).json({
-            message: 'Đăng ký và thanh toán thành công!',
+            message: 'Đăng ký và thanh toán thành công! Vui lòng kiểm tra email để xác thực tài khoản.',
             success: true,
-            token,
+            needsVerification: true,
             user: {
                 userId: newUser.user_id,
                 fullName: newUser.full_name,

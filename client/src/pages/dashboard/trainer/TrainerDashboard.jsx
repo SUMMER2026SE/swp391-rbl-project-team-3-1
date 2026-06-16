@@ -68,6 +68,13 @@ function TrainerDashboard({
   const [customWorkoutName, setCustomWorkoutName] = useState('');
   const [customMealName, setCustomMealName] = useState('');
 
+  // Certifications & Progress Tracking States
+  const [certifications, setCertifications] = useState([]);
+  const [newCertName, setNewCertName] = useState('');
+  const [progressRecords, setProgressRecords] = useState([]);
+  const [newProgress, setNewProgress] = useState({ height: '', weight: '', bodyFat: '', muscleMass: '', note: '' });
+  const [showProgressForm, setShowProgressForm] = useState(false);
+
   // Fetch Trainer dashboard data from backend
   const reloadTrainerDashboardData = () => {
     if (!token) return;
@@ -102,11 +109,37 @@ function TrainerDashboard({
         }
       })
       .catch(err => console.error('Error fetching trainer appointments:', err));
+
+    fetch('/api/certifications', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.certifications) {
+          setCertifications(data.certifications);
+        }
+      })
+      .catch(err => console.error('Error fetching certifications:', err));
   };
 
   useEffect(() => {
     reloadTrainerDashboardData();
   }, [token]);
+
+  useEffect(() => {
+    if (selectedMember && activeTab === 'hocvien') {
+      fetch(`/api/progress/${selectedMember.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.progress) {
+            setProgressRecords(data.progress);
+          }
+        })
+        .catch(err => console.error('Error fetching progress:', err));
+    }
+  }, [selectedMember, activeTab, token]);
 
   // Synchronize profileData on load
   useEffect(() => {
@@ -402,6 +435,79 @@ function TrainerDashboard({
     return `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]} năm ${now.getFullYear()}`;
   };
 
+  const handleAddCertification = (e) => {
+    e.preventDefault();
+    if (!newCertName.trim()) return;
+
+    fetch('/api/certifications', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ certificationName: newCertName })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.certification) {
+          setCertifications([data.certification, ...certifications]);
+          setNewCertName('');
+          alert('Đã thêm chứng chỉ mới!');
+        }
+      })
+      .catch(err => console.error('Error adding certification:', err));
+  };
+
+  const handleDeleteCertification = (id) => {
+    if (!window.confirm('Xóa chứng chỉ này?')) return;
+    fetch(`/api/certifications/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(() => {
+        setCertifications(certifications.filter(c => c.certification_id !== id));
+      })
+      .catch(err => console.error('Error deleting certification:', err));
+  };
+
+  const handleAddProgress = (e) => {
+    e.preventDefault();
+    if (!selectedMember) return;
+
+    fetch('/api/progress', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        memberId: selectedMember.id,
+        ...newProgress
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.progress) {
+          setProgressRecords([data.progress, ...progressRecords]);
+          setNewProgress({ height: '', weight: '', bodyFat: '', muscleMass: '', note: '' });
+          setShowProgressForm(false);
+          alert('Đã ghi nhận tiến độ!');
+          
+          // Update selected member's basic stats if changed
+          if (newProgress.weight || newProgress.height) {
+            setSelectedMember({
+              ...selectedMember,
+              weight: newProgress.weight || selectedMember.weight,
+              height: newProgress.height || selectedMember.height
+            });
+            reloadTrainerDashboardData(); // Refresh list
+          }
+        }
+      })
+      .catch(err => console.error('Error adding progress:', err));
+  };
+
   // Render Tabs
   const renderTabContent = () => {
     switch (activeTab) {
@@ -675,6 +781,48 @@ function TrainerDashboard({
                         <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold' }}>THỰC ĐƠN DINH DƯỠNG</div>
                         <div style={{ fontWeight: 'bold', color: '#10b981', marginTop: '2px' }}>{selectedMember.mealAssigned || 'Chưa phân công'}</div>
                       </div>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Tracking Widget */}
+                  <div className="trainer-card-panel" style={{ marginTop: '20px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                      <h4 className="trainer-card-title">Tiến Độ Gần Đây</h4>
+                      <button className="trainer-link-action" style={{ fontSize: '0.8rem' }} onClick={() => setShowProgressForm(!showProgressForm)}>
+                        {showProgressForm ? 'Hủy' : '+ Cập nhật'}
+                      </button>
+                    </div>
+
+                    {showProgressForm && (
+                      <form onSubmit={handleAddProgress} style={{ marginBottom: '16px', background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                          <input type="number" placeholder="Cân nặng (kg)" className="trainer-form-input" style={{ padding: '6px' }} value={newProgress.weight} onChange={e => setNewProgress({...newProgress, weight: e.target.value})} required />
+                          <input type="number" placeholder="Body Fat (%)" className="trainer-form-input" style={{ padding: '6px' }} value={newProgress.bodyFat} onChange={e => setNewProgress({...newProgress, bodyFat: e.target.value})} />
+                          <input type="number" placeholder="Muscle Mass" className="trainer-form-input" style={{ padding: '6px' }} value={newProgress.muscleMass} onChange={e => setNewProgress({...newProgress, muscleMass: e.target.value})} />
+                        </div>
+                        <input type="text" placeholder="Ghi chú (vd: Tập tiến bộ)..." className="trainer-form-input" style={{ padding: '6px', marginBottom: '10px', width: '100%' }} value={newProgress.note} onChange={e => setNewProgress({...newProgress, note: e.target.value})} />
+                        <button type="submit" className="trainer-btn-submit" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>Lưu tiến độ</button>
+                      </form>
+                    )}
+
+                    <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                      {progressRecords.length === 0 ? (
+                        <div style={{ fontSize: '0.85rem', color: '#94a3b8', textAlign: 'center', padding: '10px' }}>Chưa có ghi nhận tiến độ nào.</div>
+                      ) : (
+                        progressRecords.map(pr => (
+                          <div key={pr.tracking_id} style={{ fontSize: '0.85rem', padding: '10px', borderBottom: '1px solid #f1f5f9' }}>
+                            <div style={{ color: '#64748b', fontSize: '0.75rem', marginBottom: '4px' }}>
+                              {new Date(pr.recorded_date).toLocaleDateString('vi-VN')}
+                            </div>
+                            <div style={{ fontWeight: '500' }}>
+                              {pr.weight && <span>Cân: {pr.weight}kg </span>}
+                              {pr.body_fat && <span style={{ color: '#ef4444' }}>| Mỡ: {pr.body_fat}% </span>}
+                              {pr.muscle_mass && <span style={{ color: '#10b981' }}>| Cơ: {pr.muscle_mass}% </span>}
+                            </div>
+                            {pr.note && <div style={{ color: '#64748b', marginTop: '4px', fontStyle: 'italic' }}>"{pr.note}"</div>}
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1046,6 +1194,51 @@ function TrainerDashboard({
                 {isUpdatingProfile ? 'Đang cập nhật...' : 'Cập nhật hồ sơ'}
               </button>
             </form>
+
+            {/* Certifications Section */}
+            <h3 className="trainer-card-title" style={{ marginTop: '40px', marginBottom: '16px', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px' }}>
+              <i className="fa-solid fa-award" style={{ marginRight: '8px', color: '#f59e0b' }}></i> Chứng chỉ chuyên môn
+            </h3>
+            
+            <form onSubmit={handleAddCertification} style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+              <input 
+                type="text" 
+                className="trainer-form-input" 
+                placeholder="Tên chứng chỉ mới (vd: NASM CPT, Yoga Alliance 200hr)" 
+                style={{ flex: 1 }}
+                value={newCertName}
+                onChange={(e) => setNewCertName(e.target.value)}
+                required
+              />
+              <button type="submit" className="trainer-btn-submit" style={{ backgroundColor: '#10b981', padding: '10px 20px' }}>Thêm chứng chỉ</button>
+            </form>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {certifications.length === 0 ? (
+                <div style={{ color: '#94a3b8', fontSize: '0.9rem', fontStyle: 'italic' }}>Chưa có chứng chỉ nào được thêm.</div>
+              ) : (
+                certifications.map(cert => (
+                  <div key={cert.certification_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#fffbeb', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>
+                        <i className="fa-solid fa-medal"></i>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: '600', color: '#1e293b' }}>{cert.certification_name}</div>
+                        {cert.issued_date && <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Ngày cấp: {new Date(cert.issued_date).toLocaleDateString('vi-VN')}</div>}
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => handleDeleteCertification(cert.certification_id)}
+                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '8px' }}
+                      title="Xóa chứng chỉ"
+                    >
+                      <i className="fa-solid fa-trash-can"></i>
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
 
             {/* Change Password Section */}
             <h3 className="trainer-card-title" style={{ marginTop: '40px', marginBottom: '24px', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px' }}>
