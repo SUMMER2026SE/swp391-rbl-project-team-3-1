@@ -16,6 +16,7 @@ router.post('/first-change-password', authController.firstTimeChangePassword);
 router.post('/change-password', authMiddleware, authController.changePassword);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password', authController.resetPassword);
+router.post('/verify-email', authController.verifyEmail);
 
 // 4. Xác thực email
 router.get('/verify-email', authController.verifyEmail);

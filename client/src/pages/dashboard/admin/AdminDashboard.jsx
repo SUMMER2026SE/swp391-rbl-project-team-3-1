@@ -22,6 +22,7 @@ function AdminDashboard({ token, userInfo, logout }) {
   const [appointmentsList, setAppointmentsList] = useState([]);
   const [servicesList, setServicesList] = useState([]);
   const [complaintsList, setComplaintsList] = useState([]);
+  const [coreSports, setCoreSports] = useState([]);
 
   // --- UI State ---
   const [toastMessage, setToastMessage] = useState('');
@@ -38,10 +39,12 @@ function AdminDashboard({ token, userInfo, logout }) {
 
   // Edit Package Modal State
   const [showEditPackage, setShowEditPackage] = useState(null);
+  const [showAddPackage, setShowAddPackage] = useState(false);
   const [editPkgTitle, setEditPkgTitle] = useState('');
   const [editPkgPrice, setEditPkgPrice] = useState(0);
   const [editPkgMonths, setEditPkgMonths] = useState(1);
   const [editPkgFeatures, setEditPkgFeatures] = useState('');
+  const [editPkgSportType, setEditPkgSportType] = useState('Gym');
 
   // Toast notification helper
   const showToast = (message) => {
@@ -101,6 +104,11 @@ function AdminDashboard({ token, userInfo, logout }) {
       .then(res => res.json())
       .then(data => { if (data && data.complaints) setComplaintsList(data.complaints); })
       .catch(err => console.error('Error fetching complaints:', err));
+
+    fetch('/api/checkout/homepage-config')
+      .then(res => res.json())
+      .then(data => { if (data && data.coreSports) setCoreSports(data.coreSports); })
+      .catch(err => console.error('Error fetching homepage config:', err));
   };
 
   useEffect(() => {
@@ -160,26 +168,69 @@ function AdminDashboard({ token, userInfo, logout }) {
 
   const handleSavePackage = (e) => {
     e.preventDefault();
-    fetch(`/api/dashboard/admin/plans/${showEditPackage}`, {
+    if (showAddPackage) {
+      fetch(`/api/dashboard/admin/plans`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: editPkgTitle,
+          price: editPkgPrice,
+          durationMonths: editPkgMonths,
+          features: editPkgFeatures,
+          sportType: editPkgSportType
+        })
+      })
+        .then(res => res.json())
+        .then(data => {
+          showToast(data.message || 'Tạo gói tập thành công!');
+          setShowAddPackage(false);
+          reloadAllAdminData();
+        })
+        .catch(err => console.error('Error creating package:', err));
+    } else {
+      fetch(`/api/dashboard/admin/plans/${showEditPackage}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: editPkgTitle,
+          price: editPkgPrice,
+          durationMonths: editPkgMonths,
+          features: editPkgFeatures,
+          sportType: editPkgSportType
+        })
+      })
+        .then(res => res.json())
+        .then(data => {
+          showToast(data.message || 'Cập nhật gói tập thành công!');
+          setShowEditPackage(null);
+          reloadAllAdminData();
+        })
+        .catch(err => console.error('Error saving package:', err));
+    }
+  };
+
+  const togglePackageStatus = (pkgId, currentStatus) => {
+    const nextStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+    fetch(`/api/dashboard/admin/plans/${pkgId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({
-        title: editPkgTitle,
-        price: editPkgPrice,
-        durationMonths: editPkgMonths,
-        features: editPkgFeatures
-      })
+      body: JSON.stringify({ status: nextStatus })
     })
       .then(res => res.json())
       .then(data => {
-        showToast(data.message || 'Cập nhật gói tập thành công!');
-        setShowEditPackage(null);
+        showToast(`Đã ${nextStatus === 'Active' ? 'mở khóa' : 'khóa'} gói tập thành công!`);
         reloadAllAdminData();
       })
-      .catch(err => console.error('Error saving package:', err));
+      .catch(err => console.error('Error toggling package status:', err));
   };
 
   const cancelAppointment = (appointmentId) => {
@@ -227,10 +278,47 @@ function AdminDashboard({ token, userInfo, logout }) {
 
   const openEditPkgModal = (pkg) => {
     setShowEditPackage(pkg.id);
+    setShowAddPackage(false);
     setEditPkgTitle(pkg.title);
     setEditPkgPrice(pkg.price);
     setEditPkgMonths(pkg.durationMonths);
     setEditPkgFeatures(pkg.features);
+    setEditPkgSportType(pkg.sportType || 'Gym');
+  };
+
+  const openAddPkgModal = () => {
+    setShowAddPackage(true);
+    setShowEditPackage(null);
+    setEditPkgTitle('');
+    setEditPkgPrice(0);
+    setEditPkgMonths(1);
+    setEditPkgFeatures('');
+    setEditPkgSportType('Gym');
+  };
+
+  const saveHomepageSport = (index, name, description, file) => {
+    const formData = new FormData();
+    const updatedSports = [...coreSports];
+    updatedSports[index].name = name;
+    updatedSports[index].description = description;
+
+    formData.append('coreSports', JSON.stringify(updatedSports));
+    formData.append('updateIndex', index);
+    if (file) {
+      formData.append('image', file);
+    }
+
+    fetch(`/api/dashboard/admin/homepage-config`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData
+    })
+      .then(res => res.json())
+      .then(data => {
+        showToast(data.message || 'Cập nhật trang chủ thành công!');
+        reloadAllAdminData();
+      })
+      .catch(err => console.error('Error saving homepage config:', err));
   };
 
   // Formatting date string Vietnamese
@@ -609,7 +697,7 @@ function AdminDashboard({ token, userInfo, logout }) {
           <div className="admin-card-panel">
             <div className="admin-card-header">
               <h3 className="admin-card-title">Quản lý gói tập thành viên</h3>
-              <button className="admin-btn-add" onClick={() => alert('Chức năng thêm gói tập mới đang được phát triển...')}>
+              <button className="admin-btn-add" onClick={openAddPkgModal}>
                 <i className="fa-solid fa-plus"></i> Tạo Gói Tập
               </button>
             </div>
@@ -638,6 +726,13 @@ function AdminDashboard({ token, userInfo, logout }) {
                   <div className="admin-package-actions">
                     <button className="admin-package-btn-edit" onClick={() => openEditPkgModal(pkg)}>
                       <i className="fa-regular fa-pen-to-square"></i> Chỉnh sửa
+                    </button>
+                    <button 
+                      className={`admin-package-btn-edit ${pkg.status === 'Active' ? 'delete' : 'active'}`} 
+                      style={{marginLeft: '10px', backgroundColor: pkg.status === 'Active' ? '#fecdd3' : '#d1fae5', color: pkg.status === 'Active' ? '#e11d48' : '#059669', borderColor: 'transparent'}}
+                      onClick={() => togglePackageStatus(pkg.id, pkg.status)}
+                    >
+                      <i className={`fa-solid ${pkg.status === 'Active' ? 'fa-lock' : 'fa-lock-open'}`}></i> {pkg.status === 'Active' ? 'Khóa' : 'Mở khóa'}
                     </button>
                   </div>
                 </div>
@@ -803,6 +898,68 @@ function AdminDashboard({ token, userInfo, logout }) {
           </div>
         );
 
+      case 'trangchu':
+        return (
+          <div className="admin-card-panel">
+            <h3 className="admin-card-title" style={{ marginBottom: '20px' }}>Cấu hình nội dung Trang Chủ</h3>
+            <p className="admin-card-desc" style={{ marginBottom: '30px' }}>Thay đổi các thẻ dịch vụ cốt lõi hiển thị ở trang chủ (Gym, Yoga, Boxing).</p>
+
+            <div className="admin-form-grid" style={{ gridTemplateColumns: '1fr', gap: '30px' }}>
+              {coreSports.map((sport, index) => (
+                <div key={index} className="admin-card-panel" style={{ backgroundColor: '#f8fafc', position: 'relative' }}>
+                  <h4 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', color: 'var(--orange)' }}>Thẻ #{index + 1}: {sport.name}</h4>
+                  <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                    <div style={{ flex: '1', minWidth: '300px' }}>
+                      <div className="admin-form-group">
+                        <label className="admin-form-label">Tên Bộ Môn</label>
+                        <input 
+                          type="text" 
+                          className="admin-form-input" 
+                          defaultValue={sport.name} 
+                          id={`sportName-${index}`}
+                        />
+                      </div>
+                      <div className="admin-form-group">
+                        <label className="admin-form-label">Mô tả ngắn</label>
+                        <textarea 
+                          className="admin-form-input" 
+                          rows="3" 
+                          defaultValue={sport.description}
+                          id={`sportDesc-${index}`}
+                        ></textarea>
+                      </div>
+                      <div className="admin-form-group">
+                        <label className="admin-form-label">Tải ảnh nền mới (Bỏ trống nếu giữ nguyên)</label>
+                        <input 
+                          type="file" 
+                          className="admin-form-input" 
+                          accept="image/*"
+                          id={`sportImg-${index}`}
+                        />
+                      </div>
+                      <button 
+                        className="admin-btn-submit" 
+                        onClick={() => {
+                          const name = document.getElementById(`sportName-${index}`).value;
+                          const desc = document.getElementById(`sportDesc-${index}`).value;
+                          const fileInput = document.getElementById(`sportImg-${index}`);
+                          saveHomepageSport(index, name, desc, fileInput.files[0]);
+                        }}
+                      >
+                        Lưu Thay Đổi Thẻ Này
+                      </button>
+                    </div>
+                    <div style={{ width: '250px' }}>
+                      <label className="admin-form-label">Ảnh hiện tại:</label>
+                      <div style={{ width: '100%', height: '200px', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#e2e8f0', backgroundImage: `url(${sport.image})`, backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+
       default:
         return <div>Vui lòng chọn tab hợp lệ.</div>;
     }
@@ -889,13 +1046,18 @@ function AdminDashboard({ token, userInfo, logout }) {
                 <i className="fa-solid fa-person-running"></i> Huấn luyện viên
               </button>
             </li>
-            <li>
-              <button 
-                className={`admin-menu-item ${activeTab === 'goitap' ? 'active' : ''}`}
-                onClick={() => setActiveTab('goitap')}
-              >
-                <i className="fa-solid fa-tags"></i> Gói tập
-              </button>
+            <li 
+              className={`admin-nav-item ${activeTab === 'trangchu' ? 'active' : ''}`}
+              onClick={() => setActiveTab('trangchu')}
+            >
+              <i className="fa-solid fa-pager admin-nav-icon"></i> 
+              <span className="admin-nav-text">Trang Chủ</span>
+            </li>
+            <li 
+              className={`admin-nav-item ${activeTab === 'goitap' ? 'active' : ''}`}
+              onClick={() => setActiveTab('goitap')}
+            >    
+              <i className="fa-solid fa-tags"></i> Gói tập
             </li>
             <li>
               <button 
@@ -1049,11 +1211,14 @@ function AdminDashboard({ token, userInfo, logout }) {
         </div>
       )}
 
-      {/* MODAL 2: EDIT PACKAGE DETAILS */}
-      {showEditPackage && (
+      {/* Add / Edit Package Modal */}
+      {(showEditPackage !== null || showAddPackage) && (
         <div className="admin-modal-overlay">
-          <div className="admin-modal-box">
-            <h3 className="admin-modal-title">Chỉnh sửa Gói Tập Thành Viên</h3>
+          <div className="admin-modal">
+            <button className="admin-modal-close" onClick={() => {setShowEditPackage(null); setShowAddPackage(false);}}>
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+            <h3 className="admin-modal-title">{showAddPackage ? 'Tạo Gói Tập Mới' : 'Cập nhật gói tập'}</h3>
             <form onSubmit={handleSavePackage}>
               <div className="admin-form-group">
                 <label className="admin-form-label">Tên gói tập</label>
@@ -1062,23 +1227,33 @@ function AdminDashboard({ token, userInfo, logout }) {
                   className="admin-form-input" 
                   value={editPkgTitle}
                   onChange={(e) => setEditPkgTitle(e.target.value)}
-                  required 
+                  required
                 />
               </div>
-
+              <div className="admin-form-group">
+                <label className="admin-form-label">Bộ môn (Sport Type)</label>
+                <input 
+                  type="text" 
+                  className="admin-form-input" 
+                  value={editPkgSportType}
+                  onChange={(e) => setEditPkgSportType(e.target.value)}
+                  required
+                  placeholder="VD: Gym, Yoga, Boxing"
+                />
+              </div>
               <div className="admin-form-grid">
                 <div className="admin-form-group">
-                  <label className="admin-form-label">Giá bán (VND)</label>
+                  <label className="admin-form-label">Giá (VNĐ)</label>
                   <input 
                     type="number" 
                     className="admin-form-input" 
                     value={editPkgPrice}
                     onChange={(e) => setEditPkgPrice(e.target.value)}
-                    required 
+                    required
                   />
                 </div>
                 <div className="admin-form-group">
-                  <label className="admin-form-label">Thời hạn (tháng)</label>
+                  <label className="admin-form-label">Thời hạn (Tháng)</label>
                   <input 
                     type="number" 
                     className="admin-form-input" 

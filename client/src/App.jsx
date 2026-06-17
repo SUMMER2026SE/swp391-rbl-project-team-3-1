@@ -5,6 +5,7 @@ import CheckoutPage from './pages/CheckoutPage/CheckoutPage';
 import MemberDashboard from './pages/dashboard/member/MemberDashboard';
 import TrainerDashboard from './pages/dashboard/trainer/TrainerDashboard';
 import AdminDashboard from './pages/dashboard/admin/AdminDashboard';
+import PTDetailPage from './pages/PTDetailPage/PTDetailPage';
 
 import VerifyEmailPage from './pages/VerifyEmailPage/VerifyEmailPage';
 
@@ -45,6 +46,7 @@ function App() {
   if (isVerifyEmail) return <VerifyEmailPage />;
   if (currentPath === '/login') return <LoginPage />;
   if (currentPath === '/checkout') return <CheckoutPage />;
+  if (currentPath === '/pt-details') return <PTDetailPage />;
   
   // Developer preview routes for dashboards without login
   if (currentPath === '/trainer-dashboard') {

@@ -64,6 +64,22 @@ function LoginPage() {
       setResetToken(tkn);
       setResetUserId(uid);
       setCurrentCard('reset');
+    } else if (action === 'verify-email' && tkn && uid) {
+      // Auto trigger verification
+      fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: tkn, userId: uid })
+      })
+      .then(res => res.json())
+      .then(data => {
+        setLoginAlert({ show: true, msg: data.message || 'Kích hoạt thành công!', ok: true });
+        // Xóa param khỏi url
+        window.history.replaceState({}, document.title, window.location.pathname);
+      })
+      .catch(err => {
+        setLoginAlert({ show: true, msg: 'Không thể kết nối đến máy chủ để kích hoạt tài khoản!', ok: false });
+      });
     } else {
       const t = localStorage.getItem('token');
       if (t) {

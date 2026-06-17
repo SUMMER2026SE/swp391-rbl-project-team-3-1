@@ -333,11 +333,43 @@ exports.getAdminPlans = async (req, res) => {
   }
 };
 
+// POST /api/dashboard/admin/plans
+exports.createAdminPlan = async (req, res) => {
+  try {
+    const { title, price, durationMonths, features, sportType } = req.body;
+    if (!title || !price) {
+      return res.status(400).json({ message: 'Vui lòng nhập tên và giá gói tập!' });
+    }
+
+    const newPlan = await models.MembershipPlans.create({
+      plan_name: title,
+      price: Number(price),
+      duration_months: Number(durationMonths) || 1,
+      description: features || '',
+      sport_type: sportType || 'Gym',
+      status: 'Active'
+    });
+
+    return res.status(201).json({
+      message: 'Tạo gói tập mới thành công!',
+      plan: {
+        id: newPlan.membership_plan_id,
+        title: newPlan.plan_name,
+        price: Number(newPlan.price),
+        status: newPlan.status
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error creating plan:', error);
+    return res.status(500).json({ message: 'Lỗi server khi tạo gói tập!' });
+  }
+};
+
 // PUT /api/dashboard/admin/plans/:id
 exports.updateAdminPlan = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, price, durationMonths, features } = req.body;
+    const { title, price, durationMonths, features, status, sportType } = req.body;
 
     const plan = await models.MembershipPlans.findByPk(id);
     if (!plan) {
@@ -345,10 +377,12 @@ exports.updateAdminPlan = async (req, res) => {
     }
 
     await plan.update({
-      plan_name: title || plan.plan_name,
+      plan_name: title !== undefined ? title : plan.plan_name,
       price: price !== undefined ? Number(price) : plan.price,
       duration_months: durationMonths !== undefined ? Number(durationMonths) : plan.duration_months,
-      description: features !== undefined ? features : plan.description
+      description: features !== undefined ? features : plan.description,
+      status: status !== undefined ? status : plan.status,
+      sport_type: sportType !== undefined ? sportType : plan.sport_type
     });
 
     return res.status(200).json({
@@ -463,6 +497,7 @@ exports.getAdminServices = async (req, res) => {
       id: s.service_id,
       title: s.service_name,
       description: s.description || '',
+      price: Number(s.price) || 0,
       active: s.status === 'Active'
     }));
 
@@ -470,6 +505,60 @@ exports.getAdminServices = async (req, res) => {
   } catch (error) {
     console.error('❌ Error getting services:', error);
     return res.status(500).json({ message: 'Lỗi server khi lấy tiện ích!' });
+  }
+};
+
+// POST /api/dashboard/admin/services
+exports.createAdminService = async (req, res) => {
+  try {
+    const { title, description, price } = req.body;
+    if (!title || price === undefined) {
+      return res.status(400).json({ message: 'Vui lòng nhập tên và giá dịch vụ!' });
+    }
+
+    const newService = await models.Services.create({
+      service_name: title,
+      description: description || '',
+      price: Number(price) || 0,
+      status: 'Active'
+    });
+
+    return res.status(201).json({
+      message: 'Tạo dịch vụ thành công!',
+      service: {
+        id: newService.service_id,
+        title: newService.service_name,
+        price: Number(newService.price),
+        active: true
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error creating service:', error);
+    return res.status(500).json({ message: 'Lỗi server khi tạo dịch vụ!' });
+  }
+};
+
+// PUT /api/dashboard/admin/services/:id/update
+exports.updateAdminService = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, price } = req.body;
+
+    const service = await models.Services.findByPk(id);
+    if (!service) {
+      return res.status(404).json({ message: 'Không tìm thấy dịch vụ!' });
+    }
+
+    await service.update({
+      service_name: title !== undefined ? title : service.service_name,
+      description: description !== undefined ? description : service.description,
+      price: price !== undefined ? Number(price) : service.price
+    });
+
+    return res.status(200).json({ message: 'Cập nhật dịch vụ thành công!' });
+  } catch (error) {
+    console.error('❌ Error updating service:', error);
+    return res.status(500).json({ message: 'Lỗi server khi cập nhật dịch vụ!' });
   }
 };
 
@@ -546,6 +635,84 @@ exports.resolveAdminComplaint = async (req, res) => {
   } catch (error) {
     console.error('❌ Error resolving complaint:', error);
     return res.status(500).json({ message: 'Lỗi server khi xử lý phản hồi!' });
+  }
+};
+
+// =====================================================
+// HOMEPAGE CONFIG CONTROLLERS
+// =====================================================
+
+// GET /api/dashboard/admin/homepage-config
+exports.getHomepageConfig = async (req, res) => {
+  try {
+    const config = await models.AppConfigs.findOne({ where: { config_key: 'core_sports' } });
+    let coreSports = [];
+    if (config && config.config_value) {
+      try {
+        coreSports = JSON.parse(config.config_value);
+      } catch (e) {
+        console.error('Lỗi parse config core_sports:', e);
+      }
+    }
+
+    return res.status(200).json({ coreSports });
+  } catch (error) {
+    console.error('❌ Error getting homepage config:', error);
+    return res.status(500).json({ message: 'Lỗi server khi lấy cấu hình trang chủ!' });
+  }
+};
+
+// PUT /api/dashboard/admin/homepage-config
+exports.updateHomepageConfig = async (req, res) => {
+  try {
+    // Expected structure for a single sport update or full array update
+    // If updating full array, req.body.coreSports contains JSON string
+    // Let's support updating full array
+    let updatedSports = [];
+
+    if (req.body.coreSports) {
+      try {
+        updatedSports = JSON.parse(req.body.coreSports);
+      } catch(e) {
+        return res.status(400).json({ message: 'Định dạng dữ liệu không hợp lệ!' });
+      }
+    } else {
+      return res.status(400).json({ message: 'Thiếu dữ liệu cấu hình!' });
+    }
+
+    // Handle image upload if a new file is uploaded
+    // Note: Due to limitations of multipart/form-data with array of objects, 
+    // a simpler approach is updating one sport at a time or passing image URL.
+    // Assuming frontend updates one sport at a time: index, name, description, and file
+    const indexStr = req.body.updateIndex;
+    if (indexStr !== undefined && req.file) {
+      const idx = parseInt(indexStr, 10);
+      if (updatedSports[idx]) {
+         const fileUrl = `/assets/images/${req.file.filename}`;
+         updatedSports[idx].image = fileUrl;
+      }
+    }
+
+    const [config, created] = await models.AppConfigs.findOrCreate({
+      where: { config_key: 'core_sports' },
+      defaults: {
+        config_value: JSON.stringify(updatedSports),
+        description: 'Cấu hình 3 bộ môn trên trang chủ'
+      }
+    });
+
+    if (!created) {
+      await config.update({ config_value: JSON.stringify(updatedSports), updated_at: new Date() });
+    }
+
+    return res.status(200).json({ 
+      message: 'Cập nhật cấu hình trang chủ thành công!',
+      coreSports: updatedSports
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating homepage config:', error);
+    return res.status(500).json({ message: 'Lỗi server khi cập nhật cấu hình!' });
   }
 };
 

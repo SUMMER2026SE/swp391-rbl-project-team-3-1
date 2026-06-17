@@ -20,6 +20,7 @@ var _Trainers = require("./Trainers");
 var _Users = require("./Users");
 var _WorkoutExercises = require("./WorkoutExercises");
 var _WorkoutPlans = require("./WorkoutPlans");
+var _AppConfigs = require("./AppConfigs");
 
 function initModels(sequelize) {
   var AIConsultations = _AIConsultations(sequelize, DataTypes);
@@ -43,6 +44,7 @@ function initModels(sequelize) {
   var Users = _Users(sequelize, DataTypes);
   var WorkoutExercises = _WorkoutExercises(sequelize, DataTypes);
   var WorkoutPlans = _WorkoutPlans(sequelize, DataTypes);
+  var AppConfigs = _AppConfigs(sequelize, DataTypes);
 
   AIConsultations.belongsTo(Members, { as: "member", foreignKey: "member_id"});
   Members.hasMany(AIConsultations, { as: "AIConsultations", foreignKey: "member_id"});
@@ -121,6 +123,7 @@ function initModels(sequelize) {
     Users,
     WorkoutExercises,
     WorkoutPlans,
+    AppConfigs,
   };
 }
 module.exports = initModels;

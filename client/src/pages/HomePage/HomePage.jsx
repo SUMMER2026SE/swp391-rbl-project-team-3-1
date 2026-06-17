@@ -6,6 +6,10 @@ function HomePage() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [userInfo, setUserInfo] = useState(JSON.parse(localStorage.getItem('userInfo') || 'null'));
 
+  const [plans, setPlans] = useState([]);
+  const [services, setServices] = useState([]);
+  const [coreSports, setCoreSports] = useState([]);
+
   // Trạng thái cho bảng thiết lập hồ sơ (Profile Setup Modal)
   const [showSetupModal, setShowSetupModal] = useState(localStorage.getItem('showProfileSetup') === 'true');
   const [setupHeight, setSetupHeight] = useState('170');
@@ -42,7 +46,12 @@ function HomePage() {
     };
 
     window.addEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
 
+  useEffect(() => {
     // Scroll reveal animations
     const reveals = document.querySelectorAll('.reveal');
     const observer = new IntersectionObserver(
@@ -58,11 +67,35 @@ function HomePage() {
 
     reveals.forEach((el) => observer.observe(el));
 
-    // Cleanup
     return () => {
-      window.removeEventListener('scroll', handleScroll);
-      observer.disconnect();
+      reveals.forEach(r => observer.unobserve(r));
     };
+  }, [plans, services]); // Depend on dynamic data so observer updates
+
+  useEffect(() => {
+    // Fetch Plans
+    fetch('/api/checkout/plans')
+      .then(res => res.json())
+      .then(data => {
+        if (data.plans) setPlans(data.plans);
+      })
+      .catch(err => console.error('Error fetching plans:', err));
+
+    // Fetch Services
+    fetch('/api/checkout/services')
+      .then(res => res.json())
+      .then(data => {
+        if (data.services) setServices(data.services);
+      })
+      .catch(err => console.error('Error fetching services:', err));
+
+    // Fetch Homepage config
+    fetch('/api/checkout/homepage-config')
+      .then(res => res.json())
+      .then(data => {
+        if (data.coreSports && data.coreSports.length > 0) setCoreSports(data.coreSports);
+      })
+      .catch(err => console.error('Error fetching homepage config:', err));
   }, []);
 
   // Navigate to checkout with selected plan
@@ -310,35 +343,16 @@ function HomePage() {
         </div>
 
         <div className="services-grid">
-          <div className="service-card reveal reveal-delay-1">
-            <div className="service-icon">
-              <i className="fas fa-dumbbell"></i>
+          {coreSports.length > 0 ? coreSports.map((sport, index) => (
+            <div key={index} className={`service-card reveal reveal-delay-${(index % 3) + 1}`} style={{ backgroundImage: `url('${sport.image}')` }}>
+              <div className="service-overlay">
+                <h3 className="service-name">{sport.name}</h3>
+                <p className="service-desc">{sport.description}</p>
+              </div>
             </div>
-            <h3 className="service-name">Gym</h3>
-            <p className="service-desc">
-              Trang thiết bị hiện đại, không gian rộng rãi đáp ứng mọi nhu cầu tập luyện thể hình.
-            </p>
-          </div>
-
-          <div className="service-card reveal reveal-delay-2">
-            <div className="service-icon">
-              <i className="fas fa-person-praying"></i>
-            </div>
-            <h3 className="service-name">Yoga</h3>
-            <p className="service-desc">
-              Lớp học đa dạng từ cơ bản đến nâng cao, giúp cân bằng thân – tâm – trí.
-            </p>
-          </div>
-
-          <div className="service-card reveal reveal-delay-3">
-            <div className="service-icon">
-              <i className="fas fa-user-tie"></i>
-            </div>
-            <h3 className="service-name">PT Cá Nhân</h3>
-            <p className="service-desc">
-              Lộ trình tập luyện thiết kế riêng biệt, đồng hành cùng huấn luyện viên chuyên nghiệp.
-            </p>
-          </div>
+          )) : (
+            <div style={{ textAlign: 'center', width: '100%', padding: '40px' }}>Đang tải dịch vụ...</div>
+          )}
         </div>
       </section>
 
@@ -348,105 +362,90 @@ function HomePage() {
       <section className="section-pricing" id="pricing">
         <div className="section-header reveal">
           <h2 className="section-title">Gói Tập</h2>
+          <p style={{textAlign: 'center', marginTop: '10px', color: '#64748b'}}>Khám phá các lựa chọn phù hợp nhất cho mục tiêu của bạn.</p>
+        </div>
+
+        {(coreSports.length > 0 ? coreSports.map(s => s.name) : ['Gym', 'Yoga', 'Boxing']).map((sport) => {
+          const sportPlans = plans.filter(p => p.sportType === sport).sort((a,b) => a.durationMonths - b.durationMonths);
+          if (sportPlans.length === 0) return null;
+          return (
+            <div key={sport} style={{ marginBottom: '60px' }}>
+              <h3 style={{ textAlign: 'center', marginBottom: '30px', fontFamily: 'Barlow Condensed', fontSize: '2rem', color: 'var(--orange)' }}>{sport}</h3>
+              <div className="pricing-grid">
+                {sportPlans.map((plan, index) => (
+                  <div key={plan.planId} className={`pricing-card reveal reveal-delay-${(index % 3) + 1} ${plan.durationMonths === 6 ? 'featured' : ''}`}>
+                    {plan.durationMonths === 6 && <div className="popular-badge">Phổ biến nhất</div>}
+                    <p className={`plan-name ${plan.durationMonths === 6 ? 'featured-name' : ''}`}>{plan.planName}</p>
+                    <div className="plan-price">
+                      <div className="price-amount">
+                        {plan.price.toLocaleString('vi-VN')}đ<span className="price-period">/{plan.durationMonths} tháng</span>
+                      </div>
+                    </div>
+                    <div className="plan-divider"></div>
+                    <ul className="plan-features">
+                      <li><i className="fas fa-check-circle"></i> Truy cập bộ môn: <strong>{plan.sportType}</strong></li>
+                      <li><i className="fas fa-check-circle"></i> {plan.description}</li>
+                    </ul>
+                    <button
+                      onClick={() => goToCheckout(plan.planId)}
+                      className={`btn-plan ${plan.durationMonths === 6 ? 'btn-featured' : ''}`}
+                    >
+                      Mua Ngay
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {plans.length === 0 && <p style={{textAlign: 'center', width: '100%'}}>Đang tải gói tập...</p>}
+      </section>
+
+      {/* ========================================== */}
+      {/* ADD-ON SERVICES SECTION                    */}
+      {/* ========================================== */}
+      <section className="section-pricing" id="addons" style={{ backgroundColor: '#f1f5f9' }}>
+        <div className="section-header reveal">
+          <h2 className="section-title">Dịch Vụ Bổ Sung & Thuê PT</h2>
+          <p style={{textAlign: 'center', marginTop: '10px', color: '#64748b'}}>Nâng tầm trải nghiệm tập luyện của bạn với các dịch vụ chuyên sâu.</p>
         </div>
 
         <div className="pricing-grid">
-          {/* Monthly Plan */}
-          <div className="pricing-card reveal reveal-delay-1">
-            <p className="plan-name">Gói Tháng</p>
-            <div className="plan-price">
-              <div className="price-amount">
-                5.000đ<span className="price-period">/tháng</span>
+          {services.sort((a,b) => {
+            const isAPT = a.serviceName.includes('PT') ? -1 : 1;
+            const isBPT = b.serviceName.includes('PT') ? -1 : 1;
+            if (isAPT !== isBPT) return isAPT - isBPT;
+            return a.price - b.price;
+          }).map((srv, index) => (
+            <div key={srv.serviceId} className={`pricing-card reveal reveal-delay-${(index % 3) + 1}`} style={{ borderTop: `4px solid ${srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6'}` }}>
+              <p className="plan-name" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6', fontSize: '1.2rem' }}>{srv.serviceName}</p>
+              <div className="plan-price" style={{ marginTop: '10px' }}>
+                <div className="price-amount" style={{ fontSize: '1.6rem' }}>
+                  {srv.price.toLocaleString('vi-VN')}đ
+                </div>
               </div>
+              <div className="plan-divider" style={{ margin: '15px 0' }}></div>
+              <ul className="plan-features" style={{ flexGrow: 1 }}>
+                <li><i className="fas fa-check-circle" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6' }}></i> Phân loại: <strong>{srv.sportType || 'Tiện ích'}</strong></li>
+                <li><i className="fas fa-check-circle" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6' }}></i> {srv.description}</li>
+              </ul>
+              {srv.serviceName.includes('PT') && (
+                <button
+                  onClick={() => {
+                    window.history.pushState({}, '', '/pt-details');
+                    window.dispatchEvent(new Event('popstate'));
+                  }}
+                  className="btn-plan"
+                  style={{ marginTop: '20px', borderColor: '#f59e0b', color: '#f59e0b' }}
+                  onMouseEnter={(e) => { e.target.style.backgroundColor = '#f59e0b'; e.target.style.color = 'white'; }}
+                  onMouseLeave={(e) => { e.target.style.backgroundColor = 'transparent'; e.target.style.color = '#f59e0b'; }}
+                >
+                  Xem Chi Tiết PT
+                </button>
+              )}
             </div>
-            <div className="plan-divider"></div>
-            <ul className="plan-features">
-              <li>
-                <i className="fas fa-check-circle"></i> Truy cập đầy đủ thiết bị
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tủ đồ cá nhân
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Miễn phí giữ xe
-              </li>
-              <li className="disabled">
-                <i className="fas fa-circle"></i> Tham gia lớp Yoga
-              </li>
-            </ul>
-            <button
-              onClick={() => goToCheckout('monthly')}
-              className="btn-plan"
-            >
-              Mua Ngay
-            </button>
-          </div>
-
-          {/* 3-Month Plan (Featured) */}
-          <div className="pricing-card featured reveal reveal-delay-2">
-            <div className="popular-badge">Phổ biến nhất</div>
-            <p className="plan-name featured-name">Gói 3 Tháng</p>
-            <div className="plan-price">
-              <div className="price-amount">
-                10.000đ<span className="price-period">/3 tháng</span>
-              </div>
-            </div>
-            <div className="plan-divider"></div>
-            <ul className="plan-features">
-              <li>
-                <i className="fas fa-check-circle"></i> Truy cập đầy đủ thiết bị
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tủ đồ VIP
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Miễn phí giữ xe
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tham gia lớp Yoga
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Đo Inbody miễn phí 1 lần
-              </li>
-            </ul>
-            <button
-              onClick={() => goToCheckout('quarterly')}
-              className="btn-plan btn-featured"
-            >
-              MUA NGAY
-            </button>
-          </div>
-
-          {/* Annual Plan */}
-          <div className="pricing-card reveal reveal-delay-3">
-            <p className="plan-name">Gói Năm</p>
-            <div className="plan-price">
-              <div className="price-amount">
-                15.000đ<span className="price-period">/năm</span>
-              </div>
-            </div>
-            <div className="plan-divider"></div>
-            <ul className="plan-features">
-              <li>
-                <i className="fas fa-check-circle"></i> Mọi quyền lợi của Gói 3 Tháng
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tặng thêm 1 tháng tập
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tặng 2 buổi cùng PT
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Đo Inbody định kỳ
-              </li>
-            </ul>
-            <button
-              onClick={() => goToCheckout('annual')}
-              className="btn-plan"
-            >
-              Mua Ngay
-            </button>
-          </div>
+          ))}
+          {services.length === 0 && <p style={{textAlign: 'center', width: '100%'}}>Đang tải dịch vụ...</p>}
         </div>
       </section>
 
