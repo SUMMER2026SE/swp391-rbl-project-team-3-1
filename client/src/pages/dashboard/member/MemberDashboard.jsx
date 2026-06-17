@@ -37,6 +37,10 @@ function MemberDashboard({
   const [bookingNote, setBookingNote] = useState('');
   const [isBookingLoading, setIsBookingLoading] = useState(false);
 
+  // Active trainers list & chosen trainer state
+  const [trainersList, setTrainersList] = useState([]);
+  const [selectedTrainerId, setSelectedTrainerId] = useState('');
+
   // Password change states
   const [cpwOld, setCpwOld] = useState('');
   const [cpwNew, setCpwNew] = useState('');
@@ -80,7 +84,7 @@ function MemberDashboard({
       setEditPhone(profileData.phoneNumber || '');
       setEditGender(profileData.gender || 'Nam');
       setAiGender(profileData.gender || 'Nam');
-      
+
       if (profileData.dateOfBirth) {
         setEditDob(profileData.dateOfBirth.split('T')[0]);
         const birthYear = new Date(profileData.dateOfBirth).getFullYear();
@@ -98,7 +102,7 @@ function MemberDashboard({
         setEditWeight(wKg);
         setAiHeight(hCm);
         setAiWeight(wKg);
-        
+
         const goalStr = profileData.memberInfo.fitness_goal || '';
         setEditGoals(goalStr ? goalStr.split(',').map(g => g.trim()) : []);
         if (goalStr) {
@@ -377,9 +381,9 @@ function MemberDashboard({
       alert('Vui lòng chọn ngày hẹn!');
       return;
     }
-    
+
     setIsBookingLoading(true);
-    
+
     fetch('/api/dashboard/member/appointments', {
       method: 'POST',
       headers: {
@@ -390,7 +394,8 @@ function MemberDashboard({
         date: bookingDate,
         time: bookingTime,
         type: bookingType,
-        note: bookingNote
+        note: bookingNote,
+        trainerId: selectedTrainerId
       })
     })
       .then(res => {
@@ -403,7 +408,7 @@ function MemberDashboard({
         setBookingDate('');
         setBookingNote('');
         reloadMemberAppointments();
-        
+
         const newNotif = {
           id: Date.now(),
           message: `Lịch hẹn tập mới lúc ${bookingTime} ngày ${bookingDate} đang chờ duyệt.`,
@@ -422,7 +427,7 @@ function MemberDashboard({
   const handleCancelAppointment = (id) => {
     const ap = appointmentsList.find(a => a.id === id);
     if (!ap) return;
-    
+
     const confirmCancel = window.confirm(`Bạn có chắc chắn muốn hủy lịch hẹn tập này?`);
     if (confirmCancel) {
       fetch(`/api/dashboard/member/appointments/${id}/cancel`, {
@@ -435,7 +440,7 @@ function MemberDashboard({
         .then(data => {
           alert(data.message || 'Đã hủy lịch hẹn thành công!');
           reloadMemberAppointments();
-          
+
           const newNotif = {
             id: Date.now(),
             message: `Bạn đã hủy lịch hẹn tập thành công.`,
@@ -471,16 +476,16 @@ function MemberDashboard({
       alert('Vui lòng nhập cân nặng hợp lệ!');
       return;
     }
-    
-    const dateStr = newHistoryDate 
+
+    const dateStr = newHistoryDate
       ? new Date(newHistoryDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })
       : new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-      
+
     const wNum = Number(newHistoryWeight);
     setWeightHistory(prev => [...prev, { date: dateStr, weight: wNum }]);
     setNewHistoryWeight('');
     setNewHistoryDate('');
-    
+
     const updateProfileWeight = window.confirm(`Bạn có muốn cập nhật cân nặng ${wNum}kg này vào hồ sơ chính thức của mình không?`);
     if (updateProfileWeight) {
       setEditWeight(wNum.toString());
@@ -512,7 +517,7 @@ function MemberDashboard({
   const markAllNotifsRead = () => {
     setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
   };
-  
+
   const clearNotification = (id) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
@@ -601,19 +606,19 @@ function MemberDashboard({
     { key: 'noon', name: 'Trưa', desc: 'Cơm gạo lứt + ức gà', kcal: 650, carbs: '60g', protein: '45g', fat: '12g' },
     { key: 'evening', name: 'Tối', desc: 'Salad + cá hồi', kcal: 520, carbs: '20g', protein: '35g', fat: '18g' }
   ];
-  
+
   const targetKcal = dbMealPlans.length > 0
     ? Number(dbMealPlans[0].calories_per_day) || 2000
     : 1620;
 
   const eatenKcal = dbMealPlans.length > 0
     ? dbMealPlans.reduce((sum, plan) => {
-        const key = `db-meal-${plan.meal_plan_id}`;
-        return sum + (completedMeals[key] ? plan.calories_per_day : 0);
-      }, 0)
+      const key = `db-meal-${plan.meal_plan_id}`;
+      return sum + (completedMeals[key] ? plan.calories_per_day : 0);
+    }, 0)
     : mealsData.reduce((sum, meal) => {
-        return sum + (completedMeals[meal.key] ? meal.kcal : 0);
-      }, 0);
+      return sum + (completedMeals[meal.key] ? meal.kcal : 0);
+    }, 0);
 
   const unreadNotifsCount = notifications.filter(n => n.unread).length;
 
@@ -668,14 +673,14 @@ function MemberDashboard({
                       </tr>
                     </thead>
                     <tbody>
-                      {appointmentsList.filter(a => a.status !== 'cancelled').slice(0, 4).map((ap) => (
+                      {appointmentsList.filter(a => a.status !== 'cancelled' && a.status !== 'rejected').slice(0, 4).map((ap) => (
                         <tr key={ap.id}>
                           <td>{ap.time}</td>
                           <td>{ap.trainer}</td>
                           <td>{ap.type}</td>
                           <td>
                             <span className={`member-badge-status ${ap.status}`}>
-                              {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : 'Đã hủy'}
+                              {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : ap.status === 'rejected' ? 'Bị từ chối' : 'Đã hủy'}
                             </span>
                           </td>
                           <td>
@@ -683,7 +688,7 @@ function MemberDashboard({
                           </td>
                         </tr>
                       ))}
-                      {appointmentsList.filter(a => a.status !== 'cancelled').length === 0 && (
+                      {appointmentsList.filter(a => a.status !== 'cancelled' && a.status !== 'rejected').length === 0 && (
                         <tr>
                           <td colSpan="5" className="member-no-data">Không có lịch hẹn nào sắp tới</td>
                         </tr>
@@ -739,20 +744,20 @@ function MemberDashboard({
               <form className="member-booking-form" onSubmit={handleBookAppointment}>
                 <div className="member-form-group">
                   <label className="member-form-label">Chọn ngày tập</label>
-                  <input 
-                    type="date" 
-                    className="member-form-input" 
-                    value={bookingDate} 
-                    onChange={(e) => setBookingDate(e.target.value)} 
+                  <input
+                    type="date"
+                    className="member-form-input"
+                    value={bookingDate}
+                    onChange={(e) => setBookingDate(e.target.value)}
                     min={new Date().toISOString().split('T')[0]}
-                    required 
+                    required
                   />
                 </div>
                 <div className="member-form-group">
                   <label className="member-form-label">Chọn khung giờ</label>
-                  <select 
-                    className="member-form-select" 
-                    value={bookingTime} 
+                  <select
+                    className="member-form-select"
+                    value={bookingTime}
                     onChange={(e) => setBookingTime(e.target.value)}
                   >
                     <option value="07:00">07:00 - Sáng</option>
@@ -768,10 +773,29 @@ function MemberDashboard({
                   </select>
                 </div>
                 <div className="member-form-group">
+                  <label className="member-form-label">Chọn Huấn Luyện Viên (PT)</label>
+                  <select
+                    className="member-form-select"
+                    value={selectedTrainerId}
+                    onChange={(e) => setSelectedTrainerId(e.target.value)}
+                    required
+                  >
+                    {trainersList.length > 0 ? (
+                      trainersList.map(t => (
+                        <option key={t.trainerId} value={t.trainerId}>
+                          {t.fullName} ({t.specialization})
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">Đang tải danh sách HLV...</option>
+                    )}
+                  </select>
+                </div>
+                <div className="member-form-group">
                   <label className="member-form-label">Loại hình tập luyện</label>
-                  <select 
-                    className="member-form-select" 
-                    value={bookingType} 
+                  <select
+                    className="member-form-select"
+                    value={bookingType}
                     onChange={(e) => setBookingType(e.target.value)}
                   >
                     <option value="PT Cá Nhân">PT Cá Nhân (1 kèm 1)</option>
@@ -782,17 +806,17 @@ function MemberDashboard({
                 </div>
                 <div className="member-form-group">
                   <label className="member-form-label">Ghi chú cho HLV</label>
-                  <input 
-                    type="text" 
-                    className="member-form-input" 
-                    placeholder="Ví dụ: Tập trung tập thân dưới, bài tập phục hồi..." 
-                    value={bookingNote} 
-                    onChange={(e) => setBookingNote(e.target.value)} 
+                  <input
+                    type="text"
+                    className="member-form-input"
+                    placeholder="Ví dụ: Tập trung tập thân dưới, bài tập phục hồi..."
+                    value={bookingNote}
+                    onChange={(e) => setBookingNote(e.target.value)}
                   />
                 </div>
-                <button 
-                  type="submit" 
-                  className="member-btn-submit" 
+                <button
+                  type="submit"
+                  className="member-btn-submit"
                   disabled={isBookingLoading}
                   style={{ width: '100%', marginTop: '8px' }}
                 >
@@ -822,11 +846,11 @@ function MemberDashboard({
                         <td>{ap.type}</td>
                         <td>
                           <span className={`member-badge-status ${ap.status}`}>
-                            {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : 'Đã hủy'}
+                            {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : ap.status === 'rejected' ? 'Bị từ chối' : 'Đã hủy'}
                           </span>
                         </td>
                         <td>
-                          {ap.status !== 'cancelled' ? (
+                          {ap.status !== 'cancelled' && ap.status !== 'rejected' ? (
                             <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
                           ) : (
                             <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Đã đóng</span>
@@ -878,8 +902,8 @@ function MemberDashboard({
                           return (
                             <div className={`member-workout-ex-item ${completedExercises[key] ? 'completed' : ''}`} key={idx}>
                               <div className="member-workout-ex-left">
-                                <input 
-                                  type="checkbox" 
+                                <input
+                                  type="checkbox"
                                   className="member-workout-ex-checkbox"
                                   checked={!!completedExercises[key]}
                                   onChange={() => toggleExercise(key)}
@@ -935,8 +959,8 @@ function MemberDashboard({
                   const key = `db-meal-${plan.meal_plan_id}`;
                   return (
                     <div className={`member-meal-plan-card ${completedMeals[key] ? 'completed' : ''}`} key={plan.meal_plan_id} style={{ borderLeft: '4px solid #10b981' }}>
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         className="member-meal-plan-checkbox"
                         checked={!!completedMeals[key]}
                         onChange={() => toggleMeal(key)}
@@ -1039,21 +1063,21 @@ function MemberDashboard({
                   <form onSubmit={handleAddWeightHistory} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div className="member-form-group">
                       <label className="member-form-label">Cân nặng (kg)</label>
-                      <input 
-                        type="number" 
-                        className="member-form-input" 
-                        step="0.1" 
-                        placeholder="Nhập số cân nặng" 
+                      <input
+                        type="number"
+                        className="member-form-input"
+                        step="0.1"
+                        placeholder="Nhập số cân nặng"
                         value={newHistoryWeight}
                         onChange={(e) => setNewHistoryWeight(e.target.value)}
-                        required 
+                        required
                       />
                     </div>
                     <div className="member-form-group">
                       <label className="member-form-label">Ngày ghi nhận</label>
-                      <input 
-                        type="date" 
-                        className="member-form-input" 
+                      <input
+                        type="date"
+                        className="member-form-input"
                         value={newHistoryDate}
                         onChange={(e) => setNewHistoryDate(e.target.value)}
                       />
@@ -1129,7 +1153,7 @@ function MemberDashboard({
         return (
           <div className="member-card-panel">
             <h3 className="member-card-title" style={{ marginBottom: '24px', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px' }}>Hồ sơ hội viên</h3>
-            
+
             {profileSuccessMsg && (
               <div className="alert ok" style={{ display: 'flex', marginBottom: '20px' }}>
                 <i className="fa-solid fa-circle-check"></i>
@@ -1147,28 +1171,28 @@ function MemberDashboard({
               <div className="member-form-grid">
                 <div className="member-form-group">
                   <label className="member-form-label">Họ và Tên</label>
-                  <input 
-                    type="text" 
-                    className="member-form-input" 
-                    value={editFullName} 
-                    onChange={(e) => setEditFullName(e.target.value)} 
-                    required 
+                  <input
+                    type="text"
+                    className="member-form-input"
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                    required
                   />
                 </div>
                 <div className="member-form-group">
                   <label className="member-form-label">Số điện thoại</label>
-                  <input 
-                    type="text" 
-                    className="member-form-input" 
-                    value={editPhone} 
-                    onChange={(e) => setEditPhone(e.target.value)} 
+                  <input
+                    type="text"
+                    className="member-form-input"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
                   />
                 </div>
                 <div className="member-form-group">
                   <label className="member-form-label">Giới tính</label>
-                  <select 
-                    className="member-form-select" 
-                    value={editGender} 
+                  <select
+                    className="member-form-select"
+                    value={editGender}
                     onChange={(e) => setEditGender(e.target.value)}
                   >
                     <option value="Nam">Nam</option>
@@ -1178,38 +1202,38 @@ function MemberDashboard({
                 </div>
                 <div className="member-form-group">
                   <label className="member-form-label">Ngày sinh</label>
-                  <input 
-                    type="date" 
-                    className="member-form-input" 
-                    value={editDob} 
-                    onChange={(e) => setEditDob(e.target.value)} 
+                  <input
+                    type="date"
+                    className="member-form-input"
+                    value={editDob}
+                    onChange={(e) => setEditDob(e.target.value)}
                   />
                 </div>
                 <div className="member-form-group">
                   <label className="member-form-label">Chiều cao (cm)</label>
-                  <input 
-                    type="number" 
-                    className="member-form-input" 
-                    placeholder="Ví dụ: 175" 
-                    value={editHeight} 
-                    onChange={(e) => setEditHeight(e.target.value)} 
+                  <input
+                    type="number"
+                    className="member-form-input"
+                    placeholder="Ví dụ: 175"
+                    value={editHeight}
+                    onChange={(e) => setEditHeight(e.target.value)}
                   />
                 </div>
                 <div className="member-form-group">
                   <label className="member-form-label">Cân nặng (kg)</label>
-                  <input 
-                    type="number" 
-                    className="member-form-input" 
-                    placeholder="Ví dụ: 68" 
-                    value={editWeight} 
-                    onChange={(e) => setEditWeight(e.target.value)} 
+                  <input
+                    type="number"
+                    className="member-form-input"
+                    placeholder="Ví dụ: 68"
+                    value={editWeight}
+                    onChange={(e) => setEditWeight(e.target.value)}
                   />
                 </div>
                 <div className="member-form-group">
                   <label className="member-form-label">Cấp độ thể chất</label>
-                  <select 
-                    className="member-form-select" 
-                    value={editLevel} 
+                  <select
+                    className="member-form-select"
+                    value={editLevel}
                     onChange={(e) => setEditLevel(e.target.value)}
                   >
                     <option value="Người mới bắt đầu">Người mới bắt đầu (chưa tập bao giờ)</option>
@@ -1219,26 +1243,26 @@ function MemberDashboard({
                 </div>
                 <div className="member-form-group">
                   <label className="member-form-label">Liên hệ khẩn cấp (SĐT)</label>
-                  <input 
-                    type="text" 
-                    className="member-form-input" 
-                    placeholder="SĐT người thân khi cần" 
-                    value={editEmergency} 
-                    onChange={(e) => setEditEmergency(e.target.value)} 
+                  <input
+                    type="text"
+                    className="member-form-input"
+                    placeholder="SĐT người thân khi cần"
+                    value={editEmergency}
+                    onChange={(e) => setEditEmergency(e.target.value)}
                   />
                 </div>
                 <div className="member-form-group full-width">
                   <label className="member-form-label">Mục tiêu luyện tập</label>
                   <div className="member-goals-container">
                     {[
-                      'Giảm cân', 
-                      'Tăng cơ', 
-                      'Cải thiện sức bền', 
-                      'Linh hoạt & Dẻo dai', 
+                      'Giảm cân',
+                      'Tăng cơ',
+                      'Cải thiện sức bền',
+                      'Linh hoạt & Dẻo dai',
                       'Sức khỏe tổng thể'
                     ].map((g) => (
-                      <span 
-                        key={g} 
+                      <span
+                        key={g}
                         className={`member-goal-tag ${editGoals.includes(g) ? 'selected' : ''}`}
                         onClick={() => toggleEditGoal(g)}
                       >
@@ -1266,35 +1290,35 @@ function MemberDashboard({
             <form onSubmit={doChangePw} style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '500px' }}>
               <div className="member-form-group">
                 <label className="member-form-label">Mật khẩu cũ</label>
-                <input 
-                  type="password" 
-                  className="member-form-input" 
-                  placeholder="Nhập mật khẩu hiện tại" 
-                  value={cpwOld} 
-                  onChange={(e) => setCpwOld(e.target.value)} 
-                  required 
+                <input
+                  type="password"
+                  className="member-form-input"
+                  placeholder="Nhập mật khẩu hiện tại"
+                  value={cpwOld}
+                  onChange={(e) => setCpwOld(e.target.value)}
+                  required
                 />
               </div>
               <div className="member-form-group">
                 <label className="member-form-label">Mật khẩu mới</label>
-                <input 
-                  type="password" 
-                  className="member-form-input" 
-                  placeholder="Tối thiểu 6 ký tự" 
-                  value={cpwNew} 
-                  onChange={(e) => setCpwNew(e.target.value)} 
-                  required 
+                <input
+                  type="password"
+                  className="member-form-input"
+                  placeholder="Tối thiểu 6 ký tự"
+                  value={cpwNew}
+                  onChange={(e) => setCpwNew(e.target.value)}
+                  required
                 />
               </div>
               <div className="member-form-group">
                 <label className="member-form-label">Xác nhận mật khẩu mới</label>
-                <input 
-                  type="password" 
-                  className="member-form-input" 
-                  placeholder="Nhập lại mật khẩu mới" 
-                  value={cpwConf} 
-                  onChange={(e) => setCpwConf(e.target.value)} 
-                  required 
+                <input
+                  type="password"
+                  className="member-form-input"
+                  placeholder="Nhập lại mật khẩu mới"
+                  value={cpwConf}
+                  onChange={(e) => setCpwConf(e.target.value)}
+                  required
                 />
               </div>
               <button type="submit" className="member-btn-submit">Thay đổi mật khẩu</button>
@@ -1372,20 +1396,20 @@ function MemberDashboard({
                     <div className="member-form-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
                       <div className="member-form-group">
                         <label className="member-form-label">Tuổi (năm)</label>
-                        <input 
-                          type="number" 
-                          className="member-form-input" 
-                          value={aiAge} 
-                          onChange={(e) => setAiAge(e.target.value)} 
+                        <input
+                          type="number"
+                          className="member-form-input"
+                          value={aiAge}
+                          onChange={(e) => setAiAge(e.target.value)}
                           required
                           disabled={aiLoading}
                         />
                       </div>
                       <div className="member-form-group">
                         <label className="member-form-label">Giới tính</label>
-                        <select 
-                          className="member-form-select" 
-                          value={aiGender} 
+                        <select
+                          className="member-form-select"
+                          value={aiGender}
                           onChange={(e) => setAiGender(e.target.value)}
                           disabled={aiLoading}
                         >
@@ -1396,33 +1420,33 @@ function MemberDashboard({
                       </div>
                       <div className="member-form-group">
                         <label className="member-form-label">Chiều cao (cm)</label>
-                        <input 
-                          type="number" 
-                          className="member-form-input" 
-                          placeholder="170" 
-                          value={aiHeight} 
-                          onChange={(e) => setAiHeight(e.target.value)} 
+                        <input
+                          type="number"
+                          className="member-form-input"
+                          placeholder="170"
+                          value={aiHeight}
+                          onChange={(e) => setAiHeight(e.target.value)}
                           required
                           disabled={aiLoading}
                         />
                       </div>
                       <div className="member-form-group">
                         <label className="member-form-label">Cân nặng (kg)</label>
-                        <input 
-                          type="number" 
-                          className="member-form-input" 
-                          placeholder="65" 
-                          value={aiWeight} 
-                          onChange={(e) => setAiWeight(e.target.value)} 
+                        <input
+                          type="number"
+                          className="member-form-input"
+                          placeholder="65"
+                          value={aiWeight}
+                          onChange={(e) => setAiWeight(e.target.value)}
                           required
                           disabled={aiLoading}
                         />
                       </div>
                       <div className="member-form-group">
                         <label className="member-form-label">Mục tiêu luyện tập</label>
-                        <select 
-                          className="member-form-select" 
-                          value={aiFitnessGoal} 
+                        <select
+                          className="member-form-select"
+                          value={aiFitnessGoal}
                           onChange={(e) => setAiFitnessGoal(e.target.value)}
                           disabled={aiLoading}
                         >
@@ -1435,9 +1459,9 @@ function MemberDashboard({
                       </div>
                       <div className="member-form-group">
                         <label className="member-form-label">Phương thức tư vấn</label>
-                        <select 
-                          className="member-form-select" 
-                          value={aiConsultationType} 
+                        <select
+                          className="member-form-select"
+                          value={aiConsultationType}
                           onChange={(e) => setAiConsultationType(e.target.value)}
                           disabled={aiLoading}
                         >
@@ -1450,9 +1474,9 @@ function MemberDashboard({
                       </div>
                     </div>
 
-                    <button 
-                      type="submit" 
-                      className="member-btn-submit" 
+                    <button
+                      type="submit"
+                      className="member-btn-submit"
                       style={{ width: '100%', marginTop: '20px', padding: '12px' }}
                       disabled={aiLoading}
                     >
@@ -1504,9 +1528,9 @@ function MemberDashboard({
                       </p>
                     </div>
 
-                    <button 
-                      onClick={handleApplyAiMetricsToProfile} 
-                      className="member-btn-submit" 
+                    <button
+                      onClick={handleApplyAiMetricsToProfile}
+                      className="member-btn-submit"
                       style={{ width: '100%', marginTop: '20px', backgroundColor: '#3b82f6', border: 'none', padding: '12px' }}
                     >
                       <i className="fa-solid fa-user-check" style={{ marginRight: '8px' }}></i> Áp dụng chỉ số cơ thể vào Hồ sơ chính thức
@@ -1524,8 +1548,8 @@ function MemberDashboard({
                   </h3>
                   <div className="ai-history-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '550px', overflowY: 'auto' }}>
                     {aiHistory.map((item, idx) => (
-                      <div 
-                        key={item.id || idx} 
+                      <div
+                        key={item.id || idx}
                         className={`ai-history-item ${aiResult?.id === item.id ? 'active' : ''}`}
                         onClick={() => {
                           setAiResult({
@@ -1593,12 +1617,12 @@ function MemberDashboard({
                 userInfo?.fullName ? userInfo.fullName.charAt(0).toUpperCase() : 'M'
               )}
             </div>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              accept="image/*" 
-              style={{ display: 'none' }} 
-              onChange={uploadAvatar} 
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={uploadAvatar}
             />
             <div className="member-profile-info">
               <div className="member-profile-name" title={userInfo?.fullName}>
@@ -1613,7 +1637,7 @@ function MemberDashboard({
           {/* Menu Options */}
           <ul className="member-menu-list">
             <li>
-              <button 
+              <button
                 className={`member-menu-item ${activeTab === 'tongquan' ? 'active' : ''}`}
                 onClick={() => setActiveTab('tongquan')}
               >
@@ -1621,7 +1645,7 @@ function MemberDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
                 className={`member-menu-item ${activeTab === 'lichhen' ? 'active' : ''}`}
                 onClick={() => setActiveTab('lichhen')}
               >
@@ -1629,7 +1653,7 @@ function MemberDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
                 className={`member-menu-item ${activeTab === 'workout' ? 'active' : ''}`}
                 onClick={() => setActiveTab('workout')}
               >
@@ -1637,7 +1661,7 @@ function MemberDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
                 className={`member-menu-item ${activeTab === 'meal' ? 'active' : ''}`}
                 onClick={() => setActiveTab('meal')}
               >
@@ -1645,7 +1669,7 @@ function MemberDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
                 className={`member-menu-item ${activeTab === 'tiendo' ? 'active' : ''}`}
                 onClick={() => setActiveTab('tiendo')}
               >
@@ -1653,7 +1677,7 @@ function MemberDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
                 className={`member-menu-item ${activeTab === 'tuvan_ai' ? 'active' : ''}`}
                 onClick={() => setActiveTab('tuvan_ai')}
               >
@@ -1661,7 +1685,7 @@ function MemberDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
                 className={`member-menu-item ${activeTab === 'thongbao' ? 'active' : ''}`}
                 onClick={() => setActiveTab('thongbao')}
               >
@@ -1669,7 +1693,7 @@ function MemberDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
                 className={`member-menu-item ${activeTab === 'hoso' ? 'active' : ''}`}
                 onClick={() => setActiveTab('hoso')}
               >

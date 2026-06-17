@@ -1,6 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import './TrainerDashboard.css';
 
+// Dynamic date calculation helper for the weekly calendar (Monday to Sunday)
+const getWeekDays = () => {
+  const current = new Date();
+  const day = current.getDay();
+  const monday = new Date();
+  monday.setDate(monday.getDate() - day + (day === 0 ? -6 : 1));
+  
+  const days = [];
+  const dayLabels = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
+  
+  for (let i = 0; i < 7; i++) {
+    const nextDay = new Date(monday);
+    nextDay.setDate(monday.getDate() + i);
+    const dayStr = String(nextDay.getDate()).padStart(2, '0');
+    const monthStr = String(nextDay.getMonth() + 1).padStart(2, '0');
+    days.push({
+      key: dayStr,
+      lbl: dayLabels[i],
+      num: `${dayStr}/${monthStr}`
+    });
+  }
+  return days;
+};
+
 function TrainerDashboard({
   token,
   userInfo,
@@ -792,13 +816,8 @@ function TrainerDashboard({
             <div className="trainer-card-panel">
               <h3 className="trainer-card-title" style={{ marginBottom: '20px' }}>Lịch dạy tuần chi tiết</h3>
               <div className="trainer-weekly-calendar">
-                <div className="trainer-calendar-days-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)', maxWidth: '600px' }}>
-                  {[
-                    { key: '08', lbl: 'Thứ Hai', num: '08/06' },
-                    { key: '09', lbl: 'Thứ Ba', num: '09/06' },
-                    { key: '10', lbl: 'Thứ Tư', num: '10/06' },
-                    { key: '11', lbl: 'Thứ Năm', num: '11/06' }
-                  ].map(d => (
+                <div className="trainer-calendar-days-row" style={{ gridTemplateColumns: 'repeat(7, 1fr)', maxWidth: '100%' }}>
+                  {getWeekDays().map(d => (
                     <div 
                       key={d.key} 
                       className={`trainer-calendar-day-header ${selectedDay === d.key ? 'active' : ''}`}

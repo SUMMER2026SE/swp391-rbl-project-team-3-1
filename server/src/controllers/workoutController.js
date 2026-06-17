@@ -187,8 +187,7 @@ exports.createWorkoutPlan = async (req, res) => {
             trainer_id: trainerId,
             member_id: memberId,
             title,
-            description,
-            created_at: new Date()
+            description
         }, { transaction });
 
         // Create exercises if provided
@@ -199,7 +198,8 @@ exports.createWorkoutPlan = async (req, res) => {
                 sets: parseInt(ex.sets) || 0,
                 reps: parseInt(ex.reps) || 0,
                 duration_minutes: parseInt(ex.duration_minutes) || 0,
-                calories_burned: parseInt(ex.calories_burned) || 0
+                calories_burned: parseInt(ex.calories_burned) || 0,
+                rpe: parseInt(ex.rpe) || null
             }));
             await models.WorkoutExercises.bulkCreate(exercisesToCreate, { transaction });
         }
@@ -220,8 +220,12 @@ exports.createWorkoutPlan = async (req, res) => {
         });
 
     } catch (error) {
-        await transaction.rollback();
-        console.error('❌ Lỗi tạo kế hoạch tập luyện:', error.message);
+        console.error('❌ Lỗi tạo kế hoạch tập luyện (Original):', error);
+        try {
+            await transaction.rollback();
+        } catch (rollbackError) {
+            console.error('❌ Lỗi khi rollback:', rollbackError.message);
+        }
         return res.status(500).json({ message: 'Lỗi server khi tạo kế hoạch tập luyện!', error: error.message });
     }
 };
@@ -258,7 +262,7 @@ exports.updateWorkoutPlan = async (req, res) => {
         await plan.update({
             title: title !== undefined ? title : plan.title,
             description: description !== undefined ? description : plan.description,
-            updated_at: new Date()
+            updated_at: sequelize.fn('GETDATE')
         }, { transaction });
 
         // Update exercises if provided
@@ -276,7 +280,8 @@ exports.updateWorkoutPlan = async (req, res) => {
                     sets: parseInt(ex.sets) || 0,
                     reps: parseInt(ex.reps) || 0,
                     duration_minutes: parseInt(ex.duration_minutes) || 0,
-                    calories_burned: parseInt(ex.calories_burned) || 0
+                    calories_burned: parseInt(ex.calories_burned) || 0,
+                    rpe: parseInt(ex.rpe) || null
                 }));
                 await models.WorkoutExercises.bulkCreate(exercisesToCreate, { transaction });
             }
@@ -297,8 +302,12 @@ exports.updateWorkoutPlan = async (req, res) => {
         });
 
     } catch (error) {
-        await transaction.rollback();
-        console.error('❌ Lỗi sửa kế hoạch tập luyện:', error.message);
+        console.error('❌ Lỗi sửa kế hoạch tập luyện:', error);
+        try {
+            await transaction.rollback();
+        } catch (rollbackError) {
+            console.error('❌ Lỗi khi rollback:', rollbackError.message);
+        }
         return res.status(500).json({ message: 'Lỗi server khi cập nhật kế hoạch tập luyện!', error: error.message });
     }
 };

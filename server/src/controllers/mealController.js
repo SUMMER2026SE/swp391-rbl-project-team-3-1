@@ -141,8 +141,7 @@ exports.createMealPlan = async (req, res) => {
             member_id: memberId,
             title,
             description,
-            calories_per_day: parseInt(calories_per_day) || 0,
-            created_at: new Date()
+            calories_per_day: parseInt(calories_per_day) || 0
         });
 
         return res.status(201).json({
