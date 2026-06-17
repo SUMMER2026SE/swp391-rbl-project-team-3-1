@@ -1145,3 +1145,39 @@
     box-shadow: 0 0 0 0 rgba(249, 115, 22, 0);
   }
 }
+
+/* --- Subtabs styles for plan history selectors --- */
+.member-subtabs {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+  margin-bottom: 24px;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 10px;
+}
+
+.member-subtab-btn {
+  padding: 8px 20px;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.member-subtab-btn:hover {
+  background-color: #f1f5f9;
+  color: var(--text);
+}
+
+.member-subtab-btn.active {
+  background-color: var(--orange);
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(249, 115, 22, 0.2);
+}
+

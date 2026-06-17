@@ -31,6 +31,8 @@ function MemberDashboard({
   const [appointmentsList, setAppointmentsList] = useState([]);
   const [dbWorkoutPlans, setDbWorkoutPlans] = useState([]);
   const [dbMealPlans, setDbMealPlans] = useState([]);
+  const [workoutSubTab, setWorkoutSubTab] = useState('today');
+  const [mealSubTab, setMealSubTab] = useState('today');
   const [bookingDate, setBookingDate] = useState('');
   const [bookingTime, setBookingTime] = useState('07:00');
   const [bookingType, setBookingType] = useState('PT Cá Nhân');
@@ -114,10 +116,16 @@ function MemberDashboard({
 
         // Initialize notifications
         const pt = profileData.memberInfo.activePtName || 'Bùi Nguyễn Minh Tuệ';
+        const futureDate = new Date();
+        futureDate.setDate(futureDate.getDate() + 2);
+        const daysOfWeek = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+        const dayOfWeekStr = daysOfWeek[futureDate.getDay()];
+        const futureDateFormatted = `${dayOfWeekStr} lúc 07:00`;
+
         setNotifications([
           {
             id: 1,
-            message: `Lịch hẹn tập thử với HLV ${pt !== 'Chưa đăng ký' ? pt : 'Bùi Nguyễn Minh Tuệ'} vào Thứ 3 lúc 7:00 đã được xác nhận.`,
+            message: `Lịch hẹn tập thử với HLV ${pt !== 'Chưa đăng ký' ? pt : 'Bùi Nguyễn Minh Tuệ'} vào ${futureDateFormatted} đã được xác nhận.`,
             time: '2 giờ trước',
             unread: true
           },
@@ -137,11 +145,16 @@ function MemberDashboard({
 
         // Initialize weight history
         const curW = profileData.memberInfo.weight || 65;
+        const getRelativeDateString = (daysAgo) => {
+          const d = new Date();
+          d.setDate(d.getDate() - daysAgo);
+          return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+        };
         setWeightHistory([
-          { date: '15/05', weight: Number(curW) - 3 },
-          { date: '22/05', weight: Number(curW) - 2 },
-          { date: '29/05', weight: Number(curW) - 1 },
-          { date: '05/06', weight: Number(curW) }
+          { date: getRelativeDateString(28), weight: Number(curW) - 3 },
+          { date: getRelativeDateString(21), weight: Number(curW) - 2 },
+          { date: getRelativeDateString(14), weight: Number(curW) - 1 },
+          { date: getRelativeDateString(7), weight: Number(curW) }
         ]);
       }
     }
@@ -201,10 +214,25 @@ function MemberDashboard({
       .catch(err => console.error('Error fetching AI history:', err));
   };
 
+  const fetchTrainersList = () => {
+    fetch('/api/checkout/trainers')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.trainers) {
+          setTrainersList(data.trainers);
+          if (data.trainers.length > 0) {
+            setSelectedTrainerId(data.trainers[0].trainerId);
+          }
+        }
+      })
+      .catch(err => console.error('Error fetching trainers:', err));
+  };
+
   useEffect(() => {
     reloadMemberAppointments();
     reloadPlans();
     reloadAiHistory();
+    fetchTrainersList();
   }, [token]);
 
   // --- ACTIONS & HANDLERS ---
@@ -589,16 +617,54 @@ function MemberDashboard({
     return `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]} năm ${now.getFullYear()}`;
   };
 
-  // Dynamic exercises count from dbWorkoutPlans
+  // Helper to check if a date is today
+  const isToday = (dateVal) => {
+    if (!dateVal) return false;
+    const planDate = new Date(dateVal);
+    const today = new Date();
+    return planDate.toLocaleDateString('vi-VN') === today.toLocaleDateString('vi-VN');
+  };
+
+  // Filter workout plans
+  const todayWorkoutPlans = dbWorkoutPlans.filter(plan => {
+    if (!plan.created_at) return true;
+    return isToday(plan.created_at);
+  });
+  const historyWorkoutPlans = dbWorkoutPlans.filter(plan => {
+    if (!plan.created_at) return false;
+    return !isToday(plan.created_at);
+  });
+
+  // Filter meal plans
+  const todayMealPlans = dbMealPlans.filter(plan => {
+    if (!plan.created_at) return true;
+    return isToday(plan.created_at);
+  });
+  const historyMealPlans = dbMealPlans.filter(plan => {
+    if (!plan.created_at) return false;
+    return !isToday(plan.created_at);
+  });
+
+  // Dynamic exercises count from today's plans
   let totalExs = 0;
-  dbWorkoutPlans.forEach(plan => {
+  todayWorkoutPlans.forEach(plan => {
     if (plan.WorkoutExercises) {
       totalExs += plan.WorkoutExercises.length;
     }
   });
   if (totalExs === 0) totalExs = 5; // Fallback if no plans yet
 
-  const completedExsCount = Object.keys(completedExercises).filter(k => completedExercises[k]).length;
+  let completedExsCount = 0;
+  todayWorkoutPlans.forEach(plan => {
+    if (plan.WorkoutExercises) {
+      plan.WorkoutExercises.forEach((ex, idx) => {
+        const key = `db-${plan.workout_plan_id}-${idx}`;
+        if (completedExercises[key]) {
+          completedExsCount++;
+        }
+      });
+    }
+  });
   const workoutProgressPct = Math.round((completedExsCount / totalExs) * 100);
 
   const mealsData = [
@@ -607,12 +673,12 @@ function MemberDashboard({
     { key: 'evening', name: 'Tối', desc: 'Salad + cá hồi', kcal: 520, carbs: '20g', protein: '35g', fat: '18g' }
   ];
 
-  const targetKcal = dbMealPlans.length > 0
-    ? Number(dbMealPlans[0].calories_per_day) || 2000
+  const targetKcal = todayMealPlans.length > 0
+    ? Number(todayMealPlans[0].calories_per_day) || 2000
     : 1620;
 
-  const eatenKcal = dbMealPlans.length > 0
-    ? dbMealPlans.reduce((sum, plan) => {
+  const eatenKcal = todayMealPlans.length > 0
+    ? todayMealPlans.reduce((sum, plan) => {
       const key = `db-meal-${plan.meal_plan_id}`;
       return sum + (completedMeals[key] ? plan.calories_per_day : 0);
     }, 0)
@@ -705,8 +771,8 @@ function MemberDashboard({
                   <span className="member-link-action" onClick={() => setActiveTab('meal')}>Xem chi tiết</span>
                 </div>
                 <div className="member-menu-meal-list">
-                  {dbMealPlans.length > 0 ? (
-                    dbMealPlans.map((plan) => (
+                  {todayMealPlans.length > 0 ? (
+                    todayMealPlans.map((plan) => (
                       <div className="member-menu-meal-item" key={plan.meal_plan_id} style={{ borderLeft: '3px solid #10b981', paddingLeft: '8px', marginBottom: '8px' }}>
                         <div>
                           <div className="member-meal-time" style={{ color: '#10b981', fontWeight: 'bold' }}>{plan.title}</div>
@@ -749,7 +815,13 @@ function MemberDashboard({
                     className="member-form-input"
                     value={bookingDate}
                     onChange={(e) => setBookingDate(e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
+                    min={(() => {
+                      const today = new Date();
+                      const year = today.getFullYear();
+                      const month = String(today.getMonth() + 1).padStart(2, '0');
+                      const day = String(today.getDate()).padStart(2, '0');
+                      return `${year}-${month}-${day}`;
+                    })()}
                     required
                   />
                 </div>
@@ -883,58 +955,141 @@ function MemberDashboard({
               <span className="member-workout-meta-badge">Cấp độ: {profileData?.memberInfo?.fitness_level || 'Người mới bắt đầu'}</span>
             </div>
 
+            {/* Subtabs control */}
+            <div className="member-subtabs">
+              <button 
+                type="button"
+                className={`member-subtab-btn ${workoutSubTab === 'today' ? 'active' : ''}`}
+                onClick={() => setWorkoutSubTab('today')}
+              >
+                Hôm nay
+              </button>
+              <button 
+                type="button"
+                className={`member-subtab-btn ${workoutSubTab === 'history' ? 'active' : ''}`}
+                onClick={() => setWorkoutSubTab('history')}
+              >
+                Lịch sử giáo án ({historyWorkoutPlans.length})
+              </button>
+            </div>
+
             <div className="member-workout-days">
-              {dbWorkoutPlans.length > 0 ? (
-                dbWorkoutPlans.map((plan) => (
-                  <div className="member-workout-day-card" key={plan.workout_plan_id} style={{ marginBottom: '24px' }}>
-                    <h4 className="member-workout-day-title">
-                      <i className="fa-solid fa-dumbbell"></i> {plan.title.toUpperCase()}
-                    </h4>
-                    {plan.description && (
-                      <p style={{ fontSize: '0.86rem', color: '#64748b', margin: '6px 0 16px 28px' }}>
-                        {plan.description}
-                      </p>
-                    )}
-                    <div className="member-workout-ex-list">
-                      {plan.WorkoutExercises && plan.WorkoutExercises.length > 0 ? (
-                        plan.WorkoutExercises.map((ex, idx) => {
-                          const key = `db-${plan.workout_plan_id}-${idx}`;
-                          return (
-                            <div className={`member-workout-ex-item ${completedExercises[key] ? 'completed' : ''}`} key={idx}>
-                              <div className="member-workout-ex-left">
-                                <input
-                                  type="checkbox"
-                                  className="member-workout-ex-checkbox"
-                                  checked={!!completedExercises[key]}
-                                  onChange={() => toggleExercise(key)}
-                                />
-                                <div>
-                                  <div className="member-workout-ex-name">{ex.exercise_name}</div>
-                                  <div className="member-workout-ex-specs">
-                                    {ex.sets} hiệp x {ex.reps} lần {ex.duration_minutes ? `| ${ex.duration_minutes} phút` : ''} {ex.calories_burned ? `| Đốt ${ex.calories_burned} kcal` : ''}
+              {workoutSubTab === 'today' ? (
+                todayWorkoutPlans.length > 0 ? (
+                  todayWorkoutPlans.map((plan) => (
+                    <div className="member-workout-day-card" key={plan.workout_plan_id} style={{ marginBottom: '24px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+                        <h4 className="member-workout-day-title" style={{ margin: 0 }}>
+                          <i className="fa-solid fa-dumbbell"></i> {plan.title.toUpperCase()}
+                        </h4>
+                        <span style={{ fontSize: '0.78rem', color: '#94a3b8', background: '#f1f5f9', padding: '4px 10px', borderRadius: '6px', fontWeight: '600' }}>
+                          Ngày giao: {plan.created_at ? new Date(plan.created_at).toLocaleDateString('vi-VN') : 'Mới'}
+                        </span>
+                      </div>
+                      {plan.description && (
+                        <p style={{ fontSize: '0.86rem', color: '#64748b', margin: '6px 0 16px 28px' }}>
+                          {plan.description}
+                        </p>
+                      )}
+                      <div className="member-workout-ex-list">
+                        {plan.WorkoutExercises && plan.WorkoutExercises.length > 0 ? (
+                          plan.WorkoutExercises.map((ex, idx) => {
+                            const key = `db-${plan.workout_plan_id}-${idx}`;
+                            return (
+                              <div className={`member-workout-ex-item ${completedExercises[key] ? 'completed' : ''}`} key={idx}>
+                                <div className="member-workout-ex-left">
+                                  <input
+                                    type="checkbox"
+                                    className="member-workout-ex-checkbox"
+                                    checked={!!completedExercises[key]}
+                                    onChange={() => toggleExercise(key)}
+                                  />
+                                  <div>
+                                    <div className="member-workout-ex-name">{ex.exercise_name}</div>
+                                    <div className="member-workout-ex-specs">
+                                      {ex.sets} hiệp x {ex.reps} lần {ex.duration_minutes ? `| ${ex.duration_minutes} phút` : ''} {ex.calories_burned ? `| Đốt ${ex.calories_burned} kcal` : ''}
+                                    </div>
                                   </div>
                                 </div>
+                                <i className={`fa-solid ${completedExercises[key] ? 'fa-circle-check' : 'fa-circle'}`} style={{ color: completedExercises[key] ? '#22c55e' : '#cbd5e1' }}></i>
                               </div>
-                              <i className={`fa-solid ${completedExercises[key] ? 'fa-circle-check' : 'fa-circle'}`} style={{ color: completedExercises[key] ? '#22c55e' : '#cbd5e1' }}></i>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="member-no-data" style={{ padding: '20px' }}>Chưa có bài tập chi tiết cho giáo án này</div>
-                      )}
+                            );
+                          })
+                        ) : (
+                          <div className="member-no-data" style={{ padding: '20px' }}>Chưa có bài tập chi tiết cho giáo án này</div>
+                        )}
+                      </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="member-workout-day-card" style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
+                    <i className="fa-solid fa-dumbbell" style={{ fontSize: '2.5rem', color: '#cbd5e1', marginBottom: '16px' }}></i>
+                    <h4 className="member-workout-day-title" style={{ justifyContent: 'center' }}>
+                      Chưa có giáo án cho ngày hôm nay
+                    </h4>
+                    <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '8px' }}>
+                      Hôm nay bạn chưa có giáo án tập luyện nào mới được giao. Vui lòng kiểm tra tab "Lịch sử giáo án" hoặc liên hệ HLV.
+                    </p>
                   </div>
-                ))
+                )
               ) : (
-                <div className="member-workout-day-card" style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
-                  <i className="fa-solid fa-dumbbell" style={{ fontSize: '2.5rem', color: '#cbd5e1', marginBottom: '16px' }}></i>
-                  <h4 className="member-workout-day-title" style={{ justifyContent: 'center' }}>
-                    Chưa có giáo án tập luyện
-                  </h4>
-                  <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '8px' }}>
-                    Hiện tại chưa có giáo án nào được phân công cho bạn. Vui lòng liên hệ Huấn luyện viên (PT) để được giao giáo án tập luyện.
-                  </p>
-                </div>
+                historyWorkoutPlans.length > 0 ? (
+                  historyWorkoutPlans.map((plan) => (
+                    <div className="member-workout-day-card" key={plan.workout_plan_id} style={{ marginBottom: '24px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+                        <h4 className="member-workout-day-title" style={{ margin: 0 }}>
+                          <i className="fa-solid fa-dumbbell"></i> {plan.title.toUpperCase()}
+                        </h4>
+                        <span style={{ fontSize: '0.78rem', color: '#64748b', background: '#e2e8f0', padding: '4px 10px', borderRadius: '6px', fontWeight: '700' }}>
+                          Ngày giao: {plan.created_at ? new Date(plan.created_at).toLocaleDateString('vi-VN') : 'Lịch sử'}
+                        </span>
+                      </div>
+                      {plan.description && (
+                        <p style={{ fontSize: '0.86rem', color: '#64748b', margin: '6px 0 16px 28px' }}>
+                          {plan.description}
+                        </p>
+                      )}
+                      <div className="member-workout-ex-list">
+                        {plan.WorkoutExercises && plan.WorkoutExercises.length > 0 ? (
+                          plan.WorkoutExercises.map((ex, idx) => {
+                            const key = `db-${plan.workout_plan_id}-${idx}`;
+                            return (
+                              <div className={`member-workout-ex-item ${completedExercises[key] ? 'completed' : ''}`} key={idx}>
+                                <div className="member-workout-ex-left">
+                                  <input
+                                    type="checkbox"
+                                    className="member-workout-ex-checkbox"
+                                    checked={!!completedExercises[key]}
+                                    onChange={() => toggleExercise(key)}
+                                  />
+                                  <div>
+                                    <div className="member-workout-ex-name">{ex.exercise_name}</div>
+                                    <div className="member-workout-ex-specs">
+                                      {ex.sets} hiệp x {ex.reps} lần {ex.duration_minutes ? `| ${ex.duration_minutes} phút` : ''} {ex.calories_burned ? `| Đốt ${ex.calories_burned} kcal` : ''}
+                                    </div>
+                                  </div>
+                                </div>
+                                <i className={`fa-solid ${completedExercises[key] ? 'fa-circle-check' : 'fa-circle'}`} style={{ color: completedExercises[key] ? '#22c55e' : '#cbd5e1' }}></i>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="member-no-data" style={{ padding: '20px' }}>Chưa có bài tập chi tiết cho giáo án này</div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="member-workout-day-card" style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
+                    <i className="fa-solid fa-clock-rotate-left" style={{ fontSize: '2.5rem', color: '#cbd5e1', marginBottom: '16px' }}></i>
+                    <h4 className="member-workout-day-title" style={{ justifyContent: 'center' }}>
+                      Lịch sử giáo án trống
+                    </h4>
+                    <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '8px' }}>
+                      Bạn chưa có giáo án tập luyện cũ nào trong lịch sử.
+                    </p>
+                  </div>
+                )
               )}
             </div>
           </div>
@@ -954,41 +1109,98 @@ function MemberDashboard({
                 </div>
               </div>
 
-              {dbMealPlans.length > 0 ? (
-                dbMealPlans.map((plan) => {
-                  const key = `db-meal-${plan.meal_plan_id}`;
-                  return (
-                    <div className={`member-meal-plan-card ${completedMeals[key] ? 'completed' : ''}`} key={plan.meal_plan_id} style={{ borderLeft: '4px solid #10b981' }}>
-                      <input
-                        type="checkbox"
-                        className="member-meal-plan-checkbox"
-                        checked={!!completedMeals[key]}
-                        onChange={() => toggleMeal(key)}
-                      />
-                      <div className="member-meal-plan-body" style={{ paddingLeft: '8px' }}>
-                        <div className="member-meal-plan-header">
-                          <span className="member-meal-plan-title" style={{ color: '#10b981', fontWeight: 'bold' }}>{plan.title}</span>
-                          <span className="member-meal-plan-kcal" style={{ background: '#d1fae5', color: '#065f46', padding: '3px 8px', borderRadius: '12px', fontSize: '0.78rem' }}>{plan.calories_per_day || 2000} kcal</span>
-                        </div>
-                        <div className="member-meal-plan-desc" style={{ marginTop: '8px', fontSize: '0.85rem', color: '#475569' }}>{plan.description}</div>
-                        <div className="member-meal-plan-nutrients" style={{ marginTop: '10px', fontSize: '0.78rem', color: '#94a3b8', display: 'flex', gap: '12px' }}>
-                          <span>HLV phân công: {plan.trainer?.user?.full_name || 'Hệ thống'}</span>
-                          <span>Ngày giao: {plan.created_at ? new Date(plan.created_at).toLocaleDateString('vi-VN') : 'Mới'}</span>
+              {/* Subtabs control */}
+              <div className="member-subtabs">
+                <button 
+                  type="button"
+                  className={`member-subtab-btn ${mealSubTab === 'today' ? 'active' : ''}`}
+                  onClick={() => setMealSubTab('today')}
+                >
+                  Hôm nay
+                </button>
+                <button 
+                  type="button"
+                  className={`member-subtab-btn ${mealSubTab === 'history' ? 'active' : ''}`}
+                  onClick={() => setMealSubTab('history')}
+                >
+                  Lịch sử thực đơn ({historyMealPlans.length})
+                </button>
+              </div>
+
+              {mealSubTab === 'today' ? (
+                todayMealPlans.length > 0 ? (
+                  todayMealPlans.map((plan) => {
+                    const key = `db-meal-${plan.meal_plan_id}`;
+                    return (
+                      <div className={`member-meal-plan-card ${completedMeals[key] ? 'completed' : ''}`} key={plan.meal_plan_id} style={{ borderLeft: '4px solid #10b981' }}>
+                        <input
+                          type="checkbox"
+                          className="member-meal-plan-checkbox"
+                          checked={!!completedMeals[key]}
+                          onChange={() => toggleMeal(key)}
+                        />
+                        <div className="member-meal-plan-body" style={{ paddingLeft: '8px' }}>
+                          <div className="member-meal-plan-header">
+                            <span className="member-meal-plan-title" style={{ color: '#10b981', fontWeight: 'bold' }}>{plan.title}</span>
+                            <span className="member-meal-plan-kcal" style={{ background: '#d1fae5', color: '#065f46', padding: '3px 8px', borderRadius: '12px', fontSize: '0.78rem' }}>{plan.calories_per_day || 2000} kcal</span>
+                          </div>
+                          <div className="member-meal-plan-desc" style={{ marginTop: '8px', fontSize: '0.85rem', color: '#475569' }}>{plan.description}</div>
+                          <div className="member-meal-plan-nutrients" style={{ marginTop: '10px', fontSize: '0.78rem', color: '#94a3b8', display: 'flex', gap: '12px' }}>
+                            <span>HLV phân công: {plan.trainer?.user?.full_name || 'Hệ thống'}</span>
+                            <span>Ngày giao: {plan.created_at ? new Date(plan.created_at).toLocaleDateString('vi-VN') : 'Mới'}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })
+                    );
+                  })
+                ) : (
+                  <div className="member-meal-plan-card" style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <i className="fa-solid fa-utensils" style={{ fontSize: '2.5rem', color: '#cbd5e1', marginBottom: '16px' }}></i>
+                    <h4 className="member-meal-plan-title" style={{ color: '#64748b' }}>
+                      Chưa có thực đơn hôm nay
+                    </h4>
+                    <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '8px' }}>
+                      Hôm nay bạn chưa được thiết lập thực đơn mới. Vui lòng kiểm tra tab "Lịch sử thực đơn" hoặc liên hệ HLV.
+                    </p>
+                  </div>
+                )
               ) : (
-                <div className="member-meal-plan-card" style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b', gridColumn: 'span 2', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <i className="fa-solid fa-utensils" style={{ fontSize: '2.5rem', color: '#cbd5e1', marginBottom: '16px' }}></i>
-                  <h4 className="member-meal-plan-title" style={{ color: '#64748b' }}>
-                    Chưa có thực đơn dinh dưỡng
-                  </h4>
-                  <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '8px' }}>
-                    Hiện tại chưa có thực đơn dinh dưỡng nào được thiết lập cho bạn. Vui lòng liên hệ Huấn luyện viên (PT) để nhận thực đơn.
-                  </p>
-                </div>
+                historyMealPlans.length > 0 ? (
+                  historyMealPlans.map((plan) => {
+                    const key = `db-meal-${plan.meal_plan_id}`;
+                    return (
+                      <div className={`member-meal-plan-card ${completedMeals[key] ? 'completed' : ''}`} key={plan.meal_plan_id} style={{ borderLeft: '4px solid #10b981' }}>
+                        <input
+                          type="checkbox"
+                          className="member-meal-plan-checkbox"
+                          checked={!!completedMeals[key]}
+                          onChange={() => toggleMeal(key)}
+                        />
+                        <div className="member-meal-plan-body" style={{ paddingLeft: '8px' }}>
+                          <div className="member-meal-plan-header">
+                            <span className="member-meal-plan-title" style={{ color: '#10b981', fontWeight: 'bold' }}>{plan.title}</span>
+                            <span className="member-meal-plan-kcal" style={{ background: '#d1fae5', color: '#065f46', padding: '3px 8px', borderRadius: '12px', fontSize: '0.78rem' }}>{plan.calories_per_day || 2000} kcal</span>
+                          </div>
+                          <div className="member-meal-plan-desc" style={{ marginTop: '8px', fontSize: '0.85rem', color: '#475569' }}>{plan.description}</div>
+                          <div className="member-meal-plan-nutrients" style={{ marginTop: '10px', fontSize: '0.78rem', color: '#94a3b8', display: 'flex', gap: '12px' }}>
+                            <span>HLV phân công: {plan.trainer?.user?.full_name || 'Hệ thống'}</span>
+                            <span>Ngày giao: {plan.created_at ? new Date(plan.created_at).toLocaleDateString('vi-VN') : 'Lịch sử'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="member-meal-plan-card" style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <i className="fa-solid fa-clock-rotate-left" style={{ fontSize: '2.5rem', color: '#cbd5e1', marginBottom: '16px' }}></i>
+                    <h4 className="member-meal-plan-title" style={{ color: '#64748b' }}>
+                      Lịch sử thực đơn trống
+                    </h4>
+                    <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '8px' }}>
+                      Bạn chưa có thực đơn dinh dưỡng cũ nào trong lịch sử.
+                    </p>
+                  </div>
+                )
               )}
             </div>
 
