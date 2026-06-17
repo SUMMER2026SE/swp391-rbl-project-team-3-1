@@ -1052,16 +1052,10 @@ function MemberDashboard({
                       <div className="member-workout-ex-list">
                         {plan.WorkoutExercises && plan.WorkoutExercises.length > 0 ? (
                           plan.WorkoutExercises.map((ex, idx) => {
-                            const key = `db-${plan.workout_plan_id}-${idx}`;
                             return (
-                              <div className={`member-workout-ex-item ${completedExercises[key] ? 'completed' : ''}`} key={idx}>
+                              <div className="member-workout-ex-item" key={idx} style={{ borderLeftColor: '#cbd5e1' }}>
                                 <div className="member-workout-ex-left">
-                                  <input
-                                    type="checkbox"
-                                    className="member-workout-ex-checkbox"
-                                    checked={!!completedExercises[key]}
-                                    onChange={() => toggleExercise(key)}
-                                  />
+                                  <i className="fa-solid fa-circle" style={{ fontSize: '0.45rem', color: '#94a3b8', marginRight: '10px', marginLeft: '4px' }}></i>
                                   <div>
                                     <div className="member-workout-ex-name">{ex.exercise_name}</div>
                                     <div className="member-workout-ex-specs">
@@ -1069,7 +1063,6 @@ function MemberDashboard({
                                     </div>
                                   </div>
                                 </div>
-                                <i className={`fa-solid ${completedExercises[key] ? 'fa-circle-check' : 'fa-circle'}`} style={{ color: completedExercises[key] ? '#22c55e' : '#cbd5e1' }}></i>
                               </div>
                             );
                           })
@@ -1167,16 +1160,9 @@ function MemberDashboard({
               ) : (
                 historyMealPlans.length > 0 ? (
                   historyMealPlans.map((plan) => {
-                    const key = `db-meal-${plan.meal_plan_id}`;
                     return (
-                      <div className={`member-meal-plan-card ${completedMeals[key] ? 'completed' : ''}`} key={plan.meal_plan_id} style={{ borderLeft: '4px solid #10b981' }}>
-                        <input
-                          type="checkbox"
-                          className="member-meal-plan-checkbox"
-                          checked={!!completedMeals[key]}
-                          onChange={() => toggleMeal(key)}
-                        />
-                        <div className="member-meal-plan-body" style={{ paddingLeft: '8px' }}>
+                      <div className="member-meal-plan-card" key={plan.meal_plan_id} style={{ borderLeft: '4px solid #10b981' }}>
+                        <div className="member-meal-plan-body">
                           <div className="member-meal-plan-header">
                             <span className="member-meal-plan-title" style={{ color: '#10b981', fontWeight: 'bold' }}>{plan.title}</span>
                             <span className="member-meal-plan-kcal" style={{ background: '#d1fae5', color: '#065f46', padding: '3px 8px', borderRadius: '12px', fontSize: '0.78rem' }}>{plan.calories_per_day || 2000} kcal</span>
