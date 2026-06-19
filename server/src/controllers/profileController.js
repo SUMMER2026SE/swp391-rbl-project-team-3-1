@@ -125,10 +125,22 @@ exports.getMyProfile = async (req, res) => {
                 if (remainingDays < 0) remainingDays = 0;
             }
 
-            // Lấy thông tin HLV đang liên kết qua WorkoutPlans
-            const workoutPlanWithPt = user.Member.WorkoutPlans?.find(
-                wp => wp.trainer?.user?.full_name
+            // Lấy thông tin HLV đang liên kết:
+            // 1. Ưu tiên giáo án tự động tạo lúc đăng ký/mua gói từ đầu (Lộ trình luyện tập với HLV...)
+            let workoutPlanWithPt = user.Member.WorkoutPlans?.find(
+                wp => wp.title && wp.title.startsWith('Lộ trình luyện tập với HLV') && wp.trainer?.user?.full_name
             );
+
+            // 2. Nếu không có giáo án đăng ký từ đầu, lấy giáo án mới nhất được giao gần đây
+            if (!workoutPlanWithPt && user.Member.WorkoutPlans?.length > 0) {
+                const sortedPlans = [...user.Member.WorkoutPlans].sort(
+                    (a, b) => b.workout_plan_id - a.workout_plan_id
+                );
+                workoutPlanWithPt = sortedPlans.find(
+                    wp => wp.trainer?.user?.full_name
+                );
+            }
+
             if (workoutPlanWithPt) {
                 activePtName = workoutPlanWithPt.trainer.user.full_name;
             }

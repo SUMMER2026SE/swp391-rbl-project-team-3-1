@@ -19,6 +19,13 @@ const toTimeStr = (val, fallback = '00:00') => {
   return fallback;
 };
 
+// Helper: format working_date (Date or string) to "DD/MM/YYYY"
+const toDateStr = (val) => {
+  if (!val) return 'N/A';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return String(val).slice(0, 10);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+};
 
 // =====================================================
 // HELPER: SELF-SEEDING DATABASE LOGIC
@@ -396,25 +403,6 @@ exports.getAdminAppointments = async (req, res) => {
       ]
     });
 
-    // Helper: convert TIME field (Date object or string) to "HH:mm"
-    const toTimeStr = (val, fallback = '00:00') => {
-      if (!val) return fallback;
-      if (typeof val === 'string') return val.slice(0, 5);
-      if (val instanceof Date) {
-        const h = String(val.getUTCHours()).padStart(2, '0');
-        const m = String(val.getUTCMinutes()).padStart(2, '0');
-        return `${h}:${m}`;
-      }
-      return fallback;
-    };
-
-    // Helper: format working_date (Date or string) to "DD/MM/YYYY"
-    const toDateStr = (val) => {
-      if (!val) return 'N/A';
-      const d = new Date(val);
-      if (isNaN(d)) return String(val).slice(0, 10);
-      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-    };
 
     const mappedAppts = appointments.map((a) => {
       return {
@@ -586,7 +574,14 @@ exports.getTrainerMembers = async (req, res) => {
     });
 
     if (workoutMembers.length > 0) {
-      members = workoutMembers.map(wm => wm.member).filter(Boolean);
+      const seen = new Set();
+      members = [];
+      workoutMembers.forEach(wm => {
+        if (wm.member && !seen.has(wm.member.member_id)) {
+          seen.add(wm.member.member_id);
+          members.push(wm.member);
+        }
+      });
     } else {
       // Fallback: grab all system members to prevent empty screen
       members = await models.Members.findAll({
@@ -656,20 +651,30 @@ exports.getTrainerAppointments = async (req, res) => {
       const endTimeFormatted = toTimeStr(a.schedule?.end_time, '08:30');
 
       let dayNum = '25';
+      let dateStr = '2026-06-17';
       if (a.schedule?.working_date) {
         const dateVal = a.schedule.working_date;
         if (typeof dateVal === 'string') {
-          dayNum = dateVal.split('-')[2] || '25';
+          const part = dateVal.split('-')[2];
+          dayNum = part ? part.slice(0, 2) : '25';
+          dateStr = dateVal.slice(0, 10);
         } else if (dateVal instanceof Date) {
           dayNum = String(dateVal.getDate()).padStart(2, '0');
+          const y = dateVal.getFullYear();
+          const m = String(dateVal.getMonth() + 1).padStart(2, '0');
+          const d = String(dateVal.getDate()).padStart(2, '0');
+          dateStr = `${y}-${m}-${d}`;
         } else {
-          dayNum = String(dateVal).split('-')[2] || '25';
+          const part = String(dateVal).split('-')[2];
+          dayNum = part ? part.slice(0, 2) : '25';
+          dateStr = String(dateVal).slice(0, 10);
         }
       }
 
       return {
         id: a.appointment_id,
         day: dayNum,
+        date: dateStr,
         time: `${startTimeFormatted} - ${endTimeFormatted}`,
         member: a.member?.user?.full_name || 'Hội viên',
         name: a.member?.user?.full_name || 'Hội viên',
@@ -792,8 +797,8 @@ exports.getMemberAppointments = async (req, res) => {
         id: a.appointment_id,
         ptName: a.schedule?.trainer?.user?.full_name || 'HLV Cá Nhân',
         trainer: a.schedule?.trainer?.user?.full_name || 'HLV Cá Nhân',
-        date: a.schedule?.working_date || 'N/A',
-        time: a.schedule?.working_date ? `${a.schedule.working_date} (${startTimeFormatted} - ${endTimeFormatted})` : `${startTimeFormatted} - ${endTimeFormatted}`,
+        date: toDateStr(a.schedule?.working_date),
+        time: a.schedule?.working_date ? `${toDateStr(a.schedule.working_date)} (${startTimeFormatted} - ${endTimeFormatted})` : `${startTimeFormatted} - ${endTimeFormatted}`,
         type: a.note || 'Tập thử Gym',
         status: (a.status === 'Confirmed' || a.status === 'Scheduled' ? 'confirmed' : a.status || 'pending').toLowerCase()
       };
@@ -813,6 +818,12 @@ exports.createMemberAppointment = async (req, res) => {
 
     if (!date || !time) {
       return res.status(400).json({ message: 'Vui lòng cung cấp ngày hẹn và thời gian!' });
+    }
+
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    if (date < todayStr) {
+      return res.status(400).json({ message: 'Không thể đặt lịch hẹn cho những ngày đã qua!' });
     }
 
     const member = await models.Members.findOne({ where: { user_id: req.user.userId } });
