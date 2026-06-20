@@ -283,9 +283,21 @@ exports.createTrainer = async (req, res) => {
       return res.status(400).json({ message: 'Email này đã tồn tại trên hệ thống!' });
     }
 
-    // Create User entry first (default password is '123456')
+    // Generate temporary password
+    const crypto = require('crypto');
+    const generateTempPassword = (length = 8) => {
+      const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let password = '';
+      const bytes = crypto.randomBytes(length);
+      for (let i = 0; i < length; i++) {
+        password += chars[bytes[i] % chars.length];
+      }
+      return password;
+    };
+    const temporaryPassword = generateTempPassword(8);
+
     const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash('123456', salt);
+    const passwordHash = await bcrypt.hash(temporaryPassword, salt);
 
     const newUser = await models.Users.create({
       full_name: name,
@@ -307,8 +319,24 @@ exports.createTrainer = async (req, res) => {
 
     await transaction.commit();
 
+    // Send email asynchronously outside transaction
+    let emailSent = false;
+    try {
+      const { sendPTCredentialsEmail } = require('../utils/email');
+      const mailResult = await sendPTCredentialsEmail(email, name, temporaryPassword);
+      if (mailResult) {
+        emailSent = true;
+      }
+    } catch (mailError) {
+      console.error('❌ Lỗi gửi email thông báo PT:', mailError.message);
+    }
+
     return res.status(201).json({
-      message: 'Tạo tài khoản PT thành công! Mật khẩu mặc định là: 123456',
+      message: emailSent 
+        ? 'Tạo tài khoản PT thành công! Email thông tin và mật khẩu tạm thời đã được gửi.'
+        : 'Tạo tài khoản PT thành công nhưng không gửi được email (Mật khẩu hiển thị bên dưới).',
+      temporaryPassword,
+      emailSent,
       user: {
         id: newUser.user_id,
         name: newUser.full_name,
@@ -583,13 +611,8 @@ exports.getTrainerMembers = async (req, res) => {
         }
       });
     } else {
-      // Fallback: grab all system members to prevent empty screen
-      members = await models.Members.findAll({
-        include: [
-          { model: models.Users, as: 'user', attributes: ['full_name', 'email', 'phone_number'] },
-          { model: models.MemberMemberships, as: 'MemberMemberships', include: [{ model: models.MembershipPlans, as: 'membership_plan' }] }
-        ]
-      });
+      // Mật khẩu/tài khoản PT mới tạo hoặc chưa có học viên thì trả về danh sách rỗng
+      members = [];
     }
 
     const mappedMembers = members.map((m, idx) => {
@@ -723,25 +746,76 @@ exports.confirmTrainerAppointment = async (req, res) => {
 
 // POST /api/dashboard/trainer/assign-plan
 exports.assignPlanToMember = async (req, res) => {
+  const transaction = await sequelize.transaction();
   try {
     const { memberId, type, name } = req.body; // type = 'workout' or 'meal'
 
     if (!memberId || !name) {
+      await transaction.rollback();
       return res.status(400).json({ message: 'Vui lòng cung cấp đầy đủ thông tin hội viên và tên giáo án!' });
     }
 
     const trainerUser = await models.Trainers.findOne({ where: { user_id: req.user.userId } });
     if (!trainerUser) {
+      await transaction.rollback();
       return res.status(400).json({ message: 'Chỉ huấn luyện viên mới được giao giáo án!' });
     }
 
     if (type === 'workout') {
-      await models.WorkoutPlans.create({
+      const newPlan = await models.WorkoutPlans.create({
         trainer_id: trainerUser.trainer_id,
         member_id: memberId,
         title: name,
         description: 'Giáo án được giao từ huấn luyện viên qua dashboard.'
-      });
+      }, { transaction });
+
+      // Predefined exercises for workout templates
+      const templates = {
+        'HIIT Đốt Mỡ Nâng Cao': [
+          { exercise_name: 'Nhảy dây (Jumping Jacks)', sets: 3, reps: 30, duration_minutes: 1, calories_burned: 40, rpe: 7 },
+          { exercise_name: 'Squat (Bodyweight)', sets: 4, reps: 15, duration_minutes: 2, calories_burned: 50, rpe: 8 },
+          { exercise_name: 'Plank giữ cơ bụng', sets: 3, reps: 1, duration_minutes: 1, calories_burned: 20, rpe: 6 },
+          { exercise_name: 'Burpees', sets: 4, reps: 15, duration_minutes: 2, calories_burned: 80, rpe: 9 },
+          { exercise_name: 'Chạy nước rút (Sprint)', sets: 3, reps: 1, duration_minutes: 1, calories_burned: 60, rpe: 9 }
+        ],
+        'Full Body Khởi Đầu': [
+          { exercise_name: 'Squat (Bodyweight)', sets: 3, reps: 15, duration_minutes: 2, calories_burned: 45, rpe: 6 },
+          { exercise_name: 'Push-up (Hít đất)', sets: 3, reps: 10, duration_minutes: 1, calories_burned: 30, rpe: 7 },
+          { exercise_name: 'Dumbbell Shoulder Press', sets: 3, reps: 12, duration_minutes: 2, calories_burned: 40, rpe: 7 },
+          { exercise_name: 'Plank giữ cơ bụng', sets: 3, reps: 1, duration_minutes: 1, calories_burned: 20, rpe: 5 }
+        ],
+        'Powerlifting Cơ Bản': [
+          { exercise_name: 'Barbell Squat', sets: 3, reps: 5, duration_minutes: 3, calories_burned: 60, rpe: 8 },
+          { exercise_name: 'Barbell Deadlift', sets: 3, reps: 5, duration_minutes: 4, calories_burned: 80, rpe: 9 },
+          { exercise_name: 'Barbell Bench Press', sets: 3, reps: 5, duration_minutes: 3, calories_burned: 50, rpe: 8 }
+        ],
+        'Yoga dẻo dai khớp vai': [
+          { exercise_name: 'Tư thế em bé (Child Pose)', sets: 3, reps: 1, duration_minutes: 2, calories_burned: 15, rpe: 3 },
+          { exercise_name: 'Tư thế chiến binh (Warrior Pose)', sets: 3, reps: 5, duration_minutes: 2, calories_burned: 25, rpe: 5 },
+          { exercise_name: 'Giãn cơ vai (Shoulder Stretch)', sets: 3, reps: 5, duration_minutes: 2, calories_burned: 20, rpe: 4 }
+        ],
+        'Cardio Core trung cấp': [
+          { exercise_name: 'Plank đi bộ (Plank Walks)', sets: 3, reps: 12, duration_minutes: 2, calories_burned: 40, rpe: 6 },
+          { exercise_name: 'Leo núi (Mountain Climbers)', sets: 4, reps: 20, duration_minutes: 2, calories_burned: 60, rpe: 7 },
+          { exercise_name: 'Gập bụng (Crunches)', sets: 3, reps: 20, duration_minutes: 2, calories_burned: 30, rpe: 6 }
+        ]
+      };
+
+      const exercises = templates[name] || [
+        { exercise_name: name, sets: 3, reps: 10, duration_minutes: 15, calories_burned: 100, rpe: 7 }
+      ];
+
+      const exercisesToCreate = exercises.map(ex => ({
+        workout_plan_id: newPlan.workout_plan_id,
+        exercise_name: ex.exercise_name,
+        sets: ex.sets,
+        reps: ex.reps,
+        duration_minutes: ex.duration_minutes,
+        calories_burned: ex.calories_burned,
+        rpe: ex.rpe
+      }));
+
+      await models.WorkoutExercises.bulkCreate(exercisesToCreate, { transaction });
     } else {
       await models.MealPlans.create({
         trainer_id: trainerUser.trainer_id,
@@ -749,12 +823,18 @@ exports.assignPlanToMember = async (req, res) => {
         title: name,
         calories_per_day: 2000,
         description: 'Chế độ dinh dưỡng giao trực tiếp từ huấn luyện viên.'
-      });
+      }, { transaction });
     }
 
+    await transaction.commit();
     return res.status(201).json({ message: `Đã giao thành công ${type === 'workout' ? 'giáo án tập luyện' : 'thực đơn dinh dưỡng'}: ${name}` });
   } catch (error) {
     console.error('❌ Error assigning plan:', error);
+    try {
+      await transaction.rollback();
+    } catch (rollbackError) {
+      console.error('❌ Lỗi khi rollback:', rollbackError.message);
+    }
     return res.status(500).json({ message: 'Lỗi server khi giao giáo án/thực đơn!' });
   }
 };

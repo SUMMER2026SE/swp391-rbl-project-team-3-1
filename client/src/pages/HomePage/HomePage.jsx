@@ -351,25 +351,7 @@ function HomePage() {
       {/* HERO SECTION                               */}
       {/* ========================================== */}
       <section className="hero" id="home">
-        <div className="hero-bg">
-          <div className="hero-gym-visual">
-            <div className="corridor">
-              {/* Ceiling bar (orange horizontal accent) */}
-              <div className="ceiling-bar"></div>
-              {/* White ceiling strip lights */}
-              <div className="ceiling-light ceiling-light-1"></div>
-              <div className="ceiling-light ceiling-light-2"></div>
-              <div className="ceiling-light ceiling-light-3"></div>
-              {/* Small accent dots */}
-              <div className="accent-dot" style={{ left: '35%', top: '14%' }}></div>
-              <div className="accent-dot" style={{ left: '55%', top: '14%' }}></div>
-              <div className="accent-dot" style={{ left: '50%', top: '20%' }}></div>
-            </div>
-            {/* Orange vertical accent pillars */}
-            <div className="pillar-left"></div>
-            <div className="pillar-right"></div>
-          </div>
-        </div>
+        <div className="hero-bg"></div>
 
         <div className="hero-content">
           <h1 className="hero-title">Bứt Phá Giới Hạn</h1>
@@ -475,18 +457,18 @@ function HomePage() {
         </div>
 
         <div className="pricing-grid">
-          {/* Monthly Plan */}
+          {/* Gym 3-Month Plan */}
           <div className="pricing-card reveal reveal-delay-1">
-            <p className="plan-name">Gói Tháng</p>
+            <p className="plan-name">Gói 3 Tháng (Gym)</p>
             <div className="plan-price">
               <div className="price-amount">
-                5.000đ<span className="price-period">/tháng</span>
+                5.000đ<span className="price-period">/3 tháng</span>
               </div>
             </div>
             <div className="plan-divider"></div>
             <ul className="plan-features">
               <li>
-                <i className="fas fa-check-circle"></i> Truy cập đầy đủ thiết bị
+                <i className="fas fa-check-circle"></i> Truy cập đầy đủ thiết bị Gym
               </li>
               <li>
                 <i className="fas fa-check-circle"></i> Tủ đồ cá nhân
@@ -495,55 +477,55 @@ function HomePage() {
                 <i className="fas fa-check-circle"></i> Miễn phí giữ xe
               </li>
               <li className="disabled">
-                <i className="fas fa-circle"></i> Tham gia lớp Yoga
+                <i className="fas fa-circle"></i> Chưa bao gồm lớp Yoga/Boxing
               </li>
             </ul>
             <button
-              onClick={() => goToCheckout('monthly')}
+              onClick={() => goToCheckout('Gym 3 Tháng')}
               className="btn-plan"
             >
               Mua Ngay
             </button>
           </div>
 
-          {/* 3-Month Plan (Featured) */}
+          {/* Gym 6-Month Plan (Featured) */}
           <div className="pricing-card featured reveal reveal-delay-2">
             <div className="popular-badge">Phổ biến nhất</div>
-            <p className="plan-name featured-name">Gói 3 Tháng</p>
+            <p className="plan-name featured-name">Gói 6 Tháng (Gym)</p>
             <div className="plan-price">
               <div className="price-amount">
-                10.000đ<span className="price-period">/3 tháng</span>
+                10.000đ<span className="price-period">/6 tháng</span>
               </div>
             </div>
             <div className="plan-divider"></div>
             <ul className="plan-features">
               <li>
-                <i className="fas fa-check-circle"></i> Truy cập đầy đủ thiết bị
+                <i className="fas fa-check-circle"></i> Truy cập đầy đủ thiết bị Gym
               </li>
               <li>
-                <i className="fas fa-check-circle"></i> Tủ đồ VIP
+                <i className="fas fa-check-circle"></i> Tủ đồ VIP riêng biệt
               </li>
               <li>
                 <i className="fas fa-check-circle"></i> Miễn phí giữ xe
               </li>
               <li>
-                <i className="fas fa-check-circle"></i> Tham gia lớp Yoga
+                <i className="fas fa-check-circle"></i> Hỗ trợ đo chỉ số Inbody miễn phí
               </li>
               <li>
-                <i className="fas fa-check-circle"></i> Đo Inbody miễn phí 1 lần
+                <i className="fas fa-check-circle"></i> Ưu tiên đặt lịch HLV
               </li>
             </ul>
             <button
-              onClick={() => goToCheckout('quarterly')}
+              onClick={() => goToCheckout('Gym 6 Tháng')}
               className="btn-plan btn-featured"
             >
               MUA NGAY
             </button>
           </div>
 
-          {/* Annual Plan */}
+          {/* Gym 12-Month Plan */}
           <div className="pricing-card reveal reveal-delay-3">
-            <p className="plan-name">Gói Năm</p>
+            <p className="plan-name">Gói 12 Tháng (Gym)</p>
             <div className="plan-price">
               <div className="price-amount">
                 15.000đ<span className="price-period">/năm</span>
@@ -552,20 +534,20 @@ function HomePage() {
             <div className="plan-divider"></div>
             <ul className="plan-features">
               <li>
-                <i className="fas fa-check-circle"></i> Mọi quyền lợi của Gói 3 Tháng
+                <i className="fas fa-check-circle"></i> Toàn bộ quyền lợi của gói 6 tháng
               </li>
               <li>
-                <i className="fas fa-check-circle"></i> Tặng thêm 1 tháng tập
+                <i className="fas fa-check-circle"></i> Tặng 1 tháng tập luyện miễn phí
               </li>
               <li>
-                <i className="fas fa-check-circle"></i> Tặng 2 buổi cùng PT
+                <i className="fas fa-check-circle"></i> Tặng 2 buổi tập thử với PT riêng
               </li>
               <li>
-                <i className="fas fa-check-circle"></i> Đo Inbody định kỳ
+                <i className="fas fa-check-circle"></i> Kiểm tra sức khỏe Inbody định kỳ
               </li>
             </ul>
             <button
-              onClick={() => goToCheckout('annual')}
+              onClick={() => goToCheckout('Gym 12 Tháng')}
               className="btn-plan"
             >
               Mua Ngay
