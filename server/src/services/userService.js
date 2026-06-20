@@ -9,7 +9,7 @@ async function findByEmail(email) {
   return result.recordset[0] || null;
 }
 
-async function create({ email, password_hash, name, role_id = 1, phone_number = null }) {
+async function create({ email, password_hash, name, role_id = 1, phone_number = null, status = 'Active', must_change_password = false }) {
   const pool = await poolPromise;
   if (!pool) throw new Error('DB not available');
 
@@ -19,9 +19,11 @@ async function create({ email, password_hash, name, role_id = 1, phone_number = 
     .input('password_hash', sql.VarChar(255), password_hash)
     .input('role_id', sql.Int, role_id)
     .input('phone_number', sql.VarChar(20), phone_number)
-    .query(`INSERT INTO Users (full_name, email, password_hash, phone_number, role_id, created_at)
+    .input('status', sql.VarChar(20), status)
+    .input('must_change_password', sql.Bit, must_change_password ? 1 : 0)
+    .query(`INSERT INTO Users (full_name, email, password_hash, phone_number, role_id, status, must_change_password, created_at)
             OUTPUT INSERTED.user_id, INSERTED.full_name, INSERTED.email, INSERTED.role_id
-            VALUES (@full_name, @email, @password_hash, @phone_number, @role_id, GETDATE())`);
+            VALUES (@full_name, @email, @password_hash, @phone_number, @role_id, @status, @must_change_password, GETDATE())`);
 
   return result.recordset[0];
 }

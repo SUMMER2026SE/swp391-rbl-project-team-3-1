@@ -55,7 +55,41 @@ exports.getMyProfile = async (req, res) => {
                 {
                     model: models.Members,
                     as: 'Member',
-                    required: false
+                    required: false,
+                    include: [
+                        {
+                            model: models.MemberMemberships,
+                            as: 'MemberMemberships',
+                            required: false,
+                            include: [
+                                {
+                                    model: models.MembershipPlans,
+                                    as: 'membership_plan',
+                                    required: false
+                                }
+                            ]
+                        },
+                        {
+                            model: models.WorkoutPlans,
+                            as: 'WorkoutPlans',
+                            required: false,
+                            include: [
+                                {
+                                    model: models.Trainers,
+                                    as: 'trainer',
+                                    required: false,
+                                    include: [
+                                        {
+                                            model: models.Users,
+                                            as: 'user',
+                                            required: false,
+                                            attributes: ['user_id', 'full_name', 'avatar_url']
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
                     model: models.Trainers,
@@ -73,6 +107,45 @@ exports.getMyProfile = async (req, res) => {
             return res.status(403).json({ message: 'Tài khoản không ở trạng thái Active!' });
         }
 
+        // Tính toán các thông tin bổ sung cho Member Dashboard
+        let remainingDays = 0;
+        let activePtName = 'Chưa đăng ký';
+        let planName = 'Chưa đăng ký';
+
+        if (user.role_id === ROLE.MEMBER && user.Member) {
+            // Lấy thông tin Membership đang hoạt động
+            const activeMembership = user.Member.MemberMemberships?.find(
+                m => m.membership_status === 'Active'
+            );
+            if (activeMembership) {
+                planName = activeMembership.membership_plan?.plan_name || 'Gói tập';
+                const endDate = new Date(activeMembership.end_date);
+                const diffTime = endDate - new Date();
+                remainingDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                if (remainingDays < 0) remainingDays = 0;
+            }
+
+            // Lấy thông tin HLV đang liên kết:
+            // 1. Ưu tiên giáo án tự động tạo lúc đăng ký/mua gói từ đầu (Lộ trình luyện tập với HLV...)
+            let workoutPlanWithPt = user.Member.WorkoutPlans?.find(
+                wp => wp.title && wp.title.startsWith('Lộ trình luyện tập với HLV') && wp.trainer?.user?.full_name
+            );
+
+            // 2. Nếu không có giáo án đăng ký từ đầu, lấy giáo án mới nhất được giao gần đây
+            if (!workoutPlanWithPt && user.Member.WorkoutPlans?.length > 0) {
+                const sortedPlans = [...user.Member.WorkoutPlans].sort(
+                    (a, b) => b.workout_plan_id - a.workout_plan_id
+                );
+                workoutPlanWithPt = sortedPlans.find(
+                    wp => wp.trainer?.user?.full_name
+                );
+            }
+
+            if (workoutPlanWithPt) {
+                activePtName = workoutPlanWithPt.trainer.user.full_name;
+            }
+        }
+
         return res.status(200).json({
             message: 'Lấy thông tin profile thành công!',
             profile: {
@@ -87,7 +160,19 @@ exports.getMyProfile = async (req, res) => {
                     role_id: user.role_id,
                     role_name: getRoleName(user.role_id)
                 },
-                memberInfo: user.Member || null,
+                memberInfo: user.Member ? {
+                    member_id: user.Member.member_id,
+                    height: user.Member.height,
+                    weight: user.Member.weight,
+                    bmi: user.Member.bmi,
+                    fitness_goal: user.Member.fitness_goal,
+                    fitness_level: user.Member.fitness_level,
+                    emergency_contact: user.Member.emergency_contact,
+                    joined_date: user.Member.joined_date,
+                    remainingDays,
+                    activePtName,
+                    planName
+                } : null,
                 trainerInfo: user.Trainer || null
             }
         });
@@ -136,6 +221,7 @@ exports.updateMyProfile = async (req, res) => {
             height,
             weight,
             fitnessGoal,
+            fitnessLevel,
             emergencyContact,
             specialization,
             experienceYears,
@@ -178,6 +264,7 @@ exports.updateMyProfile = async (req, res) => {
                 height: parsedHeight,
                 weight: parsedWeight,
                 fitness_goal: fitnessGoal !== undefined ? fitnessGoal : member.fitness_goal,
+                fitness_level: fitnessLevel !== undefined ? fitnessLevel : member.fitness_level,
                 emergency_contact: emergencyContact !== undefined ? emergencyContact : member.emergency_contact
             });
         }

@@ -22,8 +22,8 @@ async function main() {
     }
 
     const hash = await bcrypt.hash(password, 10);
-    const created = await userService.create({ email, password_hash: hash, name: fullName, role_id: 3 });
-    console.log('Admin user created:', created);
+    const created = await userService.create({ email, password_hash: hash, name: fullName, role_id: 3, status: 'Active', must_change_password: true });
+    console.log('Admin user created (must_change_password flag set):', created);
     console.log('You can now login with:', email);
     process.exit(0);
   } catch (err) {

@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './LoginPage.css';
+import MemberDashboard from '../dashboard/member/MemberDashboard';
+import TrainerDashboard from '../dashboard/trainer/TrainerDashboard';
+import AdminDashboard from '../dashboard/admin/AdminDashboard';
 
 // Helper: notify App.jsx that auth state changed (same-tab)
 const notifyAuthChange = () => window.dispatchEvent(new Event('authChange'));
@@ -27,8 +30,16 @@ function LoginPage() {
   const [cpwNew, setCpwNew] = useState('');
   const [cpwConf, setCpwConf] = useState('');
 
+  // First-time password change (admin) states
+  const [tempPassword, setTempPassword] = useState('');
+  const [firstNewPw, setFirstNewPw] = useState('');
+  const [firstConfPw, setFirstConfPw] = useState('');
+  const [firstAlert, setFirstAlert] = useState({ show: false, msg: '', ok: false });
+  const [isFirstChangeLoading, setIsFirstChangeLoading] = useState(false);
+
   // Profile fields (from server)
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [profileData, setProfileData] = useState(null);
 
   // Alerts
   const [loginAlert, setLoginAlert] = useState({ show: false, msg: '', ok: false });
@@ -40,6 +51,28 @@ function LoginPage() {
   const [devLink, setDevLink] = useState('');
 
   const fileInputRef = useRef(null);
+
+  // Tabs & Lists state
+  const [activeTab, setActiveTab] = useState('profile');
+  const [workoutPlans, setWorkoutPlans] = useState([]);
+  const [mealPlans, setMealPlans] = useState([]);
+  const [members, setMembers] = useState([]);
+
+  // Workout form state
+  const [isCreatingWorkout, setIsCreatingWorkout] = useState(false);
+  const [editingWorkoutId, setEditingWorkoutId] = useState(null);
+  const [workoutTitle, setWorkoutTitle] = useState('');
+  const [workoutDesc, setWorkoutDesc] = useState('');
+  const [selectedMemberId, setSelectedMemberId] = useState('');
+  const [workoutExercises, setWorkoutExercises] = useState([]);
+
+  // Meal form state
+  const [isCreatingMeal, setIsCreatingMeal] = useState(false);
+  const [editingMealId, setEditingMealId] = useState(null);
+  const [mealTitle, setMealTitle] = useState('');
+  const [mealDesc, setMealDesc] = useState('');
+  const [mealCalories, setMealCalories] = useState('');
+  const [selectedMealMemberId, setSelectedMealMemberId] = useState('');
 
   // Initialize: check reset params in URL, or validate existing session
   useEffect(() => {
@@ -63,8 +96,11 @@ function LoginPage() {
             if (r.ok) {
               setToken(t);
               return r.json().then((d) => {
-                if (d.profile && d.profile.avatarUrl) {
-                  setAvatarUrl(d.profile.avatarUrl);
+                if (d.profile) {
+                  setProfileData(d.profile);
+                  if (d.profile.avatarUrl) {
+                    setAvatarUrl(d.profile.avatarUrl);
+                  }
                 }
               });
             } else {
@@ -88,12 +124,68 @@ function LoginPage() {
     })
       .then((r) => r.json())
       .then((d) => {
-        if (d.profile && d.profile.avatarUrl) {
-          setAvatarUrl(d.profile.avatarUrl);
+        if (d.profile) {
+          setProfileData(d.profile);
+          if (d.profile.avatarUrl) {
+            setAvatarUrl(d.profile.avatarUrl);
+          }
         }
       })
       .catch((err) => console.error('Lỗi khi tải thông tin cá nhân:', err));
   };
+
+  // Fetch lists when authenticated
+  const fetchWorkouts = async () => {
+    try {
+      const r = await fetch('/api/workout-plans', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (r.ok) {
+        const d = await r.json();
+        setWorkoutPlans(d);
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải danh sách kế hoạch tập:', err);
+    }
+  };
+
+  const fetchMeals = async () => {
+    try {
+      const r = await fetch('/api/meal-plans', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (r.ok) {
+        const d = await r.json();
+        setMealPlans(d);
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải danh sách kế hoạch ăn:', err);
+    }
+  };
+
+  const fetchMembers = async () => {
+    try {
+      const r = await fetch('/api/workout-plans/members', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (r.ok) {
+        const d = await r.json();
+        setMembers(d);
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải danh sách hội viên:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      fetchWorkouts();
+      fetchMeals();
+      if (userInfo && (userInfo.roleId === 2 || userInfo.roleId === 3)) {
+        fetchMembers();
+      }
+    }
+  }, [token, userInfo]);
 
   const showCard = (card) => setCurrentCard(card);
   const backToLogin = () => setCurrentCard('login');
@@ -103,6 +195,14 @@ function LoginPage() {
     setResetPw1('');
     setResetPw2('');
     setCurrentCard('login');
+  };
+
+  // Helper: redirect to correct page based on role after login
+  const redirectByRole = (roleId) => {
+    // Hiện tại chỉ có trang chủ, mở rộng sau khi có trang admin/trainer riêng
+    // roleId=3 → Admin, roleId=2 → Trainer, roleId=1 → Member
+    window.history.pushState({}, '', '/');
+    window.dispatchEvent(new Event('popstate'));
   };
 
   // Sign out
@@ -129,12 +229,24 @@ function LoginPage() {
       });
       const d = await r.json();
       if (r.ok) {
+        // Nếu server trả về cờ yêu cầu đổi mật khẩu lần đầu
+        if (d.mustChangePassword) {
+          setTempPassword(loginPw);
+          setFirstNewPw('');
+          setFirstConfPw('');
+          setCurrentCard('firstChange');
+          setLoginAlert({ show: true, msg: d.message || 'Vui lòng đổi mật khẩu lần đầu.', ok: true });
+          return;
+        }
+
+        // must_change_password = 0: login thành công → redirect về trang theo role
         localStorage.setItem('token', d.token);
         localStorage.setItem('userInfo', JSON.stringify(d.user));
         setToken(d.token);
         setUserInfo(d.user);
         fetchProfile(d.token);
-        notifyAuthChange(); // ← tell App.jsx to re-render to dashboard
+        notifyAuthChange();
+        redirectByRole(d.user.roleId);
       } else {
         setLoginAlert({ show: true, msg: d.message || 'Đăng nhập thất bại!', ok: false });
       }
@@ -142,6 +254,49 @@ function LoginPage() {
       setLoginAlert({ show: true, msg: 'Không thể kết nối đến máy chủ FxFitness!', ok: false });
     }
   };
+
+  // Handle first-time password change (admin)
+  const doFirstChange = async (e) => {
+    e.preventDefault();
+    setFirstAlert({ show: false, msg: '', ok: false });
+
+    if (firstNewPw !== firstConfPw) {
+      setFirstAlert({ show: true, msg: 'Mật khẩu xác nhận không khớp!', ok: false });
+      return;
+    }
+
+    setIsFirstChangeLoading(true);
+    try {
+      const r = await fetch('/api/auth/first-change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, oldPassword: tempPassword, newPassword: firstNewPw }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        // Hiển thị thông báo thành công rõ ràng
+        setFirstAlert({ show: true, msg: '✅ Cập nhật mật khẩu thành công! Đang chuyển về trang đăng nhập...', ok: true });
+        // Sau 2 giây tự động chuyển về trang login
+        setTimeout(() => {
+          setCurrentCard('login');
+          setFirstNewPw('');
+          setFirstConfPw('');
+          setTempPassword('');
+          setLoginPw('');
+          setFirstAlert({ show: false, msg: '', ok: false });
+          setIsFirstChangeLoading(false);
+          setLoginAlert({ show: true, msg: 'Mật khẩu đã được cập nhật thành công. Vui lòng đăng nhập bằng mật khẩu mới.', ok: true });
+        }, 2000);
+      } else {
+        setFirstAlert({ show: true, msg: d.message || 'Đổi mật khẩu thất bại!', ok: false });
+        setIsFirstChangeLoading(false);
+      }
+    } catch (err) {
+      setFirstAlert({ show: true, msg: 'Lỗi kết nối máy chủ!', ok: false });
+      setIsFirstChangeLoading(false);
+    }
+  };
+
 
   // Handle Forgot Password submission
   const doForgot = async (e) => {
@@ -314,8 +469,746 @@ function LoginPage() {
     return 'MEMBER';
   };
 
+  // Exercise input managers
+  const addExerciseRow = () => {
+    setWorkoutExercises([
+      ...workoutExercises,
+      { exercise_name: '', sets: 3, reps: 10, rpe: 8, duration_minutes: 0, calories_burned: 0 }
+    ]);
+  };
+
+  const removeExerciseRow = (index) => {
+    setWorkoutExercises(workoutExercises.filter((_, i) => i !== index));
+  };
+
+  const handleExerciseChange = (index, field, value) => {
+    const updated = [...workoutExercises];
+    updated[index][field] = value;
+    setWorkoutExercises(updated);
+  };
+
+  // Workout handlers
+  const saveWorkoutPlan = async (e) => {
+    e.preventDefault();
+    if (!selectedMemberId || !workoutTitle) {
+      alert('Vui lòng điền đầy đủ thông tin!');
+      return;
+    }
+
+    const payload = {
+      memberId: parseInt(selectedMemberId),
+      title: workoutTitle,
+      description: workoutDesc,
+      exercises: workoutExercises
+    };
+
+    const url = editingWorkoutId ? `/api/workout-plans/${editingWorkoutId}` : '/api/workout-plans';
+    const method = editingWorkoutId ? 'PUT' : 'POST';
+
+    try {
+      const r = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const d = await r.json();
+      if (r.ok) {
+        alert(d.message || 'Lưu kế hoạch tập luyện thành công!');
+        setIsCreatingWorkout(false);
+        setEditingWorkoutId(null);
+        setWorkoutTitle('');
+        setWorkoutDesc('');
+        setSelectedMemberId('');
+        setWorkoutExercises([]);
+        fetchWorkouts();
+      } else {
+        alert(d.message || 'Lỗi khi lưu kế hoạch tập luyện!');
+      }
+    } catch (err) {
+      alert('Lỗi kết nối máy chủ!');
+    }
+  };
+
+  const startEditWorkout = (plan) => {
+    setIsCreatingWorkout(true);
+    setEditingWorkoutId(plan.workout_plan_id);
+    setWorkoutTitle(plan.title || '');
+    setWorkoutDesc(plan.description || '');
+    setSelectedMemberId(plan.member_id || '');
+    setWorkoutExercises(plan.WorkoutExercises || []);
+  };
+
+  const startCreateWorkout = () => {
+    setIsCreatingWorkout(true);
+    setEditingWorkoutId(null);
+    setWorkoutTitle('');
+    setWorkoutDesc('');
+    setSelectedMemberId(members[0]?.member_id || '');
+    setWorkoutExercises([{ exercise_name: '', sets: 3, reps: 10, rpe: 8, duration_minutes: 0, calories_burned: 0 }]);
+  };
+
+  const deleteWorkoutPlan = async (id) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa kế hoạch tập luyện này?')) return;
+    try {
+      const r = await fetch(`/api/workout-plans/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const d = await r.json();
+      if (r.ok) {
+        alert(d.message || 'Xóa thành công!');
+        fetchWorkouts();
+      } else {
+        alert(d.message || 'Lỗi khi xóa!');
+      }
+    } catch (err) {
+      alert('Lỗi kết nối máy chủ!');
+    }
+  };
+
+  // Meal handlers
+  const saveMealPlan = async (e) => {
+    e.preventDefault();
+    if (!selectedMealMemberId || !mealTitle) {
+      alert('Vui lòng điền đầy đủ thông tin!');
+      return;
+    }
+
+    const payload = {
+      memberId: parseInt(selectedMealMemberId),
+      title: mealTitle,
+      description: mealDesc,
+      calories_per_day: parseInt(mealCalories) || 0
+    };
+
+    const url = editingMealId ? `/api/meal-plans/${editingMealId}` : '/api/meal-plans';
+    const method = editingMealId ? 'PUT' : 'POST';
+
+    try {
+      const r = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const d = await r.json();
+      if (r.ok) {
+        alert(d.message || 'Lưu kế hoạch ăn uống thành công!');
+        setIsCreatingMeal(false);
+        setEditingMealId(null);
+        setMealTitle('');
+        setMealDesc('');
+        setMealCalories('');
+        setSelectedMealMemberId('');
+        fetchMeals();
+      } else {
+        alert(d.message || 'Lỗi khi lưu kế hoạch ăn uống!');
+      }
+    } catch (err) {
+      alert('Lỗi kết nối máy chủ!');
+    }
+  };
+
+  const startEditMeal = (plan) => {
+    setIsCreatingMeal(true);
+    setEditingMealId(plan.meal_plan_id);
+    setMealTitle(plan.title || '');
+    setMealDesc(plan.description || '');
+    setMealCalories(plan.calories_per_day || '');
+    setSelectedMealMemberId(plan.member_id || '');
+  };
+
+  const startCreateMeal = () => {
+    setIsCreatingMeal(true);
+    setEditingMealId(null);
+    setMealTitle('');
+    setMealDesc('');
+    setMealCalories('');
+    setSelectedMealMemberId(members[0]?.member_id || '');
+  };
+
+  const deleteMealPlan = async (id) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa kế hoạch ăn uống này?')) return;
+    try {
+      const r = await fetch(`/api/meal-plans/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const d = await r.json();
+      if (r.ok) {
+        alert(d.message || 'Xóa thành công!');
+        fetchMeals();
+      } else {
+        alert(d.message || 'Lỗi khi xóa!');
+      }
+    } catch (err) {
+      alert('Lỗi kết nối máy chủ!');
+    }
+  };
+
+  // ─── Workspace Views ───────────────────────────────────────────────────────
+  const renderProfileTab = () => {
+    return (
+      <div className="dash-grid">
+        <div>
+          <div className="profile-card">
+            <div className="p-avatar" id="avatarBox">
+              {avatarUrl ? (
+                <img
+                  id="avatarImg"
+                  src={avatarUrl}
+                  alt="Avatar"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
+                />
+              ) : (
+                <i className="fa-solid fa-user-ninja" id="avatarIcon"></i>
+              )}
+            </div>
+
+            <input
+              type="file"
+              id="avatarInput"
+              ref={fileInputRef}
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={uploadAvatar}
+            />
+
+            <button className="avatar-upload-btn" onClick={() => fileInputRef.current.click()}>
+              <i className="fa-solid fa-camera"></i> Đổi ảnh đại diện
+            </button>
+            <div className="p-name" id="dName">
+              {userInfo ? userInfo.fullName : 'Hội Viên FxFitness'}
+            </div>
+            <div className="p-role" id="dRole">
+              {getRoleText()}
+            </div>
+          </div>
+
+          <div className="info-list">
+            <div className="info-row">
+              <i className="fa-solid fa-envelope"></i>
+              <div>
+                <div className="i-lbl">Email Hệ thống</div>
+                <div className="i-val" id="dEmail">
+                  {userInfo ? userInfo.email : 'N/A'}
+                </div>
+              </div>
+            </div>
+            <div className="info-row">
+              <i className="fa-solid fa-shield"></i>
+              <div>
+                <div className="i-lbl">Trạng thái bảo mật</div>
+                <div className="i-val" style={{ color: 'var(--orange)' }}>
+                  Đã kết nối JWT
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="cpw-title">
+            <i className="fa-solid fa-user-shield"></i> Thay Đổi Mật Khẩu
+          </div>
+
+          {cpwAlert.show && (
+            <div className={`alert ${cpwAlert.ok ? 'ok' : 'err'}`} style={{ display: 'flex' }}>
+              <i className={`fa-solid ${cpwAlert.ok ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
+              <span>{cpwAlert.msg}</span>
+            </div>
+          )}
+
+          <form id="fCpw" onSubmit={doChangePw}>
+            <div className="field">
+              <div className="field-head"><span className="lbl">Mật khẩu hiện tại</span></div>
+              <div className="inp-wrap">
+                <input type="password" placeholder="Nhập mật khẩu cũ" value={cpwOld} onChange={(e) => setCpwOld(e.target.value)} required />
+              </div>
+            </div>
+            <div className="field">
+              <div className="field-head"><span className="lbl">Mật khẩu mới</span></div>
+              <div className="inp-wrap">
+                <input type="password" placeholder="Tối thiểu 6 ký tự" value={cpwNew} onChange={(e) => setCpwNew(e.target.value)} required />
+              </div>
+            </div>
+            <div className="field">
+              <div className="field-head"><span className="lbl">Xác nhận mật khẩu mới</span></div>
+              <div className="inp-wrap">
+                <input type="password" placeholder="Nhập lại mật khẩu mới" value={cpwConf} onChange={(e) => setCpwConf(e.target.value)} required />
+              </div>
+            </div>
+            <button className="btn-primary" type="submit" style={{ marginTop: '4px' }}>
+              Cập Nhật Mật Khẩu
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  const renderWorkoutTab = () => {
+    const isPTOrAdmin = userInfo && (userInfo.roleId === 2 || userInfo.roleId === 3);
+
+    if (isCreatingWorkout) {
+      return (
+        <div className="form-card">
+          <div className="form-title-row">
+            <h4>{editingWorkoutId ? 'Chỉnh Sửa Kế Hoạch Tập Luyện' : 'Tạo Kế Hoạch Tập Luyện Mới'}</h4>
+            <button type="button" className="btn-close-form" onClick={() => { setIsCreatingWorkout(false); setEditingWorkoutId(null); }}>
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+
+          <form onSubmit={saveWorkoutPlan}>
+            {!editingWorkoutId && (
+              <div className="field">
+                <div className="field-head"><span className="lbl">Chọn Hội Viên</span></div>
+                <select
+                  className="form-select"
+                  value={selectedMemberId}
+                  onChange={(e) => setSelectedMemberId(e.target.value)}
+                  required
+                >
+                  <option value="">-- Chọn hội viên --</option>
+                  {members.map((m) => (
+                    <option key={m.member_id} value={m.member_id}>
+                      {m.fullName} ({m.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {editingWorkoutId && (
+              <div className="field">
+                <div className="field-head"><span className="lbl">Hội Viên</span></div>
+                <div className="inp-wrap">
+                  <input
+                    type="text"
+                    value={workoutPlans.find(p => p.workout_plan_id === editingWorkoutId)?.member?.user?.full_name || ''}
+                    disabled
+                    style={{ background: '#f1f5f9', cursor: 'not-allowed' }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="field">
+              <div className="field-head"><span className="lbl">Tiêu Đề Kế Hoạch</span></div>
+              <div className="inp-wrap">
+                <input
+                  type="text"
+                  placeholder="Ví dụ: Kế hoạch tăng cơ 4 tuần"
+                  value={workoutTitle}
+                  onChange={(e) => setWorkoutTitle(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="field">
+              <div className="field-head"><span className="lbl">Mô Tả Chi Tiết</span></div>
+              <textarea
+                className="form-textarea"
+                placeholder="Nhập mô tả hoặc lưu ý cho hội viên..."
+                value={workoutDesc}
+                onChange={(e) => setWorkoutDesc(e.target.value)}
+              />
+            </div>
+
+            <div className="exercises-form-section">
+              <div className="exercises-section-header">
+                <h5>Danh Sách Bài Tập</h5>
+                <button type="button" className="btn-add-exercise" onClick={addExerciseRow}>
+                  <i className="fa-solid fa-plus"></i> Thêm Bài Tập
+                </button>
+              </div>
+
+              <div className="exercise-inputs-grid">
+                {workoutExercises.length > 0 && (
+                  <div className="exercise-input-header-row">
+                    <label>Tên bài tập</label>
+                    <label>Số Set</label>
+                    <label>Số Rep</label>
+                    <label>Số RPE (1-10)</label>
+                    <label>Time nghỉ (phút)</label>
+                    <label>Calo (Kcal)</label>
+                    <label></label>
+                  </div>
+                )}
+                {workoutExercises.map((ex, idx) => (
+                  <div key={idx} className="exercise-input-row">
+                    <input
+                      type="text"
+                      placeholder="Tên bài tập"
+                      value={ex.exercise_name || ''}
+                      onChange={(e) => handleExerciseChange(idx, 'exercise_name', e.target.value)}
+                      required
+                    />
+                    <input
+                      type="number"
+                      placeholder="Số Set"
+                      min="1"
+                      value={ex.sets || 3}
+                      onChange={(e) => handleExerciseChange(idx, 'sets', e.target.value)}
+                      required
+                    />
+                    <input
+                      type="number"
+                      placeholder="Số Rep"
+                      min="1"
+                      value={ex.reps || 10}
+                      onChange={(e) => handleExerciseChange(idx, 'reps', e.target.value)}
+                      required
+                    />
+                    <input
+                      type="number"
+                      placeholder="RPE (1-10)"
+                      min="1"
+                      max="10"
+                      value={ex.rpe || ''}
+                      onChange={(e) => handleExerciseChange(idx, 'rpe', e.target.value)}
+                      required
+                    />
+                    <input
+                      type="number"
+                      placeholder="Time nghỉ (phút)"
+                      min="0"
+                      value={ex.duration_minutes || 0}
+                      onChange={(e) => handleExerciseChange(idx, 'duration_minutes', e.target.value)}
+                    />
+                    <input
+                      type="number"
+                      placeholder="Calo (Kcal)"
+                      min="0"
+                      value={ex.calories_burned || 0}
+                      onChange={(e) => handleExerciseChange(idx, 'calories_burned', e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="btn-remove-exercise"
+                      onClick={() => removeExerciseRow(idx)}
+                      title="Xóa bài tập này"
+                    >
+                      <i className="fa-solid fa-trash-can"></i>
+                    </button>
+                  </div>
+                ))}
+
+                {workoutExercises.length === 0 && (
+                  <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.88rem' }}>
+                    Chưa có bài tập nào được thêm. Nhấp "Thêm Bài Tập" ở trên.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="form-actions-row">
+              <button type="button" className="btn-form-cancel" onClick={() => { setIsCreatingWorkout(false); setEditingWorkoutId(null); }}>
+                Hủy bỏ
+              </button>
+              <button type="submit" className="btn-form-save">
+                Lưu Kế Hoạch
+              </button>
+            </div>
+          </form>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <div className="workspace-title-row">
+          <h3>Kế Hoạch Tập Luyện</h3>
+          {isPTOrAdmin && (
+            <button className="btn-form-save" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', fontSize: '0.88rem' }} onClick={startCreateWorkout}>
+              <i className="fa-solid fa-plus"></i> Tạo kế hoạch mới
+            </button>
+          )}
+        </div>
+
+        {workoutPlans.length === 0 ? (
+          <div className="empty-state">
+            <i className="fa-solid fa-calendar-xmark"></i>
+            <p>Hiện tại chưa có kế hoạch tập luyện nào được chỉ định.</p>
+          </div>
+        ) : (
+          <div className="plans-grid">
+            {workoutPlans.map((plan) => (
+              <div className="plan-card" key={plan.workout_plan_id}>
+                <div className="plan-card-header">
+                  <div className="plan-card-title">{plan.title}</div>
+                  <div className="plan-card-meta">
+                    <span>
+                      <i className="fa-solid fa-user"></i>
+                      Hội viên: {plan.member?.user?.full_name || 'N/A'}
+                    </span>
+                    <span>
+                      <i className="fa-solid fa-user-tie"></i>
+                      PT: {plan.trainer?.user?.full_name || 'N/A'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="plan-card-desc">{plan.description || 'Không có mô tả thêm.'}</div>
+
+                <div className="plan-card-stats">
+                  <div className="workout-stats-row">
+                    <span>
+                      <i className="fa-solid fa-dumbbell"></i>
+                      {plan.WorkoutExercises?.length || 0} bài tập
+                    </span>
+                    <span>
+                      <i className="fa-solid fa-fire"></i>
+                      {plan.WorkoutExercises?.reduce((acc, curr) => acc + (curr.calories_burned || 0), 0) || 0} kcal
+                    </span>
+                  </div>
+                </div>
+
+                {plan.WorkoutExercises && plan.WorkoutExercises.length > 0 && (
+                  <div className="plan-exercises-list">
+                    <h5>Chi Tiết Bài Tập:</h5>
+                    {plan.WorkoutExercises.map((ex) => (
+                      <div className="exercise-mini-item" key={ex.workout_exercise_id}>
+                        <span>{ex.exercise_name}</span>
+                        <span className="ex-details">
+                          {ex.sets} hiệp x {ex.reps} lần (RPE: {ex.rpe || 'N/A'}) {ex.duration_minutes ? `(${ex.duration_minutes} phút)` : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {isPTOrAdmin && (
+                  <div className="plan-card-actions">
+                    <button className="btn-card-action btn-edit" onClick={() => startEditWorkout(plan)}>
+                      <i className="fa-solid fa-pen"></i> Sửa
+                    </button>
+                    <button className="btn-card-action btn-delete" onClick={() => deleteWorkoutPlan(plan.workout_plan_id)}>
+                      <i className="fa-solid fa-trash"></i> Xóa
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderMealTab = () => {
+    const isPTOrAdmin = userInfo && (userInfo.roleId === 2 || userInfo.roleId === 3);
+
+    if (isCreatingMeal) {
+      return (
+        <div className="form-card">
+          <div className="form-title-row">
+            <h4>{editingMealId ? 'Chỉnh Sửa Kế Hoạch Ăn Uống' : 'Tạo Kế Hoạch Ăn Uống Mới'}</h4>
+            <button type="button" className="btn-close-form" onClick={() => { setIsCreatingMeal(false); setEditingMealId(null); }}>
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+
+          <form onSubmit={saveMealPlan}>
+            {!editingMealId && (
+              <div className="field">
+                <div className="field-head"><span className="lbl">Chọn Hội Viên</span></div>
+                <select
+                  className="form-select"
+                  value={selectedMealMemberId}
+                  onChange={(e) => setSelectedMealMemberId(e.target.value)}
+                  required
+                >
+                  <option value="">-- Chọn hội viên --</option>
+                  {members.map((m) => (
+                    <option key={m.member_id} value={m.member_id}>
+                      {m.fullName} ({m.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {editingMealId && (
+              <div className="field">
+                <div className="field-head"><span className="lbl">Hội Viên</span></div>
+                <div className="inp-wrap">
+                  <input
+                    type="text"
+                    value={mealPlans.find(p => p.meal_plan_id === editingMealId)?.member?.user?.full_name || ''}
+                    disabled
+                    style={{ background: '#f1f5f9', cursor: 'not-allowed' }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="field">
+              <div className="field-head"><span className="lbl">Tiêu Đề Kế Hoạch</span></div>
+              <div className="inp-wrap">
+                <input
+                  type="text"
+                  placeholder="Ví dụ: Kế hoạch ăn giảm mỡ bụng"
+                  value={mealTitle}
+                  onChange={(e) => setMealTitle(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="field">
+              <div className="field-head"><span className="lbl">Mục Tiêu Calo Mỗi Ngày (Kcal)</span></div>
+              <div className="inp-wrap">
+                <input
+                  type="number"
+                  placeholder="Ví dụ: 1800"
+                  value={mealCalories}
+                  onChange={(e) => setMealCalories(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="field">
+              <div className="field-head"><span className="lbl">Mô Tả Chế Độ Dinh Dưỡng</span></div>
+              <textarea
+                className="form-textarea"
+                placeholder="Nhập chi tiết các bữa ăn hoặc lưu ý dinh dưỡng cho hội viên..."
+                value={mealDesc}
+                onChange={(e) => setMealDesc(e.target.value)}
+              />
+            </div>
+
+            <div className="form-actions-row">
+              <button type="button" className="btn-form-cancel" onClick={() => { setIsCreatingMeal(false); setEditingMealId(null); }}>
+                Hủy bỏ
+              </button>
+              <button type="submit" className="btn-form-save">
+                Lưu Kế Hoạch
+              </button>
+            </div>
+          </form>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <div className="workspace-title-row">
+          <h3>Kế Hoạch Ăn Uống</h3>
+          {isPTOrAdmin && (
+            <button className="btn-form-save" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', fontSize: '0.88rem' }} onClick={startCreateMeal}>
+              <i className="fa-solid fa-plus"></i> Tạo kế hoạch mới
+            </button>
+          )}
+        </div>
+
+        {mealPlans.length === 0 ? (
+          <div className="empty-state">
+            <i className="fa-solid fa-calendar-xmark"></i>
+            <p>Hiện tại chưa có kế hoạch ăn uống nào được chỉ định.</p>
+          </div>
+        ) : (
+          <div className="plans-grid">
+            {mealPlans.map((plan) => (
+              <div className="plan-card" key={plan.meal_plan_id}>
+                <div className="plan-card-header">
+                  <div className="plan-card-title">{plan.title}</div>
+                  <div className="plan-card-meta">
+                    <span>
+                      <i className="fa-solid fa-user"></i>
+                      Hội viên: {plan.member?.user?.full_name || 'N/A'}
+                    </span>
+                    <span>
+                      <i className="fa-solid fa-user-tie"></i>
+                      PT: {plan.trainer?.user?.full_name || 'N/A'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="plan-card-desc">{plan.description || 'Không có mô tả thêm.'}</div>
+
+                <div className="plan-card-stats">
+                  <div className="workout-stats-row" style={{ gridTemplateColumns: '1fr' }}>
+                    <span>
+                      <i className="fa-solid fa-fire-flame-curved"></i>
+                      Calo mục tiêu: <strong>{plan.calories_per_day || 0} kcal / ngày</strong>
+                    </span>
+                  </div>
+                </div>
+
+                {isPTOrAdmin && (
+                  <div className="plan-card-actions">
+                    <button className="btn-card-action btn-edit" onClick={() => startEditMeal(plan)}>
+                      <i className="fa-solid fa-pen"></i> Sửa
+                    </button>
+                    <button className="btn-card-action btn-delete" onClick={() => deleteMealPlan(plan.meal_plan_id)}>
+                      <i className="fa-solid fa-trash"></i> Xóa
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ─── Authenticated Dashboard ───────────────────────────────────────────────
   if (token) {
+    if (userInfo?.roleId === 1) {
+      return (
+        <MemberDashboard
+          token={token}
+          userInfo={userInfo}
+          logout={logout}
+          avatarUrl={avatarUrl}
+          uploadAvatar={uploadAvatar}
+          fileInputRef={fileInputRef}
+          profileData={profileData}
+          fetchProfile={fetchProfile}
+        />
+      );
+    }
+
+    if (userInfo?.roleId === 2) {
+      return (
+        <TrainerDashboard
+          token={token}
+          userInfo={userInfo}
+          logout={logout}
+          avatarUrl={avatarUrl}
+          uploadAvatar={uploadAvatar}
+          fileInputRef={fileInputRef}
+          profileData={profileData}
+          fetchProfile={fetchProfile}
+        />
+      );
+    }
+
+    if (userInfo?.roleId === 3) {
+      return (
+        <AdminDashboard
+          token={token}
+          userInfo={userInfo}
+          logout={logout}
+          avatarUrl={avatarUrl}
+          uploadAvatar={uploadAvatar}
+          fileInputRef={fileInputRef}
+          profileData={profileData}
+          fetchProfile={fetchProfile}
+        />
+      );
+    }
+
     return (
       <div className="loginpage-container">
         <div className="dash-shell" id="dashShell">
@@ -335,101 +1228,40 @@ function LoginPage() {
               </button>
             </div>
 
-            <div className="dash-grid">
-              <div>
-                <div className="profile-card">
-                  <div className="p-avatar" id="avatarBox">
-                    {avatarUrl ? (
-                      <img
-                        id="avatarImg"
-                        src={avatarUrl}
-                        alt="Avatar"
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
-                      />
-                    ) : (
-                      <i className="fa-solid fa-user-ninja" id="avatarIcon"></i>
-                    )}
-                  </div>
-
-                  <input
-                    type="file"
-                    id="avatarInput"
-                    ref={fileInputRef}
-                    accept="image/*"
-                    style={{ display: 'none' }}
-                    onChange={uploadAvatar}
-                  />
-
-                  <button className="avatar-upload-btn" onClick={() => fileInputRef.current.click()}>
-                    <i className="fa-solid fa-camera"></i> Đổi ảnh đại diện
+            <div className="dash-main-container">
+              <div className="dash-left-sidebar">
+                <div className="sidebar-menu">
+                  <button
+                    type="button"
+                    className={`sidebar-item ${activeTab === 'profile' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('profile')}
+                  >
+                    <i className="fa-solid fa-user"></i> Trang cá nhân
                   </button>
-                  <div className="p-name" id="dName">
-                    {userInfo ? userInfo.fullName : 'Hội Viên FxFitness'}
-                  </div>
-                  <div className="p-role" id="dRole">
-                    {getRoleText()}
-                  </div>
-                </div>
-
-                <div className="info-list">
-                  <div className="info-row">
-                    <i className="fa-solid fa-envelope"></i>
-                    <div>
-                      <div className="i-lbl">Email Hệ thống</div>
-                      <div className="i-val" id="dEmail">
-                        {userInfo ? userInfo.email : 'N/A'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="info-row">
-                    <i className="fa-solid fa-shield"></i>
-                    <div>
-                      <div className="i-lbl">Trạng thái bảo mật</div>
-                      <div className="i-val" style={{ color: 'var(--orange)' }}>
-                        Đã kết nối JWT
-                      </div>
-                    </div>
-                  </div>
+                  <button
+                    type="button"
+                    className={`sidebar-item ${activeTab === 'workout' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('workout')}
+                  >
+                    <i className="fa-solid fa-dumbbell"></i> Kế hoạch tập
+                  </button>
+                  <button
+                    type="button"
+                    className={`sidebar-item ${activeTab === 'meal' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('meal')}
+                  >
+                    <i className="fa-solid fa-utensils"></i> Kế hoạch ăn
+                  </button>
                 </div>
               </div>
 
-              <div>
-                <div className="cpw-title">
-                  <i className="fa-solid fa-user-shield"></i> Thay Đổi Mật Khẩu
-                </div>
-
-                {cpwAlert.show && (
-                  <div className={`alert ${cpwAlert.ok ? 'ok' : 'err'}`} style={{ display: 'flex' }}>
-                    <i className={`fa-solid ${cpwAlert.ok ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
-                    <span>{cpwAlert.msg}</span>
-                  </div>
-                )}
-
-                <form id="fCpw" onSubmit={doChangePw}>
-                  <div className="field">
-                    <div className="field-head"><span className="lbl">Mật khẩu hiện tại</span></div>
-                    <div className="inp-wrap">
-                      <input type="password" placeholder="Nhập mật khẩu cũ" value={cpwOld} onChange={(e) => setCpwOld(e.target.value)} required />
-                    </div>
-                  </div>
-                  <div className="field">
-                    <div className="field-head"><span className="lbl">Mật khẩu mới</span></div>
-                    <div className="inp-wrap">
-                      <input type="password" placeholder="Tối thiểu 6 ký tự" value={cpwNew} onChange={(e) => setCpwNew(e.target.value)} required />
-                    </div>
-                  </div>
-                  <div className="field">
-                    <div className="field-head"><span className="lbl">Xác nhận mật khẩu mới</span></div>
-                    <div className="inp-wrap">
-                      <input type="password" placeholder="Nhập lại mật khẩu mới" value={cpwConf} onChange={(e) => setCpwConf(e.target.value)} required />
-                    </div>
-                  </div>
-                  <button className="btn-primary" type="submit" style={{ marginTop: '4px' }}>
-                    Cập Nhật Mật Khẩu
-                  </button>
-                </form>
+              <div className="dash-workspace">
+                {activeTab === 'profile' && renderProfileTab()}
+                {activeTab === 'workout' && renderWorkoutTab()}
+                {activeTab === 'meal' && renderMealTab()}
               </div>
             </div>
+
           </div>
         </div>
       </div>
@@ -450,10 +1282,7 @@ function LoginPage() {
             </h1>
             <p className="sub" onClick={backToHome} style={{ cursor: 'pointer' }}>Fx Fitness Center</p>
             <div className="gym-photo">
-              <div className="gym-placeholder">
-                <i className="fa-solid fa-dumbbell"></i>
-                <span>Fx Fitness Center</span>
-              </div>
+              <img src="/gym_login.png" alt="Fx Fitness Center" />
               <div className="photo-arrow" onClick={backToHome}>
                 <i className="fa-solid fa-chevron-right"></i>
               </div>
@@ -579,6 +1408,44 @@ function LoginPage() {
                   <button className="btn-primary" type="submit">Cập Nhật Mật Khẩu</button>
                 </form>
                 <button className="btn-secondary" onClick={clearAndLogin}>Hủy & Về Đăng nhập</button>
+              </div>
+            )}
+
+            {/* FIRST-TIME CHANGE (Admin) */}
+            {currentCard === 'firstChange' && (
+              <div id="firstChangeCard">
+                <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text)', marginBottom: '6px' }}>Đổi Mật Khẩu Lần Đầu</h2>
+                <p style={{ color: '#999', fontSize: '0.88rem', marginBottom: '24px' }}>Tài khoản admin yêu cầu đổi mật khẩu lần đầu. Vui lòng nhập mật khẩu mới.</p>
+                {firstAlert.show && (
+                  <div className={`alert ${firstAlert.ok ? 'ok' : 'err'}`} style={{ display: 'flex' }}>
+                    <i className={`fa-solid ${firstAlert.ok ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
+                    <span>{firstAlert.msg}</span>
+                  </div>
+                )}
+                <form id="fFirstChange" onSubmit={doFirstChange}>
+                  <div className="field">
+                    <div className="field-head"><span className="lbl">Email</span></div>
+                    <div className="inp-wrap">
+                      <input type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} required />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <div className="field-head"><span className="lbl">Mật khẩu mới</span></div>
+                    <div className="inp-wrap">
+                      <input type="password" placeholder="Tối thiểu 6 ký tự" value={firstNewPw} onChange={(e) => setFirstNewPw(e.target.value)} required />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <div className="field-head"><span className="lbl">Xác nhận mật khẩu mới</span></div>
+                    <div className="inp-wrap">
+                      <input type="password" placeholder="Nhập lại mật khẩu mới" value={firstConfPw} onChange={(e) => setFirstConfPw(e.target.value)} required />
+                    </div>
+                  </div>
+                  <button className="btn-primary" type="submit" disabled={isFirstChangeLoading}>
+                    {isFirstChangeLoading ? 'Đang xử lý...' : 'Cập Nhật Mật Khẩu'}
+                  </button>
+                </form>
+                <button className="btn-secondary" disabled={isFirstChangeLoading} onClick={() => { setCurrentCard('login'); setTempPassword(''); setFirstNewPw(''); setFirstConfPw(''); }}>Hủy & Về Đăng nhập</button>
               </div>
             )}
           </div>

@@ -59,6 +59,7 @@ app.get('/api/db-status', async (req, res) => {
 const authRoutes = require('./routes/authRoutes');
 app.use('/api/auth', authRoutes);
 
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
 
@@ -69,3 +70,19 @@ app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 // Mount profile routes
 const profileRoutes = require('./routes/profileRoutes');
 app.use('/api/profile', profileRoutes);
+
+// Mount checkout routes (public: trainers list, plans list)
+const checkoutRoutes = require('./routes/checkoutRoutes');
+app.use('/api/checkout', checkoutRoutes);
+
+// Mount dashboard analytics and management routes
+const dashboardRoutes = require('./routes/dashboardRoutes');
+app.use('/api/dashboard', dashboardRoutes);
+
+// Mount workout routes
+const workoutRoutes = require('./routes/workoutRoutes');
+app.use('/api/workout-plans', workoutRoutes);
+
+// Mount meal routes
+const mealRoutes = require('./routes/mealRoutes');
+app.use('/api/meal-plans', mealRoutes);

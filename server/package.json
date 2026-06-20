@@ -4,14 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-<<<<<<< HEAD
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "create-admin": "node scripts/createAdmin.js"
-=======
-    "dev": "nodemon index.js",
-    "start": "node index.js"
->>>>>>> tue1
   },
   "keywords": [],
   "author": "",
