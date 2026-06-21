@@ -58,6 +58,41 @@ function MemberDashboard({
     'morning': false, 'noon': false, 'evening': false
   });
 
+  // Load completed exercises and meals from localStorage when memberInfo is available
+  useEffect(() => {
+    const memberId = profileData?.memberInfo?.member_id;
+    if (memberId) {
+      try {
+        const saved = localStorage.getItem(`member_progress_${memberId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.completedExercises) setCompletedExercises(parsed.completedExercises);
+          if (parsed.completedMeals) setCompletedMeals(parsed.completedMeals);
+        } else {
+          setCompletedExercises({});
+          setCompletedMeals({});
+        }
+      } catch (e) {
+        console.error('Error loading progress from localStorage:', e);
+      }
+    }
+  }, [profileData]);
+
+  // Save to localStorage whenever completedExercises or completedMeals change
+  useEffect(() => {
+    const memberId = profileData?.memberInfo?.member_id;
+    if (memberId) {
+      try {
+        localStorage.setItem(`member_progress_${memberId}`, JSON.stringify({
+          completedExercises,
+          completedMeals
+        }));
+      } catch (e) {
+        console.error('Error saving progress to localStorage:', e);
+      }
+    }
+  }, [completedExercises, completedMeals, profileData]);
+
   // Notifications state
   const [notifications, setNotifications] = useState([]);
 
@@ -78,6 +113,63 @@ function MemberDashboard({
   const [aiLoadingStep, setAiLoadingStep] = useState('');
   const [aiResult, setAiResult] = useState(null);
   const [aiError, setAiError] = useState('');
+
+  const isAppointmentPast = (ap) => {
+    if (!ap) return false;
+    if (ap.endDateTime) {
+      return new Date(ap.endDateTime) < new Date();
+    }
+    let dateStr = ap.workingDate;
+    let timeStr = ap.endTime || '00:00';
+
+    if (!dateStr && ap.date && ap.date !== 'N/A') {
+      const parts = ap.date.split('/');
+      if (parts.length === 3) {
+        dateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+    }
+    
+    if (!ap.endTime && ap.time) {
+      const matches = ap.time.match(/(\d{2}):(\d{2})/g);
+      if (matches && matches.length >= 2) {
+        timeStr = matches[1];
+      } else if (matches && matches.length === 1) {
+        timeStr = matches[0];
+      }
+    }
+
+    if (dateStr) {
+      return new Date(`${dateStr}T${timeStr}`) < new Date();
+    }
+    return false;
+  };
+
+  const renderAppointmentStatus = (ap) => {
+    if (isAppointmentPast(ap) && ap.status === 'confirmed') {
+      return <span className="member-badge-status confirmed">Đã hoàn thành</span>;
+    }
+    return (
+      <span className={`member-badge-status ${ap.status}`}>
+        {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : ap.status === 'rejected' ? 'Bị từ chối' : 'Đã hủy'}
+      </span>
+    );
+  };
+
+  const upcomingAppointments = appointmentsList
+    .filter(ap => !isAppointmentPast(ap) && ap.status !== 'cancelled' && ap.status !== 'rejected')
+    .sort((a, b) => {
+      const timeA = a.startDateTime ? new Date(a.startDateTime).getTime() : 0;
+      const timeB = b.startDateTime ? new Date(b.startDateTime).getTime() : 0;
+      return timeA - timeB;
+    });
+
+  const historyAppointments = appointmentsList
+    .filter(ap => isAppointmentPast(ap) || ap.status === 'cancelled' || ap.status === 'rejected')
+    .sort((a, b) => {
+      const timeA = a.startDateTime ? new Date(a.startDateTime).getTime() : 0;
+      const timeB = b.startDateTime ? new Date(b.startDateTime).getTime() : 0;
+      return timeB - timeA;
+    });
 
   // Synchronize edit fields when profileData loads
   useEffect(() => {
@@ -617,12 +709,14 @@ function MemberDashboard({
     return `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]} năm ${now.getFullYear()}`;
   };
 
-  // Helper to check if a date is today
+  // Helper to check if a date is today or in the future
   const isToday = (dateVal) => {
     if (!dateVal) return false;
     const planDate = new Date(dateVal);
     const today = new Date();
-    return planDate.toLocaleDateString('vi-VN') === today.toLocaleDateString('vi-VN');
+    today.setHours(0, 0, 0, 0);
+    planDate.setHours(0, 0, 0, 0);
+    return planDate >= today;
   };
 
   // Filter workout plans
@@ -739,7 +833,7 @@ function MemberDashboard({
                       </tr>
                     </thead>
                     <tbody>
-                      {appointmentsList.filter(a => a.status !== 'cancelled' && a.status !== 'rejected').slice(0, 4).map((ap) => (
+                      {upcomingAppointments.slice(0, 4).map((ap) => (
                         <tr key={ap.id}>
                           <td>{ap.time}</td>
                           <td>{ap.trainer}</td>
@@ -754,7 +848,7 @@ function MemberDashboard({
                           </td>
                         </tr>
                       ))}
-                      {appointmentsList.filter(a => a.status !== 'cancelled' && a.status !== 'rejected').length === 0 && (
+                      {upcomingAppointments.length === 0 && (
                         <tr>
                           <td colSpan="5" className="member-no-data">Không có lịch hẹn nào sắp tới</td>
                         </tr>
@@ -897,8 +991,8 @@ function MemberDashboard({
               </form>
             </div>
 
-            <div className="member-card-panel">
-              <h3 className="member-card-title" style={{ marginBottom: '20px' }}>Danh sách lịch hẹn</h3>
+            <div className="member-card-panel" style={{ marginBottom: '30px' }}>
+              <h3 className="member-card-title" style={{ marginBottom: '20px' }}>Danh sách lịch hẹn sắp tới</h3>
               <div className="member-table-container">
                 <table className="member-table">
                   <thead>
@@ -911,7 +1005,7 @@ function MemberDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {appointmentsList.map((ap) => (
+                    {upcomingAppointments.map((ap) => (
                       <tr key={ap.id}>
                         <td>{ap.time}</td>
                         <td>{ap.trainer}</td>
@@ -922,14 +1016,52 @@ function MemberDashboard({
                           </span>
                         </td>
                         <td>
-                          {ap.status !== 'cancelled' && ap.status !== 'rejected' ? (
-                            <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
-                          ) : (
-                            <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Đã đóng</span>
-                          )}
+                          <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
                         </td>
                       </tr>
                     ))}
+                    {upcomingAppointments.length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="member-no-data">Không có lịch hẹn nào sắp tới</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="member-card-panel">
+              <h3 className="member-card-title" style={{ marginBottom: '20px' }}>Lịch sử lịch hẹn</h3>
+              <div className="member-table-container">
+                <table className="member-table">
+                  <thead>
+                    <tr>
+                      <th>Thời gian</th>
+                      <th>HLV / Lớp</th>
+                      <th>Loại</th>
+                      <th>Trạng thái</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyAppointments.map((ap) => (
+                      <tr key={ap.id}>
+                        <td>{ap.time}</td>
+                        <td>{ap.trainer}</td>
+                        <td>{ap.type}</td>
+                        <td>
+                          {renderAppointmentStatus(ap)}
+                        </td>
+                        <td>
+                          <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Đã đóng</span>
+                        </td>
+                      </tr>
+                    ))}
+                    {historyAppointments.length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="member-no-data">Chưa có lịch sử lịch hẹn</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

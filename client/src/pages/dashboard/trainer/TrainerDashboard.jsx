@@ -104,6 +104,61 @@ function TrainerDashboard({
   const [customWorkoutName, setCustomWorkoutName] = useState('');
   const [customMealName, setCustomMealName] = useState('');
   const [successModal, setSuccessModal] = useState({ show: false, message: '' });
+  const [showProgressModal, setShowProgressModal] = useState(false);
+
+  // Get progress tracking data from localStorage for a selected member
+  const getMemberProgress = (member) => {
+    if (!member) return { workoutPct: 0, mealPct: 0, completedExercises: {}, completedMeals: {}, hasCurrentWorkout: false, currentMeals: [] };
+    
+    const isTodayOrFuture = (dateVal) => {
+      if (!dateVal) return false;
+      const planDate = new Date(dateVal);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      planDate.setHours(0, 0, 0, 0);
+      return planDate >= today;
+    };
+
+    try {
+      const saved = localStorage.getItem(`member_progress_${member.id}`);
+      const completedExercises = saved ? (JSON.parse(saved).completedExercises || {}) : {};
+      const completedMeals = saved ? (JSON.parse(saved).completedMeals || {}) : {};
+
+      // Calculate Workout Plan Progress (only if the plan is current or future)
+      let workoutPct = 0;
+      let hasCurrentWorkout = false;
+      if (member.workoutPlanId && member.workoutExercisesCount > 0 && isTodayOrFuture(member.workoutCreatedAt)) {
+        hasCurrentWorkout = true;
+        let checkedCount = 0;
+        for (let idx = 0; idx < member.workoutExercisesCount; idx++) {
+          const key = `db-${member.workoutPlanId}-${idx}`;
+          if (completedExercises[key]) {
+            checkedCount++;
+          }
+        }
+        workoutPct = Math.round((checkedCount / member.workoutExercisesCount) * 100);
+      }
+
+      // Calculate Meal Plan Progress (only for meals assigned today or in the future)
+      let mealPct = 0;
+      const currentMeals = (member.assignedMeals || []).filter(meal => isTodayOrFuture(meal.createdAt));
+      if (currentMeals.length > 0) {
+        let checkedCount = 0;
+        currentMeals.forEach(meal => {
+          const key = `db-meal-${meal.id}`;
+          if (completedMeals[key]) {
+            checkedCount++;
+          }
+        });
+        mealPct = Math.round((checkedCount / currentMeals.length) * 100);
+      }
+
+      return { workoutPct, mealPct, completedExercises, completedMeals, hasCurrentWorkout, currentMeals };
+    } catch (e) {
+      console.error('Error reading member progress from localStorage:', e);
+    }
+    return { workoutPct: 0, mealPct: 0, completedExercises: {}, completedMeals: {}, hasCurrentWorkout: false, currentMeals: [] };
+  };
 
   // Fetch Trainer dashboard data from backend
   const reloadTrainerDashboardData = () => {
@@ -132,8 +187,22 @@ function TrainerDashboard({
       .then(res => res.json())
       .then(data => {
         if (data && data.appointments) {
-          const pending = data.appointments.filter(a => a.status === 'Pending');
-          const scheduled = data.appointments.filter(a => a.status === 'Scheduled' || a.status === 'Completed');
+          const pending = data.appointments
+            .filter(a => a.status === 'Pending')
+            .sort((a, b) => {
+              const dateA = a.date || '';
+              const dateB = b.date || '';
+              if (dateA !== dateB) return dateA.localeCompare(dateB);
+              return (a.startTime || '').localeCompare(b.startTime || '');
+            });
+          const scheduled = data.appointments
+            .filter(a => a.status === 'Scheduled' || a.status === 'Completed')
+            .sort((a, b) => {
+              const dateA = a.date || '';
+              const dateB = b.date || '';
+              if (dateA !== dateB) return dateA.localeCompare(dateB);
+              return (a.startTime || '').localeCompare(b.startTime || '');
+            });
           setBookingRequests(pending);
           setScheduleList(scheduled);
         }
@@ -598,215 +667,214 @@ function TrainerDashboard({
                 </div>
               </div>
             </div>
-
-            {/* Orange banner for next session */}
-            <div className="trainer-next-session-banner">
-              <div className="trainer-banner-left">
-                <span className="trainer-banner-tag">Buổi tập tiếp theo</span>
-                <h2 className="trainer-banner-title">Sẵn sàng cho buổi tập của Lan Phạm?</h2>
-                <p className="trainer-banner-desc">
-                  Buổi tập sẽ bắt đầu trong khung giờ 15:00. Mục tiêu tập luyện hôm nay: 
-                  Tập trung cải thiện linh hoạt khớp vai, kéo giãn cơ liên sườn và bài tập bổ trợ core nhẹ nhàng.
-                </p>
-                <div className="trainer-banner-actions">
-                  {!isSessionActive ? (
-                    <button className="trainer-banner-btn-white" onClick={handleStartSession}>
-                      Bắt đầu buổi tập
-                    </button>
-                  ) : (
-                    <button className="trainer-banner-btn-white" style={{ background: '#d1fae5', color: '#065f46' }} disabled>
-                      🟢 Buổi tập đang diễn ra
-                    </button>
-                  )}
-                  <button className="trainer-banner-btn-outline" onClick={() => {
-                    const lan = membersList.find(m => m.name === 'Phạm Thị Lan');
-                    if (lan) {
-                      setSelectedMember(lan);
-                      setActiveTab('hocvien');
-                    }
-                  }}>
-                    Xem chi tiết bài tập
-                  </button>
-                </div>
-              </div>
-
-              <div className="trainer-banner-right">
-                <div className="trainer-banner-right-lbl">Khung giờ</div>
-                <div className="trainer-banner-right-val">
-                  {isSessionActive ? `⏳ ${formatTimer(sessionTimer)}` : '15:00 - Chiều'}
-                </div>
-                <div className="trainer-banner-progress-wrap">
-                  <div className="trainer-banner-progress-bar">
-                    <div 
-                      className="trainer-banner-progress-fill" 
-                      style={{ width: isSessionActive ? `${Math.round(((900 - sessionTimer)/900) * 100)}%` : '25%' }}
-                    ></div>
-                  </div>
-                  <span className="trainer-banner-progress-lbl">Tiến trình gói tập: 25%</span>
-                </div>
-              </div>
-            </div>
           </>
         );
 
       case 'hocvien':
-        return (
-          <div className="trainer-members-layout">
-            {!selectedMember ? (
-              <div className="trainer-card-panel">
-                <h3 className="trainer-card-title" style={{ marginBottom: '20px' }}>Học viên của bạn</h3>
-                <div className="trainer-members-grid">
-                  {membersList.map((m) => (
-                    <div 
-                      key={m.id} 
-                      className="trainer-member-card"
-                      onClick={() => setSelectedMember(m)}
-                    >
-                      <div className="trainer-member-card-avatar">
-                        {m.name.charAt(0)}
+        {
+          const progress = selectedMember ? getMemberProgress(selectedMember) : { workoutPct: 0, mealPct: 0, completedExercises: {}, completedMeals: {} };
+          return (
+            <div className="trainer-members-layout">
+              {!selectedMember ? (
+                <div className="trainer-card-panel">
+                  <h3 className="trainer-card-title" style={{ marginBottom: '20px' }}>Học viên của bạn</h3>
+                  <div className="trainer-members-grid">
+                    {membersList.map((m) => (
+                      <div 
+                        key={m.id} 
+                        className="trainer-member-card"
+                        onClick={() => setSelectedMember(m)}
+                      >
+                        <div className="trainer-member-card-avatar">
+                          {m.name.charAt(0)}
+                        </div>
+                        <div className="trainer-member-card-body">
+                          <div className="trainer-member-card-name">{m.name}</div>
+                          <div className="trainer-member-card-info">Gói: {m.planName} | Mục tiêu: {m.goal}</div>
+                          <div className="trainer-member-card-info" style={{ color: 'var(--orange)', fontWeight: 'bold' }}>Còn lại: {m.remainingSessions} buổi</div>
+                        </div>
+                        <i className="fa-solid fa-chevron-right" style={{ color: '#cbd5e1' }}></i>
                       </div>
-                      <div className="trainer-member-card-body">
-                        <div className="trainer-member-card-name">{m.name}</div>
-                        <div className="trainer-member-card-info">Gói: {m.planName} | Mục tiêu: {m.goal}</div>
-                        <div className="trainer-member-card-info" style={{ color: 'var(--orange)', fontWeight: 'bold' }}>Còn lại: {m.remainingSessions} buổi</div>
-                      </div>
-                      <i className="fa-solid fa-chevron-right" style={{ color: '#cbd5e1' }}></i>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="trainer-detail-inspection">
-                {/* Left card: Member detailed profile metrics */}
-                <div className="trainer-detail-sidebar">
-                  <div className="trainer-card-panel" style={{ textAlign: 'center' }}>
-                    <button 
-                      className="trainer-link-action" 
-                      style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px' }}
-                      onClick={() => setSelectedMember(null)}
-                    >
-                      <i className="fa-solid fa-arrow-left"></i> Quay lại
-                    </button>
-                    <div className="trainer-member-card-avatar" style={{ width: '80px', height: '80px', margin: '0 auto 16px', fontSize: '2rem' }}>
-                      {selectedMember.name.charAt(0)}
-                    </div>
-                    <h3 className="trainer-member-card-name" style={{ fontSize: '1.25rem' }}>{selectedMember.name}</h3>
-                    <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '4px 0 16px' }}>Hội viên đang quản lý</p>
-                    
-                    <span className="trainer-table-goal-badge" style={{ marginBottom: '20px' }}>
-                      Mục tiêu: {selectedMember.goal}
-                    </span>
-
-                    <div className="trainer-health-metric-row">
-                      <div className="trainer-health-box">
-                        <div className="trainer-health-lbl">Cân nặng</div>
-                        <div className="trainer-health-val">{selectedMember.weight} kg</div>
-                      </div>
-                      <div className="trainer-health-box">
-                        <div className="trainer-health-lbl">Chiều cao</div>
-                        <div className="trainer-health-val">{selectedMember.height} cm</div>
-                      </div>
-                      <div className="trainer-health-box">
-                        <div className="trainer-health-lbl">Chỉ số BMI</div>
-                        <div className="trainer-health-val">{selectedMember.bmi}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="trainer-card-panel">
-                    <h4 className="trainer-card-title" style={{ marginBottom: '14px' }}>Chế độ đang kích hoạt</h4>
-                    <div style={{ fontSize: '0.88rem', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      <div>
-                        <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold' }}>GIÁO ÁN LUYỆN TẬP</div>
-                        <div style={{ fontWeight: 'bold', color: 'var(--orange)', marginTop: '2px' }}>{selectedMember.workoutAssigned || 'Chưa phân công'}</div>
-                      </div>
-                      <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9' }} />
-                      <div>
-                        <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold' }}>THỰC ĐƠN DINH DƯỠNG</div>
-                        <div style={{ fontWeight: 'bold', color: '#10b981', marginTop: '2px' }}>{selectedMember.mealAssigned || 'Chưa phân công'}</div>
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 </div>
-
-                {/* Right panel: Assigning Workout and Meal plan */}
-                <div className="trainer-detail-main">
-                  <div className="trainer-card-panel">
-                    <h3 className="trainer-card-title" style={{ marginBottom: '16px' }}>Giao giáo án luyện tập (Workout Plan)</h3>
-                    <div style={{ marginBottom: '20px' }}>
-                      <label className="trainer-form-label">Chọn giáo án mẫu nhanh</label>
-                      <div className="trainer-plan-template-list" style={{ marginTop: '8px' }}>
-                        {[
-                          { title: 'HIIT Đốt Mỡ Nâng Cao', desc: 'Đốt mỡ cường độ cao cho người thừa cân nhẹ.' },
-                          { title: 'Full Body Khởi Đầu', desc: 'Khởi động cơ xương khớp cho người mới bắt đầu.' },
-                          { title: 'Powerlifting Cơ Bản', desc: 'Tập trung xây dựng sức mạnh cơ bắp thô.' }
-                        ].map((temp, idx) => (
-                          <div 
-                            key={idx} 
-                            className={`trainer-template-card ${customWorkoutName === temp.title ? 'active' : ''}`}
-                            onClick={() => setCustomWorkoutName(temp.title)}
-                          >
-                            <div className="trainer-template-card-title">{temp.title}</div>
-                            <div className="trainer-template-card-desc">{temp.desc}</div>
+              ) : (
+                <div className="trainer-detail-inspection">
+                  {/* Left card: Member detailed profile metrics */}
+                  <div className="trainer-detail-sidebar">
+                    <div className="trainer-card-panel" style={{ textAlign: 'center' }}>
+                      <button 
+                        className="trainer-link-action" 
+                        style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px' }}
+                        onClick={() => setSelectedMember(null)}
+                      >
+                        <i className="fa-solid fa-arrow-left"></i> Quay lại
+                      </button>
+                      <div className="trainer-member-card-avatar" style={{ width: '80px', height: '80px', margin: '0 auto 16px', fontSize: '2rem' }}>
+                        {selectedMember.name.charAt(0)}
+                      </div>
+                      <h3 className="trainer-member-card-name" style={{ fontSize: '1.25rem' }}>{selectedMember.name}</h3>
+                      <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '4px 0 16px' }}>Hội viên đang quản lý</p>
+                      
+                      <span className="trainer-table-goal-badge" style={{ marginBottom: '20px' }}>
+                        Mục tiêu: {selectedMember.goal}
+                      </span>
+  
+                      <div className="trainer-health-metric-row">
+                        <div className="trainer-health-box">
+                          <div className="trainer-health-lbl">Cân nặng</div>
+                          <div className="trainer-health-val">{selectedMember.weight} kg</div>
+                        </div>
+                        <div className="trainer-health-box">
+                          <div className="trainer-health-lbl">Chiều cao</div>
+                          <div className="trainer-health-val">{selectedMember.height} cm</div>
+                        </div>
+                        <div className="trainer-health-box">
+                          <div className="trainer-health-lbl">Chỉ số BMI</div>
+                          <div className="trainer-health-val">{selectedMember.bmi}</div>
+                        </div>
+                      </div>
+                    </div>
+  
+                    <div className="trainer-card-panel">
+                      <h4 className="trainer-card-title" style={{ marginBottom: '14px' }}>Chế độ đang kích hoạt</h4>
+                      <div style={{ fontSize: '0.88rem', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div>
+                          <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold' }}>GIÁO ÁN LUYỆN TẬP</div>
+                          <div style={{ fontWeight: 'bold', color: 'var(--orange)', marginTop: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>{progress.hasCurrentWorkout ? selectedMember.workoutAssigned : 'Chưa phân công'}</span>
+                            {progress.hasCurrentWorkout && (
+                              <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Hoàn thành {progress.workoutPct}%</span>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <form onSubmit={handleAssignCustomWorkout} style={{ display: 'flex', gap: '12px' }}>
-                      <input 
-                        type="text" 
-                        className="trainer-form-input" 
-                        placeholder="Nhập tên giáo án tùy chỉnh mới..." 
-                        style={{ flex: 1 }}
-                        value={customWorkoutName}
-                        onChange={(e) => setCustomWorkoutName(e.target.value)}
-                        required 
-                      />
-                      <button type="submit" className="trainer-btn-submit" style={{ padding: '10px 20px' }}>Giao giáo án</button>
-                    </form>
-                  </div>
-
-                  <div className="trainer-card-panel">
-                    <h3 className="trainer-card-title" style={{ marginBottom: '16px' }}>Thiết lập thực đơn dinh dưỡng (Meal Plan)</h3>
-                    <div style={{ marginBottom: '20px' }}>
-                      <label className="trainer-form-label">Chọn thực đơn mẫu dinh dưỡng</label>
-                      <div className="trainer-plan-template-list" style={{ marginTop: '8px' }}>
-                        {[
-                          { title: 'Chế độ giảm cân thâm hụt 500kcal', desc: 'Giàu đạm, ít tinh bột nhanh.' },
-                          { title: 'Ăn kiêng Low-Carb cơ bản', desc: 'Giảm thiểu tinh bột xấu, tăng chất béo tốt.' },
-                          { title: 'Tăng cơ nạc (Lean Bulking)', desc: 'Dư thừa 200kcal, ưu tiên đạm tinh khiết.' }
-                        ].map((temp, idx) => (
-                          <div 
-                            key={idx} 
-                            className={`trainer-template-card ${customMealName === temp.title ? 'active-meal' : ''}`}
-                            onClick={() => setCustomMealName(temp.title)}
-                          >
-                            <div className="trainer-template-card-title">{temp.title}</div>
-                            <div className="trainer-template-card-desc">{temp.desc}</div>
+                          {progress.hasCurrentWorkout && (
+                            <div style={{ width: '100%', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', marginTop: '6px', overflow: 'hidden' }}>
+                              <div style={{ width: `${progress.workoutPct}%`, height: '100%', backgroundColor: 'var(--orange)', borderRadius: '3px', transition: 'width 0.3s ease' }}></div>
+                            </div>
+                          )}
+                        </div>
+                        <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9' }} />
+                        <div>
+                          <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold' }}>THỰC ĐƠN DINH DƯỠNG</div>
+                          <div style={{ fontWeight: 'bold', color: '#10b981', marginTop: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>{progress.currentMeals.length > 0 ? progress.currentMeals[0].title : 'Chưa phân công'}</span>
+                            {progress.currentMeals.length > 0 && (
+                              <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Hoàn thành {progress.mealPct}%</span>
+                            )}
                           </div>
-                        ))}
+                          {progress.currentMeals.length > 0 && (
+                            <div style={{ width: '100%', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', marginTop: '6px', overflow: 'hidden' }}>
+                              <div style={{ width: `${progress.mealPct}%`, height: '100%', backgroundColor: '#10b981', borderRadius: '3px', transition: 'width 0.3s ease' }}></div>
+                            </div>
+                          )}
+                        </div>
+                        <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9' }} />
+                        <button
+                          type="button"
+                          className="trainer-btn-submit"
+                          style={{
+                            marginTop: '8px',
+                            padding: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            background: 'linear-gradient(135deg, var(--orange) 0%, #f97316 100%)',
+                            border: 'none',
+                            color: '#fff',
+                            borderRadius: '8px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 10px rgba(249, 115, 22, 0.2)',
+                            transition: 'transform 0.2s ease'
+                          }}
+                          onClick={() => setShowProgressModal(true)}
+                        >
+                          <i className="fa-solid fa-square-poll-vertical"></i> Theo dõi tiến độ
+                        </button>
                       </div>
                     </div>
-
-                    <form onSubmit={handleAssignCustomMeal} style={{ display: 'flex', gap: '12px' }}>
-                      <input 
-                        type="text" 
-                        className="trainer-form-input" 
-                        placeholder="Nhập tên thực đơn dinh dưỡng tùy chỉnh..." 
-                        style={{ flex: 1 }}
-                        value={customMealName}
-                        onChange={(e) => setCustomMealName(e.target.value)}
-                        required 
-                      />
-                      <button type="submit" className="trainer-btn-submit" style={{ padding: '10px 20px', backgroundColor: '#10b981' }}>Giao thực đơn</button>
-                    </form>
+                  </div>
+  
+                  {/* Right panel: Assigning Workout and Meal plan */}
+                  <div className="trainer-detail-main">
+                    <div className="trainer-card-panel">
+                      <h3 className="trainer-card-title" style={{ marginBottom: '16px' }}>Giao giáo án luyện tập (Workout Plan)</h3>
+                      <div style={{ marginBottom: '20px' }}>
+                        <label className="trainer-form-label">Chọn giáo án mẫu nhanh</label>
+                        <div className="trainer-plan-template-list" style={{ marginTop: '8px' }}>
+                          {[
+                            { title: 'HIIT Đốt Mỡ Nâng Cao', desc: 'Đốt mỡ cường độ cao cho người thừa cân nhẹ.' },
+                            { title: 'Full Body Khởi Đầu', desc: 'Khởi động cơ xương khớp cho người mới bắt đầu.' },
+                            { title: 'Powerlifting Cơ Bản', desc: 'Tập trung xây dựng sức mạnh cơ bắp thô.' }
+                          ].map((temp, idx) => (
+                            <div 
+                              key={idx} 
+                              className={`trainer-template-card ${customWorkoutName === temp.title ? 'active' : ''}`}
+                              onClick={() => setCustomWorkoutName(temp.title)}
+                            >
+                              <div className="trainer-template-card-title">{temp.title}</div>
+                              <div className="trainer-template-card-desc">{temp.desc}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+  
+                      <form onSubmit={handleAssignCustomWorkout} style={{ display: 'flex', gap: '12px' }}>
+                        <input 
+                          type="text" 
+                          className="trainer-form-input" 
+                          placeholder="Nhập tên giáo án tùy chỉnh mới..." 
+                          style={{ flex: 1 }}
+                          value={customWorkoutName}
+                          onChange={(e) => setCustomWorkoutName(e.target.value)}
+                          required 
+                        />
+                        <button type="submit" className="trainer-btn-submit" style={{ padding: '10px 20px' }}>Giao giáo án</button>
+                      </form>
+                    </div>
+  
+                    <div className="trainer-card-panel">
+                      <h3 className="trainer-card-title" style={{ marginBottom: '16px' }}>Thiết lập thực đơn dinh dưỡng (Meal Plan)</h3>
+                      <div style={{ marginBottom: '20px' }}>
+                        <label className="trainer-form-label">Chọn thực đơn mẫu dinh dưỡng</label>
+                        <div className="trainer-plan-template-list" style={{ marginTop: '8px' }}>
+                          {[
+                            { title: 'Chế độ giảm cân thâm hụt 500kcal', desc: 'Giàu đạm, ít tinh bột nhanh.' },
+                            { title: 'Ăn kiêng Low-Carb cơ bản', desc: 'Giảm thiểu tinh bột xấu, tăng chất béo tốt.' },
+                            { title: 'Tăng cơ nạc (Lean Bulking)', desc: 'Dư thừa 200kcal, ưu tiên đạm tinh khiết.' }
+                          ].map((temp, idx) => (
+                            <div 
+                              key={idx} 
+                              className={`trainer-template-card ${customMealName === temp.title ? 'active-meal' : ''}`}
+                              onClick={() => setCustomMealName(temp.title)}
+                            >
+                              <div className="trainer-template-card-title">{temp.title}</div>
+                              <div className="trainer-template-card-desc">{temp.desc}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+  
+                      <form onSubmit={handleAssignCustomMeal} style={{ display: 'flex', gap: '12px' }}>
+                        <input 
+                          type="text" 
+                          className="trainer-form-input" 
+                          placeholder="Nhập tên thực đơn dinh dưỡng tùy chỉnh..." 
+                          style={{ flex: 1 }}
+                          value={customMealName}
+                          onChange={(e) => setCustomMealName(e.target.value)}
+                          required 
+                        />
+                        <button type="submit" className="trainer-btn-submit" style={{ padding: '10px 20px', backgroundColor: '#10b981' }}>Giao thực đơn</button>
+                      </form>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        );
+              )}
+            </div>
+          );
+        }
 
       case 'lichday':
         return (
@@ -1346,6 +1414,131 @@ function TrainerDashboard({
           </div>
         </div>
       )}
+
+      {/* Progress Details Modal */}
+      {showProgressModal && selectedMember && (() => {
+        const progress = getMemberProgress(selectedMember);
+        return (
+          <div className="trainer-success-modal-overlay" style={{ zIndex: 1000 }}>
+            <div className="trainer-success-modal-box" style={{ maxWidth: '600px', width: '90%', padding: '30px', textAlign: 'left', borderRadius: '16px', background: '#fff', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px' }}>
+                <h3 className="trainer-card-title" style={{ fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0, textTransform: 'none' }}>
+                  <i className="fa-solid fa-square-poll-vertical" style={{ color: 'var(--orange)' }}></i>
+                  Tiến độ của {selectedMember.name}
+                </h3>
+                <button
+                  type="button"
+                  style={{ background: 'none', border: 'none', fontSize: '1.2rem', color: '#94a3b8', cursor: 'pointer' }}
+                  onClick={() => setShowProgressModal(false)}
+                >
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxHeight: '450px', overflowY: 'auto', paddingRight: '6px' }}>
+                
+                {/* Workout Section */}
+                <div style={{ backgroundColor: '#fff8f1', borderRadius: '12px', padding: '16px', border: '1px solid #ffedd5' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 'bold', color: 'var(--orange)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <i className="fa-solid fa-dumbbell"></i>
+                      Bài tập ({progress.hasCurrentWorkout ? selectedMember.workoutAssigned : 'Chưa phân công'})
+                    </h4>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#ea580c', backgroundColor: '#ffedd5', padding: '2px 8px', borderRadius: '12px' }}>
+                      {progress.workoutPct}%
+                    </span>
+                  </div>
+
+                  {progress.hasCurrentWorkout ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {selectedMember.workoutExercises && selectedMember.workoutExercises.length > 0 ? (
+                        selectedMember.workoutExercises.map((ex, idx) => {
+                          const isDone = progress.completedExercises[`db-${selectedMember.workoutPlanId}-${idx}`];
+                          return (
+                            <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                                <i className={isDone ? "fa-solid fa-circle-check" : "fa-regular fa-circle"} style={{ color: isDone ? '#10b981' : '#cbd5e1', fontSize: '1.15rem' }}></i>
+                                <div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: isDone ? '#94a3b8' : 'var(--text)', textDecoration: isDone ? 'line-through' : 'none' }}>
+                                    {ex.name}
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                    {ex.sets} sets x {ex.reps} reps
+                                  </div>
+                                </div>
+                              </div>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: isDone ? '#10b981' : '#64748b', backgroundColor: isDone ? '#e6f4ea' : '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
+                                {isDone ? 'Hoàn thành' : 'Chưa tập'}
+                              </span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div style={{ fontSize: '0.85rem', color: '#64748b', textAlign: 'center', padding: '10px' }}>Giáo án chưa có danh sách chi tiết bài tập.</div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.85rem', color: '#64748b', textAlign: 'center', padding: '10px' }}>Chưa có giáo án cho ngày hôm nay / tương lai.</div>
+                  )}
+                </div>
+
+                {/* Meal Section */}
+                <div style={{ backgroundColor: '#f0fdf4', borderRadius: '12px', padding: '16px', border: '1px solid #dcfce7' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 'bold', color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <i className="fa-solid fa-bowl-food"></i>
+                      Dinh dưỡng ({progress.currentMeals.length > 0 ? progress.currentMeals[0].title : 'Chưa phân công'})
+                    </h4>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#15803d', backgroundColor: '#dcfce7', padding: '2px 8px', borderRadius: '12px' }}>
+                      {progress.mealPct}%
+                    </span>
+                  </div>
+
+                  {progress.currentMeals && progress.currentMeals.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {progress.currentMeals.map((meal, idx) => {
+                        const isDone = progress.completedMeals[`db-meal-${meal.id}`];
+                        return (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                              <i className={isDone ? "fa-solid fa-circle-check" : "fa-regular fa-circle"} style={{ color: isDone ? '#10b981' : '#cbd5e1', fontSize: '1.15rem' }}></i>
+                              <div>
+                                <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: isDone ? '#94a3b8' : 'var(--text)', textDecoration: isDone ? 'line-through' : 'none' }}>
+                                  {meal.title}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                  {meal.description} ({meal.calories} kcal)
+                                </div>
+                              </div>
+                            </div>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: isDone ? '#10b981' : '#64748b', backgroundColor: isDone ? '#e6f4ea' : '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
+                              {isDone ? 'Đã ăn' : 'Chưa ăn'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.85rem', color: '#64748b', textAlign: 'center', padding: '10px' }}>Chưa có thực đơn cho ngày hôm nay / tương lai.</div>
+                  )}
+                </div>
+
+              </div>
+
+              <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="trainer-success-modal-btn"
+                  style={{ margin: 0, padding: '10px 24px' }}
+                  onClick={() => setShowProgressModal(false)}
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

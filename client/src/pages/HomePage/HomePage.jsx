@@ -1,6 +1,142 @@
 import React, { useState, useEffect } from 'react';
 import './HomePage.css';
 
+const PRICING_DATA = {
+  Gym: [
+    {
+      name: 'Gói 3 Tháng (Gym)',
+      price: '5.000đ',
+      period: '/3 tháng',
+      features: [
+        { text: 'Truy cập đầy đủ thiết bị Gym', active: true },
+        { text: 'Tủ đồ cá nhân', active: true },
+        { text: 'Miễn phí giữ xe', active: true },
+        { text: 'Chưa bao gồm lớp Yoga/Boxing', active: false },
+      ],
+      planKey: 'Gym 3 Tháng',
+    },
+    {
+      name: 'Gói 6 Tháng (Gym)',
+      price: '10.000đ',
+      period: '/6 tháng',
+      features: [
+        { text: 'Truy cập đầy đủ thiết bị Gym', active: true },
+        { text: 'Tủ đồ VIP riêng biệt', active: true },
+        { text: 'Miễn phí giữ xe', active: true },
+        { text: 'Hỗ trợ đo chỉ số Inbody miễn phí', active: true },
+        { text: 'Ưu tiên đặt lịch HLV', active: true },
+      ],
+      planKey: 'Gym 6 Tháng',
+      featured: true,
+    },
+    {
+      name: 'Gói 12 Tháng (Gym)',
+      price: '15.000đ',
+      period: '/năm',
+      features: [
+        { text: 'Toàn bộ quyền lợi của gói 6 tháng', active: true },
+        { text: 'Tặng 1 tháng tập luyện miễn phí', active: true },
+        { text: 'Tặng 2 buổi tập thử với PT riêng', active: true },
+        { text: 'Kiểm tra sức khỏe Inbody định kỳ', active: true },
+      ],
+      planKey: 'Gym 12 Tháng',
+    },
+  ],
+  Yoga: [
+    {
+      name: 'Gói 3 Tháng (Yoga)',
+      price: '5.000đ',
+      period: '/3 tháng',
+      features: [
+        { text: 'Tham gia các lớp Yoga cơ bản', active: true },
+        { text: 'Huấn luyện viên Yoga chuyên nghiệp', active: true },
+        { text: 'Tủ đồ cá nhân', active: true },
+        { text: 'Miễn phí gửi xe', active: true },
+      ],
+      planKey: 'Yoga 3 Tháng',
+    },
+    {
+      name: 'Gói 6 Tháng (Yoga)',
+      price: '10.000đ',
+      period: '/6 tháng',
+      features: [
+        { text: 'Toàn bộ quyền lợi của gói 3 tháng', active: true },
+        { text: 'Lớp Yoga nâng cao & phục hồi', active: true },
+        { text: '1 buổi tư vấn thiền định chuyên sâu', active: true },
+        { text: 'Đo chỉ số cơ thể định kỳ', active: true },
+      ],
+      planKey: 'Yoga 6 Tháng',
+      featured: true,
+    },
+    {
+      name: 'Gói 12 Tháng (Yoga)',
+      price: '15.000đ',
+      period: '/năm',
+      features: [
+        { text: 'Toàn bộ quyền lợi của gói 6 tháng', active: true },
+        { text: 'Tặng thảm tập Yoga cao cấp', active: true },
+        { text: 'Tặng 2 buổi Workshop trị liệu cổ vai gáy', active: true },
+        { text: 'Tặng 1 tháng tập miễn phí', active: true },
+      ],
+      planKey: 'Yoga 12 Tháng',
+    },
+  ],
+  Boxing: [
+    {
+      name: 'Gói 3 Tháng (Boxing)',
+      price: '5.000đ',
+      period: '/3 tháng',
+      features: [
+        { text: 'Tập luyện khu vực bao cát & ring Boxing', active: true },
+        { text: 'Trang bị găng tay & băng quấn', active: true },
+        { text: 'Tủ đồ cá nhân', active: true },
+        { text: 'Miễn phí gửi xe', active: true },
+      ],
+      planKey: 'Boxing 3 Tháng',
+    },
+    {
+      name: 'Gói 6 Tháng (Boxing)',
+      price: '10.000đ',
+      period: '/6 tháng',
+      features: [
+        { text: 'Toàn bộ quyền lợi của gói 3 tháng', active: true },
+        { text: 'Đấu tập đối kháng có bảo hộ', active: true },
+        { text: 'HLV Boxing hướng dẫn kỹ thuật cơ bản', active: true },
+        { text: 'Đo Inbody định kỳ', active: true },
+      ],
+      planKey: 'Boxing 6 Tháng',
+      featured: true,
+    },
+    {
+      name: 'Gói 12 Tháng (Boxing)',
+      price: '15.000đ',
+      period: '/năm',
+      features: [
+        { text: 'Toàn bộ quyền lợi của gói 6 tháng', active: true },
+        { text: 'Tặng găng tay Boxing chính hãng', active: true },
+        { text: 'Tặng 2 buổi tập thử với võ sĩ chuyên nghiệp', active: true },
+        { text: 'Tặng 1 tháng tập miễn phí', active: true },
+      ],
+      planKey: 'Boxing 12 Tháng',
+    },
+  ],
+  Mixed: [
+    {
+      name: 'Premium Toàn Diện 12 Tháng',
+      price: '60.000đ',
+      period: '/năm',
+      features: [
+        { text: 'Sử dụng tất cả dịch vụ Gym, Yoga, Boxing', active: true },
+        { text: 'Đặc quyền VIP đầy đủ nhất hệ thống', active: true },
+        { text: 'Miễn phí đo chỉ số Inbody hàng tháng', active: true },
+        { text: 'Được hỗ trợ bởi Huấn luyện viên chuyên nghiệp', active: true },
+      ],
+      planKey: 'Premium Toàn Diện 12 Tháng',
+      featured: true,
+    },
+  ],
+};
+
 function HomePage() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -30,6 +166,7 @@ function HomePage() {
   const [aiLoadingStep, setAiLoadingStep] = useState('');
   const [aiResult, setAiResult] = useState(null);
   const [aiError, setAiError] = useState('');
+  const [selectedPricingSport, setSelectedPricingSport] = useState('Gym');
 
   useEffect(() => {
     const handleAuthChange = () => {
@@ -452,106 +589,92 @@ function HomePage() {
       {/* PRICING SECTION                            */}
       {/* ========================================== */}
       <section className="section-pricing" id="pricing">
-        <div className="section-header reveal">
+        <div className="section-header reveal visible">
           <h2 className="section-title">Gói Tập</h2>
         </div>
 
-        <div className="pricing-grid">
-          {/* Gym 3-Month Plan */}
-          <div className="pricing-card reveal reveal-delay-1">
-            <p className="plan-name">Gói 3 Tháng (Gym)</p>
-            <div className="plan-price">
-              <div className="price-amount">
-                5.000đ<span className="price-period">/3 tháng</span>
-              </div>
-            </div>
-            <div className="plan-divider"></div>
-            <ul className="plan-features">
-              <li>
-                <i className="fas fa-check-circle"></i> Truy cập đầy đủ thiết bị Gym
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tủ đồ cá nhân
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Miễn phí giữ xe
-              </li>
-              <li className="disabled">
-                <i className="fas fa-circle"></i> Chưa bao gồm lớp Yoga/Boxing
-              </li>
-            </ul>
-            <button
-              onClick={() => goToCheckout('Gym 3 Tháng')}
-              className="btn-plan"
-            >
-              Mua Ngay
-            </button>
-          </div>
+        {/* 4 buttons for the 4 main disciplines */}
+        <div className="pricing-sport-selector" style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginBottom: '40px', flexWrap: 'wrap', padding: '0 20px' }}>
+          {[
+            { id: 'Gym', label: 'Gym', icon: 'fa-solid fa-dumbbell', desc: 'Sức mạnh & Cơ bắp' },
+            { id: 'Yoga', label: 'Yoga', icon: 'fa-solid fa-person-praying', desc: 'Dẻo dai & Tĩnh lặng' },
+            { id: 'Boxing', label: 'Boxing', icon: 'fa-solid fa-hand-fist', desc: 'Phản xạ & Tốc độ' },
+            { id: 'Mixed', label: 'Mixed', icon: 'fa-solid fa-star', desc: 'Toàn diện & Cao cấp' },
+          ].map((sport) => {
+            const isActive = selectedPricingSport === sport.id;
+            return (
+              <button
+                key={sport.id}
+                type="button"
+                className={`pricing-sport-btn ${isActive ? 'active' : ''}`}
+                style={{
+                  background: isActive ? 'linear-gradient(135deg, var(--orange) 0%, #f97316 100%)' : '#ffffff',
+                  border: isActive ? '1px solid transparent' : '1px solid #e2e8f0',
+                  color: isActive ? '#ffffff' : 'var(--text-dark)',
+                  padding: '16px 24px',
+                  borderRadius: '16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  minWidth: '200px',
+                  boxShadow: isActive ? '0 10px 20px rgba(249, 115, 22, 0.2)' : '0 4px 10px rgba(0, 0, 0, 0.02)',
+                  transition: 'all 0.3s ease',
+                  textAlign: 'left'
+                }}
+                onClick={() => setSelectedPricingSport(sport.id)}
+              >
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  background: isActive ? 'rgba(255,255,255,0.2)' : '#fff8f1',
+                  color: isActive ? '#ffffff' : 'var(--orange)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1.2rem',
+                  transition: 'all 0.3s ease'
+                }}>
+                  <i className={sport.icon}></i>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{sport.label}</div>
+                  <div style={{ fontSize: '0.75rem', opacity: isActive ? 0.9 : 0.6, marginTop: '2px', color: isActive ? '#ffffff' : '#64748b' }}>{sport.desc}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
 
-          {/* Gym 6-Month Plan (Featured) */}
-          <div className="pricing-card featured reveal reveal-delay-2">
-            <div className="popular-badge">Phổ biến nhất</div>
-            <p className="plan-name featured-name">Gói 6 Tháng (Gym)</p>
-            <div className="plan-price">
-              <div className="price-amount">
-                10.000đ<span className="price-period">/6 tháng</span>
+        <div key={selectedPricingSport} className="pricing-grid-wrapper animate-fade-in" style={{ minHeight: '480px' }}>
+          <div className={`pricing-grid ${selectedPricingSport === 'Mixed' ? 'single-plan' : ''}`}>
+            {PRICING_DATA[selectedPricingSport]?.map((plan, idx) => (
+              <div key={idx} className={`pricing-card reveal visible ${plan.featured ? 'featured' : ''}`} style={{ transitionDelay: `${idx * 0.1}s` }}>
+                {plan.featured && <div className="popular-badge">Phổ biến nhất</div>}
+                <p className={`plan-name ${plan.featured ? 'featured-name' : ''}`}>{plan.name}</p>
+                <div className="plan-price">
+                  <div className="price-amount">
+                    {plan.price}<span className="price-period">{plan.period}</span>
+                  </div>
+                </div>
+                <div className="plan-divider"></div>
+                <ul className="plan-features">
+                  {plan.features.map((feat, fidx) => (
+                    <li key={fidx} className={feat.active ? '' : 'disabled'}>
+                      <i className={feat.active ? 'fas fa-check-circle' : 'fas fa-circle'}></i> {feat.text}
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  onClick={() => goToCheckout(plan.planKey)}
+                  className={`btn-plan ${plan.featured ? 'btn-featured' : ''}`}
+                >
+                  {plan.featured ? 'MUA NGAY' : 'Mua Ngay'}
+                </button>
               </div>
-            </div>
-            <div className="plan-divider"></div>
-            <ul className="plan-features">
-              <li>
-                <i className="fas fa-check-circle"></i> Truy cập đầy đủ thiết bị Gym
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tủ đồ VIP riêng biệt
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Miễn phí giữ xe
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Hỗ trợ đo chỉ số Inbody miễn phí
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Ưu tiên đặt lịch HLV
-              </li>
-            </ul>
-            <button
-              onClick={() => goToCheckout('Gym 6 Tháng')}
-              className="btn-plan btn-featured"
-            >
-              MUA NGAY
-            </button>
-          </div>
-
-          {/* Gym 12-Month Plan */}
-          <div className="pricing-card reveal reveal-delay-3">
-            <p className="plan-name">Gói 12 Tháng (Gym)</p>
-            <div className="plan-price">
-              <div className="price-amount">
-                15.000đ<span className="price-period">/năm</span>
-              </div>
-            </div>
-            <div className="plan-divider"></div>
-            <ul className="plan-features">
-              <li>
-                <i className="fas fa-check-circle"></i> Toàn bộ quyền lợi của gói 6 tháng
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tặng 1 tháng tập luyện miễn phí
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tặng 2 buổi tập thử với PT riêng
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Kiểm tra sức khỏe Inbody định kỳ
-              </li>
-            </ul>
-            <button
-              onClick={() => goToCheckout('Gym 12 Tháng')}
-              className="btn-plan"
-            >
-              Mua Ngay
-            </button>
+            ))}
           </div>
         </div>
       </section>

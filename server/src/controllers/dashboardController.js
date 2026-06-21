@@ -27,6 +27,22 @@ const toDateStr = (val) => {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 };
 
+// Helper: format working_date to "YYYY-MM-DD"
+const toYYYYMMDD = (val) => {
+  if (!val) return null;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) {
+    const s = String(val);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    return null;
+  }
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+
 // =====================================================
 // HELPER: SELF-SEEDING DATABASE LOGIC
 // If crucial tracking tables are empty, populate them
@@ -433,12 +449,23 @@ exports.getAdminAppointments = async (req, res) => {
 
 
     const mappedAppts = appointments.map((a) => {
+      const startTimeFormatted = toTimeStr(a.schedule?.start_time, '07:00');
+      const endTimeFormatted = toTimeStr(a.schedule?.end_time, '08:30');
+      const workingDateStr = toYYYYMMDD(a.schedule?.working_date);
+      const startDateTime = workingDateStr ? `${workingDateStr}T${startTimeFormatted}:00` : null;
+      const endDateTime = workingDateStr ? `${workingDateStr}T${endTimeFormatted}:00` : null;
+
       return {
         id: a.appointment_id,
         memberName: a.member?.user?.full_name || 'Hội viên',
         ptName: a.schedule?.trainer?.user?.full_name || 'Huấn luyện viên',
-        time: `${toTimeStr(a.schedule?.start_time, '07:00')} - ${toTimeStr(a.schedule?.end_time, '08:30')}`,
+        time: `${startTimeFormatted} - ${endTimeFormatted}`,
         date: toDateStr(a.schedule?.working_date),
+        workingDate: workingDateStr,
+        startTime: startTimeFormatted,
+        endTime: endTimeFormatted,
+        startDateTime,
+        endDateTime,
         type: a.note || 'Tập luyện cá nhân',
         status: a.status === 'Confirmed' ? 'Scheduled' : a.status || 'Scheduled'
       };
@@ -615,13 +642,31 @@ exports.getTrainerMembers = async (req, res) => {
       members = [];
     }
 
-    const mappedMembers = members.map((m, idx) => {
+    const mappedMembers = await Promise.all(members.map(async (m, idx) => {
       const activeMembership = m.MemberMemberships?.find(
         ms => ms.membership_status === 'Active'
       );
 
-      // Calculate a dummy progress metric or remaining classes
-      const progress = Math.round(40 + (idx * 15)) % 100;
+      // Fetch actual workout and meal plan assigned to this member by this trainer
+      const latestWorkoutPlan = await models.WorkoutPlans.findOne({
+        where: { member_id: m.member_id, trainer_id: trainerUser.trainer_id },
+        order: [['workout_plan_id', 'DESC']]
+      });
+
+      let workoutExercises = [];
+      let workoutExercisesCount = 0;
+      if (latestWorkoutPlan) {
+        workoutExercises = await models.WorkoutExercises.findAll({
+          where: { workout_plan_id: latestWorkoutPlan.workout_plan_id }
+        });
+        workoutExercisesCount = workoutExercises.length;
+      }
+
+      const mealPlans = await models.MealPlans.findAll({
+        where: { member_id: m.member_id, trainer_id: trainerUser.trainer_id },
+        order: [['meal_plan_id', 'DESC']]
+      });
+
       const remainingSessions = Math.round(5 + (idx * 3)) % 15;
 
       return {
@@ -634,10 +679,16 @@ exports.getTrainerMembers = async (req, res) => {
         height: Math.round((m.height || 1.7) * 100), // convert to cm
         weight: m.weight || 70,
         bmi: m.bmi || 22.5,
-        progress: progress || 50,
-        remainingSessions: remainingSessions || 8
+        remainingSessions: remainingSessions || 8,
+        workoutAssigned: latestWorkoutPlan ? latestWorkoutPlan.title : 'Chưa phân công',
+        mealAssigned: mealPlans.length > 0 ? mealPlans[0].title : 'Chưa phân công',
+        workoutPlanId: latestWorkoutPlan ? latestWorkoutPlan.workout_plan_id : null,
+        workoutCreatedAt: latestWorkoutPlan ? latestWorkoutPlan.created_at : null,
+        workoutExercisesCount,
+        workoutExercises: workoutExercises.map(e => ({ name: e.exercise_name, sets: e.sets, reps: e.reps })),
+        assignedMeals: mealPlans.map(mp => ({ id: mp.meal_plan_id, title: mp.title, description: mp.description, calories: mp.calories_per_day, createdAt: mp.created_at }))
       };
-    });
+    }));
 
     return res.status(200).json({ members: mappedMembers });
   } catch (error) {
@@ -666,6 +717,10 @@ exports.getTrainerAppointments = async (req, res) => {
           as: 'schedule',
           where: { trainer_id: trainerUser.trainer_id }
         }
+      ],
+      order: [
+        [{ model: models.TrainerSchedules, as: 'schedule' }, 'working_date', 'ASC'],
+        [{ model: models.TrainerSchedules, as: 'schedule' }, 'start_time', 'ASC']
       ]
     });
 
@@ -694,10 +749,19 @@ exports.getTrainerAppointments = async (req, res) => {
         }
       }
 
+      const workingDateStr = toYYYYMMDD(a.schedule?.working_date);
+      const startDateTime = workingDateStr ? `${workingDateStr}T${startTimeFormatted}:00` : null;
+      const endDateTime = workingDateStr ? `${workingDateStr}T${endTimeFormatted}:00` : null;
+
       return {
         id: a.appointment_id,
         day: dayNum,
         date: dateStr,
+        workingDate: workingDateStr,
+        startTime: startTimeFormatted,
+        endTime: endTimeFormatted,
+        startDateTime,
+        endDateTime,
         time: `${startTimeFormatted} - ${endTimeFormatted}`,
         member: a.member?.user?.full_name || 'Hội viên',
         name: a.member?.user?.full_name || 'Hội viên',
@@ -868,16 +932,23 @@ exports.getMemberAppointments = async (req, res) => {
       ],
       order: [['appointment_id', 'DESC']]
     });
-
     const mappedAppts = appointments.map(a => {
       const startTimeFormatted = toTimeStr(a.schedule?.start_time, '07:00');
       const endTimeFormatted = toTimeStr(a.schedule?.end_time, '08:30');
+      const workingDateStr = toYYYYMMDD(a.schedule?.working_date);
+      const startDateTime = workingDateStr ? `${workingDateStr}T${startTimeFormatted}:00` : null;
+      const endDateTime = workingDateStr ? `${workingDateStr}T${endTimeFormatted}:00` : null;
 
       return {
         id: a.appointment_id,
         ptName: a.schedule?.trainer?.user?.full_name || 'HLV Cá Nhân',
         trainer: a.schedule?.trainer?.user?.full_name || 'HLV Cá Nhân',
         date: toDateStr(a.schedule?.working_date),
+        workingDate: workingDateStr,
+        startTime: startTimeFormatted,
+        endTime: endTimeFormatted,
+        startDateTime,
+        endDateTime,
         time: a.schedule?.working_date ? `${toDateStr(a.schedule.working_date)} (${startTimeFormatted} - ${endTimeFormatted})` : `${startTimeFormatted} - ${endTimeFormatted}`,
         type: a.note || 'Tập thử Gym',
         status: (a.status === 'Confirmed' || a.status === 'Scheduled' ? 'confirmed' : a.status || 'pending').toLowerCase()

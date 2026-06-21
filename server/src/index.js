@@ -86,3 +86,7 @@ app.use('/api/workout-plans', workoutRoutes);
 // Mount meal routes
 const mealRoutes = require('./routes/mealRoutes');
 app.use('/api/meal-plans', mealRoutes);
+
+// Mount AI routes
+const aiRoutes = require('./routes/aiRoutes');
+app.use('/api/ai', aiRoutes);

@@ -419,6 +419,32 @@
     border-top: 1px solid var(--gray-200);
 }
 
+/* 4 sport selector styles */
+.pricing-sport-selector {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 48px;
+    flex-wrap: wrap;
+}
+
+.pricing-sport-btn {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.pricing-sport-btn:hover {
+    transform: translateY(-2px);
+    border-color: var(--orange-light) !important;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+}
+
+.pricing-sport-btn.active:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 24px rgba(249, 115, 22, 0.3) !important;
+}
+
 .pricing-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1097,4 +1123,33 @@
         max-width: 680px;
     }
 }
+
+/* ==========================================
+   INTERACTIVE PRICING FLOW STYLES (SIMPLIFIED)
+   ========================================== */
+/* Centered single plan for Mixed sport */
+.pricing-grid.single-plan {
+    display: flex;
+    justify-content: center;
+    max-width: 420px;
+    margin: 0 auto;
+}
+
+.pricing-grid.single-plan .pricing-card {
+    width: 100%;
+    transform: scale(1.02);
+    box-shadow: 0 16px 48px rgba(249, 115, 22, 0.12);
+    border: 2px solid var(--orange);
+}
+
+.pricing-grid.single-plan .pricing-card:hover {
+    transform: scale(1.04) translateY(-4px);
+    box-shadow: 0 20px 56px rgba(249, 115, 22, 0.22);
+}
+
+.pricing-grid-wrapper {
+    transition: min-height 0.3s ease;
+    width: 100%;
+}
+
 
