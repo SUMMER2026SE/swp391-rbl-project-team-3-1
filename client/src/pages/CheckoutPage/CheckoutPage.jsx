@@ -88,6 +88,9 @@ function CheckoutPage() {
   const [selectedPlan, setSelectedPlan] = useState(null);   // plan object
   const [selectedTrainer, setSelectedTrainer] = useState(null);   // trainer object | null
   const [showPlanPicker, setShowPlanPicker] = useState(false);
+  const [renewMembershipId, setRenewMembershipId] = useState(new URLSearchParams(window.location.search).get('renewMembershipId') || '');
+  const [renewSportType, setRenewSportType] = useState(new URLSearchParams(window.location.search).get('sportType') || '');
+  const [newRemainingDays, setNewRemainingDays] = useState(null);
 
   // ── Form & Loading states ──────────────────────────────────────────
   const [regEmail, setRegEmail] = useState('');
@@ -224,12 +227,16 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
         body: JSON.stringify({
           planId: selectedPlan.planId,
           trainerId: selectedTrainer?.userId || null,
-          payosOrderCode: payosPayment?.orderCode
+          payosOrderCode: payosPayment?.orderCode,
+          renewMembershipId: renewMembershipId || null
         })
       });
       const data = await res.json();
       setIsVerifyingPayment(false);
       if (res.ok) {
+        if (data.newRemainingDays !== undefined) {
+          setNewRemainingDays(data.newRemainingDays);
+        }
         setCheckoutSuccess(true);
       } else {
         setAlert({ show: true, msg: data.message || 'Thanh toán thất bại!', type: 'error' });
@@ -238,7 +245,7 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
       setIsVerifyingPayment(false);
       setAlert({ show: true, msg: 'Không thể kết nối tới server!', type: 'error' });
     }
-  }, [payosPayment, selectedPlan, selectedTrainer, token]);
+  }, [payosPayment, selectedPlan, selectedTrainer, token, renewMembershipId]);
 
   // ── Guest Submit Registration ──────────────────────────────────────
   useEffect(() => {
@@ -362,17 +369,36 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
         </nav>
         <div className="checkout-success-container">
           <div className="checkout-success-card">
-            <div className="success-icon-wrap">
-              <i className="fa-solid fa-check"></i>
+            <div className="success-icon-wrap" style={{ background: '#e6f4ea', color: '#137333', width: '96px', height: '96px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
+              <i className="fa-solid fa-circle-check" style={{ fontSize: '3.6rem' }}></i>
             </div>
-            <h2>Thanh Toán Thành Công!</h2>
-            <p>Gói tập <strong>{selectedPlan?.planName}</strong> của bạn đã được kích hoạt thành công.</p>
-            {selectedTrainer && (
-              <p className="trainer-success-info">
-                Huấn luyện viên đồng hành: <strong>{selectedTrainer.fullName}</strong>. Lộ trình tập luyện đã được tạo sẵn trong hệ thống.
-              </p>
+            {renewMembershipId ? (
+              <>
+                <h2 style={{ fontSize: '2.4rem', fontWeight: '900', color: '#1e293b', marginTop: '20px', marginBottom: '12px' }}>Gia Hạn Thành Công!</h2>
+                <p style={{ fontSize: '1.15rem', color: '#64748b', marginTop: '8px', lineHeight: '1.6' }}>
+                  Cảm ơn quý khách đã gia hạn gói tập tại FXFITNESS.
+                </p>
+                <div style={{ margin: '32px auto', padding: '24px 32px', background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: '16px', maxWidth: '520px', boxSizing: 'border-box' }}>
+                  <span style={{ fontSize: '0.95rem', fontWeight: '700', color: '#166534', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
+                    Số ngày còn lại sau khi gia hạn:
+                  </span>
+                  <span style={{ fontSize: '2.8rem', fontWeight: '900', color: '#15803d', display: 'block' }}>
+                    {newRemainingDays ?? '—'} ngày
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 style={{ fontSize: '2.4rem', fontWeight: '900', color: '#1e293b', marginTop: '20px', marginBottom: '12px' }}>Thanh Toán Thành Công!</h2>
+                <p style={{ fontSize: '1.15rem', color: '#64748b', marginTop: '8px', lineHeight: '1.6' }}>Gói tập <strong>{selectedPlan?.planName}</strong> của bạn đã được kích hoạt thành công.</p>
+                {selectedTrainer && (
+                  <p className="trainer-success-info" style={{ color: '#475569', fontSize: '1rem', marginTop: '16px', background: '#f8fafc', padding: '14px 20px', borderRadius: '10px', borderLeft: '4px solid var(--orange)' }}>
+                    Huấn luyện viên đồng hành: <strong>{selectedTrainer.fullName}</strong>. Lộ trình tập luyện đã được tạo sẵn trong hệ thống.
+                  </p>
+                )}
+              </>
             )}
-            <button className="btn-success-home" onClick={goHome}>
+            <button className="btn-success-home" onClick={goHome} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', margin: '32px auto 0', background: 'var(--orange)', color: '#fff', border: 'none', padding: '14px 36px', borderRadius: '8px', fontWeight: '700', fontSize: '1.05rem', cursor: 'pointer', transition: 'background-color 0.2s' }}>
               <i className="fa-solid fa-house"></i> Về Trang Chủ
             </button>
           </div>
@@ -392,13 +418,13 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
         </nav>
         <div className="checkout-success-container">
           <div className="checkout-success-card">
-            <div className="success-icon-wrap">
-              <i className="fa-solid fa-check"></i>
+            <div className="success-icon-wrap" style={{ background: '#e6f4ea', color: '#137333', width: '96px', height: '96px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
+              <i className="fa-solid fa-check" style={{ fontSize: '3.6rem' }}></i>
             </div>
-            <h2>Đăng Ký & Thanh Toán Thành Công!</h2>
-            <p>Tài khoản của bạn đã được đăng ký và kích hoạt gói tập <strong>{selectedPlan?.planName}</strong> thành công.</p>
-            <p>Hãy thiết lập hồ sơ cá nhân để chúng tôi tạo lộ trình tập luyện tốt nhất cho bạn.</p>
-            <button className="btn-success-login" style={{ background: 'var(--orange)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px 24px', fontSize: '1rem' }} onClick={() => {
+            <h2 style={{ fontSize: '2.4rem', fontWeight: '900', color: '#1e293b', marginTop: '20px', marginBottom: '12px' }}>Đăng Ký & Thanh Toán Thành Công!</h2>
+            <p style={{ fontSize: '1.15rem', color: '#64748b', marginTop: '8px', lineHeight: '1.6' }}>Tài khoản của bạn đã được đăng ký và kích hoạt gói tập <strong>{selectedPlan?.planName}</strong> thành công.</p>
+            <p style={{ fontSize: '1.1rem', color: '#64748b', marginTop: '12px', marginBottom: '24px', lineHeight: '1.6' }}>Hãy thiết lập hồ sơ cá nhân để chúng tôi tạo lộ trình tập luyện tốt nhất cho bạn.</p>
+            <button className="btn-success-login" style={{ background: 'var(--orange)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', margin: '32px auto 0', padding: '14px 36px', fontSize: '1.05rem', fontWeight: '700', borderRadius: '8px', border: 'none', color: '#fff', cursor: 'pointer' }} onClick={() => {
               window.history.pushState({}, '', '/');
               window.dispatchEvent(new Event('popstate'));
             }}>
@@ -515,7 +541,10 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
                   {/* Plan picker grid */}
                   {showPlanPicker && (
                     <div className="plan-picker-grid" style={{ marginTop: 16 }}>
-                      {plans.map(p => (
+                      {(renewMembershipId && renewSportType
+                        ? plans.filter(p => p.sportType?.toLowerCase() === renewSportType.toLowerCase())
+                        : plans
+                      ).map(p => (
                         <div
                           key={p.planId}
                           className={`plan-picker-card${p.featured ? ' featured-pick' : ''}${selectedPlan?.planId === p.planId ? ' selected' : ''}`}
@@ -537,77 +566,79 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
               </div>
 
               {/* Trainer list details */}
-              <div className="co-section">
-                <div className="co-section-header">
-                  <div className="co-section-title">
-                    <i className="fa-solid fa-user-tie"></i> Chọn Huấn Luyện Viên
+              {!renewMembershipId && (
+                <div className="co-section">
+                  <div className="co-section-header">
+                    <div className="co-section-title">
+                      <i className="fa-solid fa-user-tie"></i> Chọn Huấn Luyện Viên
+                    </div>
+                    <span className="trainer-optional-label">Tùy chọn</span>
                   </div>
-                  <span className="trainer-optional-label">Tùy chọn</span>
-                </div>
 
-                <div className="co-section-body">
-                  {isLoadingTrainers ? (
-                    <div className="trainers-grid">
-                      {[1, 2, 3, 4].map(i => (
-                        <div key={i} className="trainer-skeleton">
-                          <div className="sk-circle"></div>
-                          <div className="sk-lines">
-                            <div className="sk-line"></div>
-                            <div className="sk-line short"></div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : trainers.length === 0 ? (
-                    <div className="co-empty">
-                      <i className="fa-solid fa-user-slash"></i>
-                      Hiện chưa có huấn luyện viên.
-                    </div>
-                  ) : (
-                    <>
+                  <div className="co-section-body">
+                    {isLoadingTrainers ? (
                       <div className="trainers-grid">
-                        {trainers.map(t => (
-                          <div
-                            key={t.userId}
-                            className={`trainer-card${selectedTrainer?.userId === t.userId ? ' selected' : ''}`}
-                            onClick={() => setSelectedTrainer(
-                              selectedTrainer?.userId === t.userId ? null : t
-                            )}
-                          >
-                            <div className="trainer-avatar">
-                              {t.avatarUrl
-                                ? <img src={t.avatarUrl} alt={t.fullName} />
-                                : getInitials(t.fullName)
-                              }
-                            </div>
-                            <div className="trainer-info">
-                              <div className="trainer-name">{t.fullName}</div>
-                              <div className="trainer-spec">{t.specialization || 'Gym tổng hợp'}</div>
-                              <div className="trainer-rating">
-                                <i className="fa-solid fa-star"></i>
-                                {(t.rating || 4.5).toFixed(1)}
-                              </div>
-                            </div>
-                            <div className="trainer-select-btn">
-                              {selectedTrainer?.userId === t.userId
-                                ? <i className="fa-solid fa-check"></i>
-                                : <i className="fa-solid fa-plus"></i>
-                              }
+                        {[1, 2, 3, 4].map(i => (
+                          <div key={i} className="trainer-skeleton">
+                            <div className="sk-circle"></div>
+                            <div className="sk-lines">
+                              <div className="sk-line"></div>
+                              <div className="sk-line short"></div>
                             </div>
                           </div>
                         ))}
                       </div>
-                      <div
-                        className={`no-trainer-btn${selectedTrainer === null ? ' selected' : ''}`}
-                        onClick={() => setSelectedTrainer(null)}
-                      >
-                        <i className="fa-solid fa-times" style={{ marginRight: 6 }}></i>
-                        Chưa cần HLV lúc này
+                    ) : trainers.length === 0 ? (
+                      <div className="co-empty">
+                        <i className="fa-solid fa-user-slash"></i>
+                        Hiện chưa có huấn luyện viên.
                       </div>
-                    </>
-                  )}
+                    ) : (
+                      <>
+                        <div className="trainers-grid">
+                          {trainers.map(t => (
+                            <div
+                              key={t.userId}
+                              className={`trainer-card${selectedTrainer?.userId === t.userId ? ' selected' : ''}`}
+                              onClick={() => setSelectedTrainer(
+                                selectedTrainer?.userId === t.userId ? null : t
+                              )}
+                            >
+                              <div className="trainer-avatar">
+                                {t.avatarUrl
+                                  ? <img src={t.avatarUrl} alt={t.fullName} />
+                                  : getInitials(t.fullName)
+                                }
+                              </div>
+                              <div className="trainer-info">
+                                <div className="trainer-name">{t.fullName}</div>
+                                <div className="trainer-spec">{t.specialization || 'Gym tổng hợp'}</div>
+                                <div className="trainer-rating">
+                                  <i className="fa-solid fa-star"></i>
+                                  {(t.rating || 4.5).toFixed(1)}
+                                </div>
+                              </div>
+                              <div className="trainer-select-btn">
+                                {selectedTrainer?.userId === t.userId
+                                  ? <i className="fa-solid fa-check"></i>
+                                  : <i className="fa-solid fa-plus"></i>
+                                }
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div
+                          className={`no-trainer-btn${selectedTrainer === null ? ' selected' : ''}`}
+                          onClick={() => setSelectedTrainer(null)}
+                        >
+                          <i className="fa-solid fa-times" style={{ marginRight: 6 }}></i>
+                          Chưa cần HLV lúc này
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </>
           )}
 
@@ -834,7 +865,12 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
               <h3>Hóa Đơn Thanh Toán</h3>
             </div>
 
-            <div className="pay-summary-body">
+             <div className="pay-summary-body">
+              {renewMembershipId && (
+                <div className="pay-row renewal-row" style={{ color: '#ea580c', background: '#fff8f1', padding: '8px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', border: '1px solid #ffd8bf', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+                  <i className="fa-solid fa-rotate" style={{ color: '#ea580c' }}></i> Gia hạn gói tập hiện tại
+                </div>
+              )}
               <div className="pay-row">
                 <span className="label">Gói tập:</span>
                 <span className="value">{selectedPlan?.planName || '—'}</span>

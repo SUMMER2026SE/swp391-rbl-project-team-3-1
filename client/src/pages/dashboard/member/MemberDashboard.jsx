@@ -12,6 +12,7 @@ function MemberDashboard({
   fetchProfile
 }) {
   const [activeTab, setActiveTab] = useState('tongquan');
+  const [expandedPackageId, setExpandedPackageId] = useState(null);
 
   // --- MEMBER DASHBOARD STATE VARIABLES ---
   const [editFullName, setEditFullName] = useState('');
@@ -307,13 +308,18 @@ function MemberDashboard({
   };
 
   const fetchTrainersList = () => {
-    fetch('/api/checkout/trainers')
+    if (!token || token === 'mock-preview-token') return;
+    fetch('/api/dashboard/member/my-trainers', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
       .then(res => res.json())
       .then(data => {
         if (data && data.trainers) {
           setTrainersList(data.trainers);
           if (data.trainers.length > 0) {
             setSelectedTrainerId(data.trainers[0].trainerId);
+          } else {
+            setSelectedTrainerId('');
           }
         }
       })
@@ -785,15 +791,11 @@ function MemberDashboard({
   const renderTabContent = () => {
     switch (activeTab) {
       case 'tongquan':
+        const memberships = profileData?.memberInfo?.memberships || [];
         return (
           <>
             {/* Stat Cards */}
             <div className="member-stats-grid">
-              <div className="member-stat-card">
-                <span className="member-stat-label">Ngày còn lại</span>
-                <span className="member-stat-value">{profileData?.memberInfo?.remainingDays ?? 287}</span>
-                <i className="fa-solid fa-calendar member-stat-icon"></i>
-              </div>
               <div className="member-stat-card">
                 <span className="member-stat-label">Buổi tập tuần này</span>
                 <span className="member-stat-value">{completedExsCount} / 5</span>
@@ -811,6 +813,100 @@ function MemberDashboard({
                 <span className="member-stat-value">{profileData?.memberInfo?.bmi || '22.4'}</span>
                 <i className="fa-solid fa-gauge-simple-high member-stat-icon"></i>
               </div>
+            </div>
+
+            {/* Gói tập đã đăng ký Accordion Panel */}
+            <div className="member-packages-panel" style={{ marginBottom: '24px' }}>
+              <h3 className="member-packages-title">
+                <i className="fa-solid fa-address-card" style={{ color: 'var(--orange)' }}></i> Gói tập đã đăng ký
+              </h3>
+              {memberships.length > 0 ? (
+                <div className="member-packages-list">
+                  {memberships.map((m) => {
+                    const isOpen = expandedPackageId === m.memberMembershipId;
+                    const renderStatusBadge = (status) => {
+                      if (status === 'Active') {
+                        return <span className="member-package-badge-active">Đang hoạt động</span>;
+                      } else if (status === 'Expired') {
+                        return <span className="member-package-badge-expired">Hết hạn</span>;
+                      } else {
+                        return <span className="member-package-badge-cancelled">{status}</span>;
+                      }
+                    };
+
+                    return (
+                      <div className={`member-package-item ${isOpen ? 'open' : ''}`} key={m.memberMembershipId}>
+                        <div
+                          className="member-package-item-header"
+                          onClick={() => setExpandedPackageId(isOpen ? null : m.memberMembershipId)}
+                        >
+                          <div className="member-package-item-name">
+                            <i className="fa-solid fa-dumbbell" style={{ color: isOpen ? 'var(--orange)' : '#64748b' }}></i>
+                            {m.planName}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {renderStatusBadge(m.status)}
+                            <i className="fa-solid fa-chevron-down member-package-item-arrow"></i>
+                          </div>
+                        </div>
+                        {isOpen && (
+                          <div className="member-package-item-details">
+                            <div className="member-package-details-grid">
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Ngày bắt đầu</span>
+                                <span className="member-package-detail-value">{m.startDate}</span>
+                              </div>
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Ngày kết thúc</span>
+                                <span className="member-package-detail-value">{m.endDate}</span>
+                              </div>
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Bộ môn</span>
+                                <span className="member-package-detail-value">{m.sportType}</span>
+                              </div>
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Thời hạn gói</span>
+                                <span className="member-package-detail-value">{m.durationMonths} tháng</span>
+                              </div>
+                            </div>
+                            {m.description && (
+                              <div className="member-package-detail-col" style={{ marginTop: '4px' }}>
+                                <span className="member-package-detail-label">Mô tả gói tập</span>
+                                <span className="member-package-detail-value" style={{ fontWeight: 'normal', color: '#64748b', fontSize: '0.86rem' }}>
+                                  {m.description}
+                                </span>
+                              </div>
+                            )}
+                            <div className="member-package-remaining-box">
+                              <span className="member-package-remaining-text">Số ngày còn lại của gói tập:</span>
+                              <span className="member-package-remaining-value">{m.remainingDays} ngày</span>
+                            </div>
+                            {(m.status === 'Active' || m.status === 'Expired') && (
+                              <button
+                                className="member-package-btn-renew"
+                                onClick={() => {
+                                  window.history.pushState(
+                                    {},
+                                    '',
+                                    `/checkout?plan=${m.planId}&renewMembershipId=${m.memberMembershipId}&sportType=${encodeURIComponent(m.sportType)}`
+                                  );
+                                  window.dispatchEvent(new Event('popstate'));
+                                }}
+                              >
+                                <i className="fa-solid fa-arrows-rotate"></i> Gia hạn gói tập
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="member-no-data" style={{ padding: '20px' }}>
+                  Bạn chưa đăng ký bất kỳ gói tập nào trong hệ thống!
+                </div>
+              )}
             </div>
 
             {/* Grid Columns */}
@@ -945,6 +1041,7 @@ function MemberDashboard({
                     value={selectedTrainerId}
                     onChange={(e) => setSelectedTrainerId(e.target.value)}
                     required
+                    disabled={trainersList.length === 0}
                   >
                     {trainersList.length > 0 ? (
                       trainersList.map(t => (
@@ -953,7 +1050,7 @@ function MemberDashboard({
                         </option>
                       ))
                     ) : (
-                      <option value="">Đang tải danh sách HLV...</option>
+                      <option value="">Bạn chưa có HLV trong gói tập đã đăng ký!</option>
                     )}
                   </select>
                 </div>
@@ -980,10 +1077,15 @@ function MemberDashboard({
                     onChange={(e) => setBookingNote(e.target.value)}
                   />
                 </div>
+                {trainersList.length === 0 && (
+                  <p style={{ color: '#ef4444', fontSize: '0.82rem', fontWeight: 'bold', margin: '4px 0 0 0' }}>
+                    * Bạn chỉ được đặt lịch với HLV mà mình đăng ký gói tập. Vui lòng đăng ký gói tập có kèm HLV trước.
+                  </p>
+                )}
                 <button
                   type="submit"
                   className="member-btn-submit"
-                  disabled={isBookingLoading}
+                  disabled={isBookingLoading || trainersList.length === 0}
                   style={{ width: '100%', marginTop: '8px' }}
                 >
                   {isBookingLoading ? 'Đang gửi...' : 'Gửi yêu cầu đặt lịch'}
@@ -1958,9 +2060,6 @@ function MemberDashboard({
               <div className="member-profile-name" title={userInfo?.fullName}>
                 {userInfo?.fullName || 'Hội viên'}
               </div>
-              <span className="member-package-badge">
-                {profileData?.memberInfo?.planName || 'Gói Năm'}
-              </span>
             </div>
           </div>
 

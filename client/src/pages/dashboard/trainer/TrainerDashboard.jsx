@@ -586,7 +586,7 @@ function TrainerDashboard({
                         <th>Tên học viên</th>
                         <th>Gói tập</th>
                         <th>Mục tiêu</th>
-                        <th>Buổi còn lại</th>
+                        <th>Ngày còn lại</th>
                         <th>Tiến độ</th>
                         <th>Hành động</th>
                       </tr>
@@ -602,7 +602,7 @@ function TrainerDashboard({
                               {m.goal}
                             </span>
                           </td>
-                          <td>{m.remainingSessions} buổi</td>
+                          <td>{m.remainingDays} ngày</td>
                           <td>
                             <div className="trainer-table-progress-wrap">
                               <div className="trainer-table-progress-bg">
@@ -691,7 +691,7 @@ function TrainerDashboard({
                         <div className="trainer-member-card-body">
                           <div className="trainer-member-card-name">{m.name}</div>
                           <div className="trainer-member-card-info">Gói: {m.planName} | Mục tiêu: {m.goal}</div>
-                          <div className="trainer-member-card-info" style={{ color: 'var(--orange)', fontWeight: 'bold' }}>Còn lại: {m.remainingSessions} buổi</div>
+                          <div className="trainer-member-card-info" style={{ color: 'var(--orange)', fontWeight: 'bold' }}>Còn lại: {m.remainingDays} ngày</div>
                         </div>
                         <i className="fa-solid fa-chevron-right" style={{ color: '#cbd5e1' }}></i>
                       </div>

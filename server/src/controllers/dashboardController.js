@@ -667,7 +667,19 @@ exports.getTrainerMembers = async (req, res) => {
         order: [['meal_plan_id', 'DESC']]
       });
 
-      const remainingSessions = Math.round(5 + (idx * 3)) % 15;
+      let remainingDays = 0;
+      if (m.MemberMemberships && m.MemberMemberships.length > 0) {
+        m.MemberMemberships.forEach(ms => {
+          if (ms.membership_status === 'Active') {
+            const endDate = new Date(ms.end_date);
+            const diffTime = endDate - new Date();
+            let daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (daysLeft > 0) {
+              remainingDays += daysLeft;
+            }
+          }
+        });
+      }
 
       return {
         id: m.member_id,
@@ -679,7 +691,7 @@ exports.getTrainerMembers = async (req, res) => {
         height: Math.round((m.height || 1.7) * 100), // convert to cm
         weight: m.weight || 70,
         bmi: m.bmi || 22.5,
-        remainingSessions: remainingSessions || 8,
+        remainingDays: remainingDays,
         workoutAssigned: latestWorkoutPlan ? latestWorkoutPlan.title : 'Chưa phân công',
         mealAssigned: mealPlans.length > 0 ? mealPlans[0].title : 'Chưa phân công',
         workoutPlanId: latestWorkoutPlan ? latestWorkoutPlan.workout_plan_id : null,
@@ -1065,5 +1077,60 @@ exports.createMemberAppointment = async (req, res) => {
   } catch (error) {
     console.error('❌ Error creating member appointment:', error);
     return res.status(500).json({ message: 'Lỗi server khi đăng ký lịch tập!: ' + error.message });
+  }
+};
+
+// GET /api/dashboard/member/my-trainers
+exports.getMemberTrainers = async (req, res) => {
+  try {
+    const member = await models.Members.findOne({ where: { user_id: req.user.userId } });
+    if (!member) {
+      return res.status(200).json({ trainers: [] });
+    }
+
+    // Find all distinct trainer IDs associated with this member in WorkoutPlans or MealPlans
+    const workoutPlans = await models.WorkoutPlans.findAll({
+      where: { member_id: member.member_id },
+      attributes: ['trainer_id']
+    });
+
+    const mealPlans = await models.MealPlans.findAll({
+      where: { member_id: member.member_id },
+      attributes: ['trainer_id']
+    });
+
+    const trainerIds = new Set();
+    workoutPlans.forEach(wp => { if (wp.trainer_id) trainerIds.add(wp.trainer_id); });
+    mealPlans.forEach(mp => { if (mp.trainer_id) trainerIds.add(mp.trainer_id); });
+
+    if (trainerIds.size === 0) {
+      return res.status(200).json({ trainers: [] });
+    }
+
+    // Retrieve Trainer records along with User info
+    const trainers = await models.Trainers.findAll({
+      where: { trainer_id: Array.from(trainerIds) },
+      include: [{
+        model: models.Users,
+        as: 'user',
+        attributes: ['user_id', 'full_name', 'avatar_url']
+      }]
+    });
+
+    const result = trainers.map(t => ({
+      userId: t.user?.user_id,
+      trainerId: t.trainer_id,
+      fullName: t.user?.full_name || 'Huấn luyện viên',
+      avatarUrl: t.user?.avatar_url ? `${req.protocol}://${req.get('host')}${t.user.avatar_url}` : null,
+      specialization: t.specialization || 'Gym tổng hợp',
+      experienceYears: t.experience_years || 0,
+      bio: t.bio || '',
+      rating: t.rating || 4.5
+    }));
+
+    return res.status(200).json({ trainers: result });
+  } catch (error) {
+    console.error('❌ Error getting member trainers:', error);
+    return res.status(500).json({ message: 'Lỗi server khi lấy danh sách PT của bạn!' });
   }
 };

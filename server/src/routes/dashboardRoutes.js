@@ -32,5 +32,6 @@ router.post('/trainer/assign-plan', dashboardController.assignPlanToMember);
 router.get('/member/appointments', dashboardController.getMemberAppointments);
 router.post('/member/appointments', dashboardController.createMemberAppointment);
 router.put('/member/appointments/:id/cancel', dashboardController.cancelAdminAppointment);
+router.get('/member/my-trainers', dashboardController.getMemberTrainers);
 
 module.exports = router;
