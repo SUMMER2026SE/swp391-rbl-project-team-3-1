@@ -94,3 +94,7 @@ app.use('/api/certifications', certificationRoutes);
 // Mount progress tracking routes
 const progressRoutes = require('./routes/progressRoutes');
 app.use('/api/progress', progressRoutes);
+
+// Mount AI routes
+const aiRoutes = require('./routes/aiRoutes');
+app.use('/api/ai', aiRoutes);

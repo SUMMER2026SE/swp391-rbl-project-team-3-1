@@ -111,8 +111,36 @@ exports.getMyProfile = async (req, res) => {
         let remainingDays = 0;
         let activePtName = 'Chưa đăng ký';
         let planName = 'Chưa đăng ký';
+        let membershipsList = [];
 
         if (user.role_id === ROLE.MEMBER && user.Member) {
+            // Lấy danh sách gói tập đã đăng ký
+            membershipsList = (user.Member.MemberMemberships || []).map(m => {
+                const endDate = new Date(m.end_date);
+                const diffTime = endDate - new Date();
+                let daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                if (daysLeft < 0) daysLeft = 0;
+
+                let status = m.membership_status;
+                if (status === 'Active' && daysLeft === 0) {
+                    status = 'Expired';
+                }
+
+                return {
+                    memberMembershipId: m.member_membership_id,
+                    planId: m.membership_plan_id,
+                    planName: m.membership_plan?.plan_name || 'Gói tập',
+                    sportType: m.membership_plan?.sport_type || 'Gym',
+                    startDate: m.start_date,
+                    endDate: m.end_date,
+                    status: status,
+                    remainingDays: daysLeft,
+                    price: m.membership_plan?.price ? Number(m.membership_plan.price) : 0,
+                    durationMonths: m.membership_plan?.duration_months || 1,
+                    description: m.membership_plan?.description || ''
+                };
+            });
+
             // Lấy thông tin Membership đang hoạt động
             const activeMembership = user.Member.MemberMemberships?.find(
                 m => m.membership_status === 'Active'
@@ -171,7 +199,8 @@ exports.getMyProfile = async (req, res) => {
                     joined_date: user.Member.joined_date,
                     remainingDays,
                     activePtName,
-                    planName
+                    planName,
+                    memberships: membershipsList
                 } : null,
                 trainerInfo: user.Trainer || null
             }

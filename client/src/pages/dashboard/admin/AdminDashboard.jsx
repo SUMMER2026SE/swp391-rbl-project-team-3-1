@@ -24,6 +24,73 @@ function AdminDashboard({ token, userInfo, logout }) {
   const [complaintsList, setComplaintsList] = useState([]);
   const [coreSports, setCoreSports] = useState([]);
 
+  const isAppointmentPast = (ap) => {
+    if (!ap) return false;
+    if (ap.endDateTime) {
+      return new Date(ap.endDateTime) < new Date();
+    }
+    let dateStr = ap.workingDate;
+    let timeStr = ap.endTime || '00:00';
+
+    if (!dateStr && ap.date && ap.date !== 'N/A') {
+      const parts = ap.date.split('/');
+      if (parts.length === 3) {
+        dateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+    }
+    
+    if (!ap.endTime && ap.time) {
+      const matches = ap.time.match(/(\d{2}):(\d{2})/g);
+      if (matches && matches.length >= 2) {
+        timeStr = matches[1];
+      } else if (matches && matches.length === 1) {
+        timeStr = matches[0];
+      }
+    }
+
+    if (dateStr) {
+      return new Date(`${dateStr}T${timeStr}`) < new Date();
+    }
+    return false;
+  };
+
+  const renderAppointmentStatus = (ap) => {
+    const isPast = isAppointmentPast(ap);
+    const statusLower = (ap.status || '').toLowerCase();
+    if (isPast && (statusLower === 'scheduled' || statusLower === 'confirmed')) {
+      return <span className="admin-complaint-status-badge resolved">Đã hoàn thành</span>;
+    }
+    if (statusLower === 'scheduled') {
+      return <span className="admin-complaint-status-badge pending">Đã lên lịch</span>;
+    }
+    if (statusLower === 'rejected') {
+      return <span className="admin-complaint-status-badge rejected">Bị từ chối</span>;
+    }
+    return <span className="admin-complaint-status-badge cancelled">Đã hủy</span>;
+  };
+
+  const upcomingAppointments = appointmentsList
+    .filter(ap => {
+      const statusLower = (ap.status || '').toLowerCase();
+      return !isAppointmentPast(ap) && statusLower !== 'cancelled' && statusLower !== 'rejected';
+    })
+    .sort((a, b) => {
+      const timeA = a.startDateTime ? new Date(a.startDateTime).getTime() : 0;
+      const timeB = b.startDateTime ? new Date(b.startDateTime).getTime() : 0;
+      return timeA - timeB;
+    });
+
+  const historyAppointments = appointmentsList
+    .filter(ap => {
+      const statusLower = (ap.status || '').toLowerCase();
+      return isAppointmentPast(ap) || statusLower === 'cancelled' || statusLower === 'rejected';
+    })
+    .sort((a, b) => {
+      const timeA = a.startDateTime ? new Date(a.startDateTime).getTime() : 0;
+      const timeB = b.startDateTime ? new Date(b.startDateTime).getTime() : 0;
+      return timeB - timeA;
+    });
+
   // --- UI State ---
   const [toastMessage, setToastMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -747,48 +814,98 @@ function AdminDashboard({ token, userInfo, logout }) {
 
       case 'lichhen':
         return (
-          <div className="admin-card-panel">
-            <h3 className="admin-card-title" style={{ marginBottom: '20px' }}>Lịch hẹn tập luyện toàn hệ thống</h3>
-            <div className="admin-table-container">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Học viên</th>
-                    <th>Huấn luyện viên (PT)</th>
-                    <th>Nội dung tập</th>
-                    <th>Khung giờ</th>
-                    <th>Ngày hẹn</th>
-                    <th>Trạng thái</th>
-                    <th>Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {appointmentsList.map((app) => (
-                    <tr key={app.id}>
-                      <td className="admin-table-name">{app.memberName}</td>
-                      <td>{app.ptName}</td>
-                      <td>{app.type}</td>
-                      <td>{app.time}</td>
-                      <td>{app.date}</td>
-                      <td>
-                        <span className={`admin-complaint-status-badge ${app.status.toLowerCase() === 'scheduled' ? 'pending' : app.status.toLowerCase() === 'completed' ? 'resolved' : app.status.toLowerCase() === 'rejected' ? 'rejected' : 'cancelled'}`}>
-                          {app.status === 'Scheduled' ? 'Đã lên lịch' : app.status === 'Completed' ? 'Đã hoàn thành' : app.status === 'Rejected' ? 'Bị từ chối' : 'Đã hủy'}
-                        </span>
-                      </td>
-                      <td>
-                        {app.status === 'Scheduled' && (
-                          <button className="admin-action-link" onClick={() => cancelAppointment(app.id)}>
-                            Hủy hẹn
-                          </button>
-                        )}
-                        {app.status !== 'Scheduled' && <span>—</span>}
-                      </td>
+          <>
+            <div className="admin-card-panel" style={{ marginBottom: '30px' }}>
+              <h3 className="admin-card-title" style={{ marginBottom: '20px' }}>Lịch hẹn sắp tới toàn hệ thống</h3>
+              <div className="admin-table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Học viên</th>
+                      <th>Huấn luyện viên (PT)</th>
+                      <th>Nội dung tập</th>
+                      <th>Khung giờ</th>
+                      <th>Ngày hẹn</th>
+                      <th>Trạng thái</th>
+                      <th>Thao tác</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {upcomingAppointments.map((app) => (
+                      <tr key={app.id}>
+                        <td className="admin-table-name">{app.memberName}</td>
+                        <td>{app.ptName}</td>
+                        <td>{app.type}</td>
+                        <td>{app.time}</td>
+                        <td>{app.date}</td>
+                        <td>
+                          {renderAppointmentStatus(app)}
+                        </td>
+                        <td>
+                          {app.status === 'Scheduled' && (
+                            <button className="admin-action-link" onClick={() => cancelAppointment(app.id)}>
+                              Hủy hẹn
+                            </button>
+                          )}
+                          {app.status !== 'Scheduled' && <span>—</span>}
+                        </td>
+                      </tr>
+                    ))}
+                    {upcomingAppointments.length === 0 && (
+                      <tr>
+                        <td colSpan="7" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>
+                          Không có lịch hẹn sắp tới nào trên toàn hệ thống
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+
+            <div className="admin-card-panel">
+              <h3 className="admin-card-title" style={{ marginBottom: '20px' }}>Lịch sử lịch hẹn toàn hệ thống</h3>
+              <div className="admin-table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Học viên</th>
+                      <th>Huấn luyện viên (PT)</th>
+                      <th>Nội dung tập</th>
+                      <th>Khung giờ</th>
+                      <th>Ngày hẹn</th>
+                      <th>Trạng thái</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyAppointments.map((app) => (
+                      <tr key={app.id}>
+                        <td className="admin-table-name">{app.memberName}</td>
+                        <td>{app.ptName}</td>
+                        <td>{app.type}</td>
+                        <td>{app.time}</td>
+                        <td>{app.date}</td>
+                        <td>
+                          {renderAppointmentStatus(app)}
+                        </td>
+                        <td>
+                          <span>—</span>
+                        </td>
+                      </tr>
+                    ))}
+                    {historyAppointments.length === 0 && (
+                      <tr>
+                        <td colSpan="7" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>
+                          Chưa có lịch sử lịch hẹn nào trên toàn hệ thống
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
         );
 
       case 'dichvu':

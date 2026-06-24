@@ -27,6 +27,22 @@ const toDateStr = (val) => {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 };
 
+// Helper: format working_date to "YYYY-MM-DD"
+const toYYYYMMDD = (val) => {
+  if (!val) return null;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) {
+    const s = String(val);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    return null;
+  }
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+
 // =====================================================
 // HELPER: SELF-SEEDING DATABASE LOGIC
 // If crucial tracking tables are empty, populate them
@@ -283,9 +299,21 @@ exports.createTrainer = async (req, res) => {
       return res.status(400).json({ message: 'Email này đã tồn tại trên hệ thống!' });
     }
 
-    // Create User entry first (default password is '123456')
+    // Generate temporary password
+    const crypto = require('crypto');
+    const generateTempPassword = (length = 8) => {
+      const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let password = '';
+      const bytes = crypto.randomBytes(length);
+      for (let i = 0; i < length; i++) {
+        password += chars[bytes[i] % chars.length];
+      }
+      return password;
+    };
+    const temporaryPassword = generateTempPassword(8);
+
     const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash('123456', salt);
+    const passwordHash = await bcrypt.hash(temporaryPassword, salt);
 
     const newUser = await models.Users.create({
       full_name: name,
@@ -307,14 +335,24 @@ exports.createTrainer = async (req, res) => {
 
     await transaction.commit();
 
-    // Send email notification to trainer (async, non-blocking)
-    const { sendTrainerAccountEmail } = require('../utils/emailService');
-    sendTrainerAccountEmail(email, name, '123456').catch(err => {
-      console.error('⚠️ Gửi email thông báo PT thất bại:', err.message);
-    });
+    // Send email asynchronously outside transaction
+    let emailSent = false;
+    try {
+      const { sendTrainerAccountEmail } = require('../utils/emailService');
+      const mailResult = await sendTrainerAccountEmail(email, name, temporaryPassword);
+      if (mailResult) {
+        emailSent = true;
+      }
+    } catch (mailError) {
+      console.error('❌ Lỗi gửi email thông báo PT:', mailError.message);
+    }
 
     return res.status(201).json({
-      message: 'Tạo tài khoản PT thành công! Email thông báo đã được gửi đến ' + email,
+      message: emailSent 
+        ? 'Tạo tài khoản PT thành công! Email thông tin và mật khẩu tạm thời đã được gửi.'
+        : 'Tạo tài khoản PT thành công nhưng không gửi được email (Mật khẩu hiển thị bên dưới).',
+      temporaryPassword,
+      emailSent,
       user: {
         id: newUser.user_id,
         name: newUser.full_name,
@@ -445,12 +483,23 @@ exports.getAdminAppointments = async (req, res) => {
 
 
     const mappedAppts = appointments.map((a) => {
+      const startTimeFormatted = toTimeStr(a.schedule?.start_time, '07:00');
+      const endTimeFormatted = toTimeStr(a.schedule?.end_time, '08:30');
+      const workingDateStr = toYYYYMMDD(a.schedule?.working_date);
+      const startDateTime = workingDateStr ? `${workingDateStr}T${startTimeFormatted}:00` : null;
+      const endDateTime = workingDateStr ? `${workingDateStr}T${endTimeFormatted}:00` : null;
+
       return {
         id: a.appointment_id,
         memberName: a.member?.user?.full_name || 'Hội viên',
         ptName: a.schedule?.trainer?.user?.full_name || 'Huấn luyện viên',
-        time: `${toTimeStr(a.schedule?.start_time, '07:00')} - ${toTimeStr(a.schedule?.end_time, '08:30')}`,
+        time: `${startTimeFormatted} - ${endTimeFormatted}`,
         date: toDateStr(a.schedule?.working_date),
+        workingDate: workingDateStr,
+        startTime: startTimeFormatted,
+        endTime: endTimeFormatted,
+        startDateTime,
+        endDateTime,
         type: a.note || 'Tập luyện cá nhân',
         status: a.status === 'Confirmed' ? 'Scheduled' : a.status || 'Scheduled'
       };
@@ -756,23 +805,48 @@ exports.getTrainerMembers = async (req, res) => {
         }
       });
     } else {
-      // Fallback: grab all system members to prevent empty screen
-      members = await models.Members.findAll({
-        include: [
-          { model: models.Users, as: 'user', attributes: ['full_name', 'email', 'phone_number'] },
-          { model: models.MemberMemberships, as: 'MemberMemberships', include: [{ model: models.MembershipPlans, as: 'membership_plan' }] }
-        ]
-      });
+      // Mật khẩu/tài khoản PT mới tạo hoặc chưa có học viên thì trả về danh sách rỗng
+      members = [];
     }
 
-    const mappedMembers = members.map((m, idx) => {
+    const mappedMembers = await Promise.all(members.map(async (m, idx) => {
       const activeMembership = m.MemberMemberships?.find(
         ms => ms.membership_status === 'Active'
       );
 
-      // Calculate a dummy progress metric or remaining classes
-      const progress = Math.round(40 + (idx * 15)) % 100;
-      const remainingSessions = Math.round(5 + (idx * 3)) % 15;
+      // Fetch actual workout and meal plan assigned to this member by this trainer
+      const latestWorkoutPlan = await models.WorkoutPlans.findOne({
+        where: { member_id: m.member_id, trainer_id: trainerUser.trainer_id },
+        order: [['workout_plan_id', 'DESC']]
+      });
+
+      let workoutExercises = [];
+      let workoutExercisesCount = 0;
+      if (latestWorkoutPlan) {
+        workoutExercises = await models.WorkoutExercises.findAll({
+          where: { workout_plan_id: latestWorkoutPlan.workout_plan_id }
+        });
+        workoutExercisesCount = workoutExercises.length;
+      }
+
+      const mealPlans = await models.MealPlans.findAll({
+        where: { member_id: m.member_id, trainer_id: trainerUser.trainer_id },
+        order: [['meal_plan_id', 'DESC']]
+      });
+
+      let remainingDays = 0;
+      if (m.MemberMemberships && m.MemberMemberships.length > 0) {
+        m.MemberMemberships.forEach(ms => {
+          if (ms.membership_status === 'Active') {
+            const endDate = new Date(ms.end_date);
+            const diffTime = endDate - new Date();
+            let daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (daysLeft > 0) {
+              remainingDays += daysLeft;
+            }
+          }
+        });
+      }
 
       return {
         id: m.member_id,
@@ -784,10 +858,16 @@ exports.getTrainerMembers = async (req, res) => {
         height: Math.round((m.height || 1.7) * 100), // convert to cm
         weight: m.weight || 70,
         bmi: m.bmi || 22.5,
-        progress: progress || 50,
-        remainingSessions: remainingSessions || 8
+        remainingDays: remainingDays,
+        workoutAssigned: latestWorkoutPlan ? latestWorkoutPlan.title : 'Chưa phân công',
+        mealAssigned: mealPlans.length > 0 ? mealPlans[0].title : 'Chưa phân công',
+        workoutPlanId: latestWorkoutPlan ? latestWorkoutPlan.workout_plan_id : null,
+        workoutCreatedAt: latestWorkoutPlan ? latestWorkoutPlan.created_at : null,
+        workoutExercisesCount,
+        workoutExercises: workoutExercises.map(e => ({ name: e.exercise_name, sets: e.sets, reps: e.reps })),
+        assignedMeals: mealPlans.map(mp => ({ id: mp.meal_plan_id, title: mp.title, description: mp.description, calories: mp.calories_per_day, createdAt: mp.created_at }))
       };
-    });
+    }));
 
     return res.status(200).json({ members: mappedMembers });
   } catch (error) {
@@ -816,6 +896,10 @@ exports.getTrainerAppointments = async (req, res) => {
           as: 'schedule',
           where: { trainer_id: trainerUser.trainer_id }
         }
+      ],
+      order: [
+        [{ model: models.TrainerSchedules, as: 'schedule' }, 'working_date', 'ASC'],
+        [{ model: models.TrainerSchedules, as: 'schedule' }, 'start_time', 'ASC']
       ]
     });
 
@@ -844,10 +928,19 @@ exports.getTrainerAppointments = async (req, res) => {
         }
       }
 
+      const workingDateStr = toYYYYMMDD(a.schedule?.working_date);
+      const startDateTime = workingDateStr ? `${workingDateStr}T${startTimeFormatted}:00` : null;
+      const endDateTime = workingDateStr ? `${workingDateStr}T${endTimeFormatted}:00` : null;
+
       return {
         id: a.appointment_id,
         day: dayNum,
         date: dateStr,
+        workingDate: workingDateStr,
+        startTime: startTimeFormatted,
+        endTime: endTimeFormatted,
+        startDateTime,
+        endDateTime,
         time: `${startTimeFormatted} - ${endTimeFormatted}`,
         member: a.member?.user?.full_name || 'Hội viên',
         name: a.member?.user?.full_name || 'Hội viên',
@@ -896,25 +989,76 @@ exports.confirmTrainerAppointment = async (req, res) => {
 
 // POST /api/dashboard/trainer/assign-plan
 exports.assignPlanToMember = async (req, res) => {
+  const transaction = await sequelize.transaction();
   try {
     const { memberId, type, name } = req.body; // type = 'workout' or 'meal'
 
     if (!memberId || !name) {
+      await transaction.rollback();
       return res.status(400).json({ message: 'Vui lòng cung cấp đầy đủ thông tin hội viên và tên giáo án!' });
     }
 
     const trainerUser = await models.Trainers.findOne({ where: { user_id: req.user.userId } });
     if (!trainerUser) {
+      await transaction.rollback();
       return res.status(400).json({ message: 'Chỉ huấn luyện viên mới được giao giáo án!' });
     }
 
     if (type === 'workout') {
-      await models.WorkoutPlans.create({
+      const newPlan = await models.WorkoutPlans.create({
         trainer_id: trainerUser.trainer_id,
         member_id: memberId,
         title: name,
         description: 'Giáo án được giao từ huấn luyện viên qua dashboard.'
-      });
+      }, { transaction });
+
+      // Predefined exercises for workout templates
+      const templates = {
+        'HIIT Đốt Mỡ Nâng Cao': [
+          { exercise_name: 'Nhảy dây (Jumping Jacks)', sets: 3, reps: 30, duration_minutes: 1, calories_burned: 40, rpe: 7 },
+          { exercise_name: 'Squat (Bodyweight)', sets: 4, reps: 15, duration_minutes: 2, calories_burned: 50, rpe: 8 },
+          { exercise_name: 'Plank giữ cơ bụng', sets: 3, reps: 1, duration_minutes: 1, calories_burned: 20, rpe: 6 },
+          { exercise_name: 'Burpees', sets: 4, reps: 15, duration_minutes: 2, calories_burned: 80, rpe: 9 },
+          { exercise_name: 'Chạy nước rút (Sprint)', sets: 3, reps: 1, duration_minutes: 1, calories_burned: 60, rpe: 9 }
+        ],
+        'Full Body Khởi Đầu': [
+          { exercise_name: 'Squat (Bodyweight)', sets: 3, reps: 15, duration_minutes: 2, calories_burned: 45, rpe: 6 },
+          { exercise_name: 'Push-up (Hít đất)', sets: 3, reps: 10, duration_minutes: 1, calories_burned: 30, rpe: 7 },
+          { exercise_name: 'Dumbbell Shoulder Press', sets: 3, reps: 12, duration_minutes: 2, calories_burned: 40, rpe: 7 },
+          { exercise_name: 'Plank giữ cơ bụng', sets: 3, reps: 1, duration_minutes: 1, calories_burned: 20, rpe: 5 }
+        ],
+        'Powerlifting Cơ Bản': [
+          { exercise_name: 'Barbell Squat', sets: 3, reps: 5, duration_minutes: 3, calories_burned: 60, rpe: 8 },
+          { exercise_name: 'Barbell Deadlift', sets: 3, reps: 5, duration_minutes: 4, calories_burned: 80, rpe: 9 },
+          { exercise_name: 'Barbell Bench Press', sets: 3, reps: 5, duration_minutes: 3, calories_burned: 50, rpe: 8 }
+        ],
+        'Yoga dẻo dai khớp vai': [
+          { exercise_name: 'Tư thế em bé (Child Pose)', sets: 3, reps: 1, duration_minutes: 2, calories_burned: 15, rpe: 3 },
+          { exercise_name: 'Tư thế chiến binh (Warrior Pose)', sets: 3, reps: 5, duration_minutes: 2, calories_burned: 25, rpe: 5 },
+          { exercise_name: 'Giãn cơ vai (Shoulder Stretch)', sets: 3, reps: 5, duration_minutes: 2, calories_burned: 20, rpe: 4 }
+        ],
+        'Cardio Core trung cấp': [
+          { exercise_name: 'Plank đi bộ (Plank Walks)', sets: 3, reps: 12, duration_minutes: 2, calories_burned: 40, rpe: 6 },
+          { exercise_name: 'Leo núi (Mountain Climbers)', sets: 4, reps: 20, duration_minutes: 2, calories_burned: 60, rpe: 7 },
+          { exercise_name: 'Gập bụng (Crunches)', sets: 3, reps: 20, duration_minutes: 2, calories_burned: 30, rpe: 6 }
+        ]
+      };
+
+      const exercises = templates[name] || [
+        { exercise_name: name, sets: 3, reps: 10, duration_minutes: 15, calories_burned: 100, rpe: 7 }
+      ];
+
+      const exercisesToCreate = exercises.map(ex => ({
+        workout_plan_id: newPlan.workout_plan_id,
+        exercise_name: ex.exercise_name,
+        sets: ex.sets,
+        reps: ex.reps,
+        duration_minutes: ex.duration_minutes,
+        calories_burned: ex.calories_burned,
+        rpe: ex.rpe
+      }));
+
+      await models.WorkoutExercises.bulkCreate(exercisesToCreate, { transaction });
     } else {
       await models.MealPlans.create({
         trainer_id: trainerUser.trainer_id,
@@ -922,12 +1066,18 @@ exports.assignPlanToMember = async (req, res) => {
         title: name,
         calories_per_day: 2000,
         description: 'Chế độ dinh dưỡng giao trực tiếp từ huấn luyện viên.'
-      });
+      }, { transaction });
     }
 
+    await transaction.commit();
     return res.status(201).json({ message: `Đã giao thành công ${type === 'workout' ? 'giáo án tập luyện' : 'thực đơn dinh dưỡng'}: ${name}` });
   } catch (error) {
     console.error('❌ Error assigning plan:', error);
+    try {
+      await transaction.rollback();
+    } catch (rollbackError) {
+      console.error('❌ Lỗi khi rollback:', rollbackError.message);
+    }
     return res.status(500).json({ message: 'Lỗi server khi giao giáo án/thực đơn!' });
   }
 };
@@ -961,16 +1111,23 @@ exports.getMemberAppointments = async (req, res) => {
       ],
       order: [['appointment_id', 'DESC']]
     });
-
     const mappedAppts = appointments.map(a => {
       const startTimeFormatted = toTimeStr(a.schedule?.start_time, '07:00');
       const endTimeFormatted = toTimeStr(a.schedule?.end_time, '08:30');
+      const workingDateStr = toYYYYMMDD(a.schedule?.working_date);
+      const startDateTime = workingDateStr ? `${workingDateStr}T${startTimeFormatted}:00` : null;
+      const endDateTime = workingDateStr ? `${workingDateStr}T${endTimeFormatted}:00` : null;
 
       return {
         id: a.appointment_id,
         ptName: a.schedule?.trainer?.user?.full_name || 'HLV Cá Nhân',
         trainer: a.schedule?.trainer?.user?.full_name || 'HLV Cá Nhân',
         date: toDateStr(a.schedule?.working_date),
+        workingDate: workingDateStr,
+        startTime: startTimeFormatted,
+        endTime: endTimeFormatted,
+        startDateTime,
+        endDateTime,
         time: a.schedule?.working_date ? `${toDateStr(a.schedule.working_date)} (${startTimeFormatted} - ${endTimeFormatted})` : `${startTimeFormatted} - ${endTimeFormatted}`,
         type: a.note || 'Tập thử Gym',
         status: (a.status === 'Confirmed' || a.status === 'Scheduled' ? 'confirmed' : a.status || 'pending').toLowerCase()
@@ -1087,5 +1244,60 @@ exports.createMemberAppointment = async (req, res) => {
   } catch (error) {
     console.error('❌ Error creating member appointment:', error);
     return res.status(500).json({ message: 'Lỗi server khi đăng ký lịch tập!: ' + error.message });
+  }
+};
+
+// GET /api/dashboard/member/my-trainers
+exports.getMemberTrainers = async (req, res) => {
+  try {
+    const member = await models.Members.findOne({ where: { user_id: req.user.userId } });
+    if (!member) {
+      return res.status(200).json({ trainers: [] });
+    }
+
+    // Find all distinct trainer IDs associated with this member in WorkoutPlans or MealPlans
+    const workoutPlans = await models.WorkoutPlans.findAll({
+      where: { member_id: member.member_id },
+      attributes: ['trainer_id']
+    });
+
+    const mealPlans = await models.MealPlans.findAll({
+      where: { member_id: member.member_id },
+      attributes: ['trainer_id']
+    });
+
+    const trainerIds = new Set();
+    workoutPlans.forEach(wp => { if (wp.trainer_id) trainerIds.add(wp.trainer_id); });
+    mealPlans.forEach(mp => { if (mp.trainer_id) trainerIds.add(mp.trainer_id); });
+
+    if (trainerIds.size === 0) {
+      return res.status(200).json({ trainers: [] });
+    }
+
+    // Retrieve Trainer records along with User info
+    const trainers = await models.Trainers.findAll({
+      where: { trainer_id: Array.from(trainerIds) },
+      include: [{
+        model: models.Users,
+        as: 'user',
+        attributes: ['user_id', 'full_name', 'avatar_url']
+      }]
+    });
+
+    const result = trainers.map(t => ({
+      userId: t.user?.user_id,
+      trainerId: t.trainer_id,
+      fullName: t.user?.full_name || 'Huấn luyện viên',
+      avatarUrl: t.user?.avatar_url ? `${req.protocol}://${req.get('host')}${t.user.avatar_url}` : null,
+      specialization: t.specialization || 'Gym tổng hợp',
+      experienceYears: t.experience_years || 0,
+      bio: t.bio || '',
+      rating: t.rating || 4.5
+    }));
+
+    return res.status(200).json({ trainers: result });
+  } catch (error) {
+    console.error('❌ Error getting member trainers:', error);
+    return res.status(500).json({ message: 'Lỗi server khi lấy danh sách PT của bạn!' });
   }
 };

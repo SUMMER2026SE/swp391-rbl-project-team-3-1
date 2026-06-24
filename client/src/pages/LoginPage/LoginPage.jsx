@@ -592,10 +592,7 @@ function LoginPage() {
             </h1>
             <p className="sub" onClick={backToHome} style={{ cursor: 'pointer' }}>Fx Fitness Center</p>
             <div className="gym-photo">
-              <div className="gym-placeholder">
-                <i className="fa-solid fa-dumbbell"></i>
-                <span>Fx Fitness Center</span>
-              </div>
+              <img src="/gym_login.png" alt="Fx Fitness Center" />
               <div className="photo-arrow" onClick={backToHome}>
                 <i className="fa-solid fa-chevron-right"></i>
               </div>

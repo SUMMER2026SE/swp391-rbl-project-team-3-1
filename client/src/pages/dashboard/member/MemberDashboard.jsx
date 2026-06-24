@@ -12,6 +12,7 @@ function MemberDashboard({
   fetchProfile
 }) {
   const [activeTab, setActiveTab] = useState('tongquan');
+  const [expandedPackageId, setExpandedPackageId] = useState(null);
 
   // --- MEMBER DASHBOARD STATE VARIABLES ---
   const [editFullName, setEditFullName] = useState('');
@@ -58,6 +59,41 @@ function MemberDashboard({
     'morning': false, 'noon': false, 'evening': false
   });
 
+  // Load completed exercises and meals from localStorage when memberInfo is available
+  useEffect(() => {
+    const memberId = profileData?.memberInfo?.member_id;
+    if (memberId) {
+      try {
+        const saved = localStorage.getItem(`member_progress_${memberId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.completedExercises) setCompletedExercises(parsed.completedExercises);
+          if (parsed.completedMeals) setCompletedMeals(parsed.completedMeals);
+        } else {
+          setCompletedExercises({});
+          setCompletedMeals({});
+        }
+      } catch (e) {
+        console.error('Error loading progress from localStorage:', e);
+      }
+    }
+  }, [profileData]);
+
+  // Save to localStorage whenever completedExercises or completedMeals change
+  useEffect(() => {
+    const memberId = profileData?.memberInfo?.member_id;
+    if (memberId) {
+      try {
+        localStorage.setItem(`member_progress_${memberId}`, JSON.stringify({
+          completedExercises,
+          completedMeals
+        }));
+      } catch (e) {
+        console.error('Error saving progress to localStorage:', e);
+      }
+    }
+  }, [completedExercises, completedMeals, profileData]);
+
   // Notifications state
   const [notifications, setNotifications] = useState([]);
 
@@ -78,6 +114,63 @@ function MemberDashboard({
   const [aiLoadingStep, setAiLoadingStep] = useState('');
   const [aiResult, setAiResult] = useState(null);
   const [aiError, setAiError] = useState('');
+
+  const isAppointmentPast = (ap) => {
+    if (!ap) return false;
+    if (ap.endDateTime) {
+      return new Date(ap.endDateTime) < new Date();
+    }
+    let dateStr = ap.workingDate;
+    let timeStr = ap.endTime || '00:00';
+
+    if (!dateStr && ap.date && ap.date !== 'N/A') {
+      const parts = ap.date.split('/');
+      if (parts.length === 3) {
+        dateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+    }
+    
+    if (!ap.endTime && ap.time) {
+      const matches = ap.time.match(/(\d{2}):(\d{2})/g);
+      if (matches && matches.length >= 2) {
+        timeStr = matches[1];
+      } else if (matches && matches.length === 1) {
+        timeStr = matches[0];
+      }
+    }
+
+    if (dateStr) {
+      return new Date(`${dateStr}T${timeStr}`) < new Date();
+    }
+    return false;
+  };
+
+  const renderAppointmentStatus = (ap) => {
+    if (isAppointmentPast(ap) && ap.status === 'confirmed') {
+      return <span className="member-badge-status confirmed">Đã hoàn thành</span>;
+    }
+    return (
+      <span className={`member-badge-status ${ap.status}`}>
+        {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : ap.status === 'rejected' ? 'Bị từ chối' : 'Đã hủy'}
+      </span>
+    );
+  };
+
+  const upcomingAppointments = appointmentsList
+    .filter(ap => !isAppointmentPast(ap) && ap.status !== 'cancelled' && ap.status !== 'rejected')
+    .sort((a, b) => {
+      const timeA = a.startDateTime ? new Date(a.startDateTime).getTime() : 0;
+      const timeB = b.startDateTime ? new Date(b.startDateTime).getTime() : 0;
+      return timeA - timeB;
+    });
+
+  const historyAppointments = appointmentsList
+    .filter(ap => isAppointmentPast(ap) || ap.status === 'cancelled' || ap.status === 'rejected')
+    .sort((a, b) => {
+      const timeA = a.startDateTime ? new Date(a.startDateTime).getTime() : 0;
+      const timeB = b.startDateTime ? new Date(b.startDateTime).getTime() : 0;
+      return timeB - timeA;
+    });
 
   // Synchronize edit fields when profileData loads
   useEffect(() => {
@@ -215,13 +308,18 @@ function MemberDashboard({
   };
 
   const fetchTrainersList = () => {
-    fetch('/api/checkout/trainers')
+    if (!token || token === 'mock-preview-token') return;
+    fetch('/api/dashboard/member/my-trainers', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
       .then(res => res.json())
       .then(data => {
         if (data && data.trainers) {
           setTrainersList(data.trainers);
           if (data.trainers.length > 0) {
             setSelectedTrainerId(data.trainers[0].trainerId);
+          } else {
+            setSelectedTrainerId('');
           }
         }
       })
@@ -617,12 +715,14 @@ function MemberDashboard({
     return `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]} năm ${now.getFullYear()}`;
   };
 
-  // Helper to check if a date is today
+  // Helper to check if a date is today or in the future
   const isToday = (dateVal) => {
     if (!dateVal) return false;
     const planDate = new Date(dateVal);
     const today = new Date();
-    return planDate.toLocaleDateString('vi-VN') === today.toLocaleDateString('vi-VN');
+    today.setHours(0, 0, 0, 0);
+    planDate.setHours(0, 0, 0, 0);
+    return planDate >= today;
   };
 
   // Filter workout plans
@@ -691,15 +791,11 @@ function MemberDashboard({
   const renderTabContent = () => {
     switch (activeTab) {
       case 'tongquan':
+        const memberships = profileData?.memberInfo?.memberships || [];
         return (
           <>
             {/* Stat Cards */}
             <div className="member-stats-grid">
-              <div className="member-stat-card">
-                <span className="member-stat-label">Ngày còn lại</span>
-                <span className="member-stat-value">{profileData?.memberInfo?.remainingDays ?? 287}</span>
-                <i className="fa-solid fa-calendar member-stat-icon"></i>
-              </div>
               <div className="member-stat-card">
                 <span className="member-stat-label">Buổi tập tuần này</span>
                 <span className="member-stat-value">{completedExsCount} / 5</span>
@@ -717,6 +813,100 @@ function MemberDashboard({
                 <span className="member-stat-value">{profileData?.memberInfo?.bmi || '22.4'}</span>
                 <i className="fa-solid fa-gauge-simple-high member-stat-icon"></i>
               </div>
+            </div>
+
+            {/* Gói tập đã đăng ký Accordion Panel */}
+            <div className="member-packages-panel" style={{ marginBottom: '24px' }}>
+              <h3 className="member-packages-title">
+                <i className="fa-solid fa-address-card" style={{ color: 'var(--orange)' }}></i> Gói tập đã đăng ký
+              </h3>
+              {memberships.length > 0 ? (
+                <div className="member-packages-list">
+                  {memberships.map((m) => {
+                    const isOpen = expandedPackageId === m.memberMembershipId;
+                    const renderStatusBadge = (status) => {
+                      if (status === 'Active') {
+                        return <span className="member-package-badge-active">Đang hoạt động</span>;
+                      } else if (status === 'Expired') {
+                        return <span className="member-package-badge-expired">Hết hạn</span>;
+                      } else {
+                        return <span className="member-package-badge-cancelled">{status}</span>;
+                      }
+                    };
+
+                    return (
+                      <div className={`member-package-item ${isOpen ? 'open' : ''}`} key={m.memberMembershipId}>
+                        <div
+                          className="member-package-item-header"
+                          onClick={() => setExpandedPackageId(isOpen ? null : m.memberMembershipId)}
+                        >
+                          <div className="member-package-item-name">
+                            <i className="fa-solid fa-dumbbell" style={{ color: isOpen ? 'var(--orange)' : '#64748b' }}></i>
+                            {m.planName}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {renderStatusBadge(m.status)}
+                            <i className="fa-solid fa-chevron-down member-package-item-arrow"></i>
+                          </div>
+                        </div>
+                        {isOpen && (
+                          <div className="member-package-item-details">
+                            <div className="member-package-details-grid">
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Ngày bắt đầu</span>
+                                <span className="member-package-detail-value">{m.startDate}</span>
+                              </div>
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Ngày kết thúc</span>
+                                <span className="member-package-detail-value">{m.endDate}</span>
+                              </div>
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Bộ môn</span>
+                                <span className="member-package-detail-value">{m.sportType}</span>
+                              </div>
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Thời hạn gói</span>
+                                <span className="member-package-detail-value">{m.durationMonths} tháng</span>
+                              </div>
+                            </div>
+                            {m.description && (
+                              <div className="member-package-detail-col" style={{ marginTop: '4px' }}>
+                                <span className="member-package-detail-label">Mô tả gói tập</span>
+                                <span className="member-package-detail-value" style={{ fontWeight: 'normal', color: '#64748b', fontSize: '0.86rem' }}>
+                                  {m.description}
+                                </span>
+                              </div>
+                            )}
+                            <div className="member-package-remaining-box">
+                              <span className="member-package-remaining-text">Số ngày còn lại của gói tập:</span>
+                              <span className="member-package-remaining-value">{m.remainingDays} ngày</span>
+                            </div>
+                            {(m.status === 'Active' || m.status === 'Expired') && (
+                              <button
+                                className="member-package-btn-renew"
+                                onClick={() => {
+                                  window.history.pushState(
+                                    {},
+                                    '',
+                                    `/checkout?plan=${m.planId}&renewMembershipId=${m.memberMembershipId}&sportType=${encodeURIComponent(m.sportType)}`
+                                  );
+                                  window.dispatchEvent(new Event('popstate'));
+                                }}
+                              >
+                                <i className="fa-solid fa-arrows-rotate"></i> Gia hạn gói tập
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="member-no-data" style={{ padding: '20px' }}>
+                  Bạn chưa đăng ký bất kỳ gói tập nào trong hệ thống!
+                </div>
+              )}
             </div>
 
             {/* Grid Columns */}
@@ -739,7 +929,7 @@ function MemberDashboard({
                       </tr>
                     </thead>
                     <tbody>
-                      {appointmentsList.filter(a => a.status !== 'cancelled' && a.status !== 'rejected').slice(0, 4).map((ap) => (
+                      {upcomingAppointments.slice(0, 4).map((ap) => (
                         <tr key={ap.id}>
                           <td>{ap.time}</td>
                           <td>{ap.trainer}</td>
@@ -754,7 +944,7 @@ function MemberDashboard({
                           </td>
                         </tr>
                       ))}
-                      {appointmentsList.filter(a => a.status !== 'cancelled' && a.status !== 'rejected').length === 0 && (
+                      {upcomingAppointments.length === 0 && (
                         <tr>
                           <td colSpan="5" className="member-no-data">Không có lịch hẹn nào sắp tới</td>
                         </tr>
@@ -851,6 +1041,7 @@ function MemberDashboard({
                     value={selectedTrainerId}
                     onChange={(e) => setSelectedTrainerId(e.target.value)}
                     required
+                    disabled={trainersList.length === 0}
                   >
                     {trainersList.length > 0 ? (
                       trainersList.map(t => (
@@ -859,7 +1050,7 @@ function MemberDashboard({
                         </option>
                       ))
                     ) : (
-                      <option value="">Đang tải danh sách HLV...</option>
+                      <option value="">Bạn chưa có HLV trong gói tập đã đăng ký!</option>
                     )}
                   </select>
                 </div>
@@ -886,10 +1077,15 @@ function MemberDashboard({
                     onChange={(e) => setBookingNote(e.target.value)}
                   />
                 </div>
+                {trainersList.length === 0 && (
+                  <p style={{ color: '#ef4444', fontSize: '0.82rem', fontWeight: 'bold', margin: '4px 0 0 0' }}>
+                    * Bạn chỉ được đặt lịch với HLV mà mình đăng ký gói tập. Vui lòng đăng ký gói tập có kèm HLV trước.
+                  </p>
+                )}
                 <button
                   type="submit"
                   className="member-btn-submit"
-                  disabled={isBookingLoading}
+                  disabled={isBookingLoading || trainersList.length === 0}
                   style={{ width: '100%', marginTop: '8px' }}
                 >
                   {isBookingLoading ? 'Đang gửi...' : 'Gửi yêu cầu đặt lịch'}
@@ -897,8 +1093,8 @@ function MemberDashboard({
               </form>
             </div>
 
-            <div className="member-card-panel">
-              <h3 className="member-card-title" style={{ marginBottom: '20px' }}>Danh sách lịch hẹn</h3>
+            <div className="member-card-panel" style={{ marginBottom: '30px' }}>
+              <h3 className="member-card-title" style={{ marginBottom: '20px' }}>Danh sách lịch hẹn sắp tới</h3>
               <div className="member-table-container">
                 <table className="member-table">
                   <thead>
@@ -911,7 +1107,7 @@ function MemberDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {appointmentsList.map((ap) => (
+                    {upcomingAppointments.map((ap) => (
                       <tr key={ap.id}>
                         <td>{ap.time}</td>
                         <td>{ap.trainer}</td>
@@ -922,14 +1118,52 @@ function MemberDashboard({
                           </span>
                         </td>
                         <td>
-                          {ap.status !== 'cancelled' && ap.status !== 'rejected' ? (
-                            <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
-                          ) : (
-                            <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Đã đóng</span>
-                          )}
+                          <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
                         </td>
                       </tr>
                     ))}
+                    {upcomingAppointments.length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="member-no-data">Không có lịch hẹn nào sắp tới</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="member-card-panel">
+              <h3 className="member-card-title" style={{ marginBottom: '20px' }}>Lịch sử lịch hẹn</h3>
+              <div className="member-table-container">
+                <table className="member-table">
+                  <thead>
+                    <tr>
+                      <th>Thời gian</th>
+                      <th>HLV / Lớp</th>
+                      <th>Loại</th>
+                      <th>Trạng thái</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyAppointments.map((ap) => (
+                      <tr key={ap.id}>
+                        <td>{ap.time}</td>
+                        <td>{ap.trainer}</td>
+                        <td>{ap.type}</td>
+                        <td>
+                          {renderAppointmentStatus(ap)}
+                        </td>
+                        <td>
+                          <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Đã đóng</span>
+                        </td>
+                      </tr>
+                    ))}
+                    {historyAppointments.length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="member-no-data">Chưa có lịch sử lịch hẹn</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1826,9 +2060,6 @@ function MemberDashboard({
               <div className="member-profile-name" title={userInfo?.fullName}>
                 {userInfo?.fullName || 'Hội viên'}
               </div>
-              <span className="member-package-badge">
-                {profileData?.memberInfo?.planName || 'Gói Năm'}
-              </span>
             </div>
           </div>
 
