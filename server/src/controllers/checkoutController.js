@@ -344,7 +344,7 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             phone_number: phoneNumber || null,
             role_id: 1,
             status: 'Inactive',
-            must_change_password: false,
+            must_change_password: true,
             email_verification_token: verificationToken
         }, { transaction: t });
 

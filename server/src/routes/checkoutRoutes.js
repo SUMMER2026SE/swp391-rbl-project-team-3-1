@@ -11,7 +11,8 @@ router.post('/payos/create-payment', checkoutController.createPayosPayment);
 router.get('/payos/status/:orderCode', checkoutController.getPayosStatus);
 router.post('/check-email', checkoutController.checkEmail);
 router.post('/guest-register-checkout', checkoutController.guestCheckoutAndRegister);
-router.get('/homepage-config', checkoutController.getHomepageConfig);
+const dashboardController = require('../controllers/dashboardController');
+router.get('/homepage-config', dashboardController.getHomepageConfig);
 
 // Protected routes – cần token
 router.post('/loggedIn-checkout', authMiddleware, checkoutController.loggedInCheckout);
