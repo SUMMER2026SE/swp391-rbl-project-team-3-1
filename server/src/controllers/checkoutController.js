@@ -149,28 +149,13 @@ exports.getPlans = async (req, res) => {
 };
 
 // =====================================================
-<<<<<<< Updated upstream
 // 2b. LẤY DANH SÁCH DỊCH VỤ (PUBLIC)
-=======
 // 2.1 LẤY DANH SÁCH DỊCH VỤ BỔ SUNG (PUBLIC)
->>>>>>> Stashed changes
 // GET /api/checkout/services
 // =====================================================
 exports.getServices = async (req, res) => {
     try {
         const services = await models.Services.findAll({
-<<<<<<< Updated upstream
-            where: { status: 'Active' },
-            order: [['price', 'ASC']]
-        });
-
-        const result = services.map(s => ({
-            serviceId: s.service_id,
-            serviceName: s.service_name,
-            sportType: s.sport_type,
-            price: parseFloat(s.price),
-            description: s.description,
-=======
             where: { status: 'Available' },
             order: [['price', 'ASC']]
         });
@@ -188,18 +173,12 @@ exports.getServices = async (req, res) => {
             description: s.description,
             price: parseFloat(s.price),
             sportType: s.service_name.includes('PT') ? 'Huấn Luyện' : 'Tiện Ích'
->>>>>>> Stashed changes
         }));
 
         return res.status(200).json({ services: result });
     } catch (error) {
-<<<<<<< Updated upstream
         console.error('❌ Lỗi lấy dịch vụ:', error.message);
         return res.status(500).json({ message: 'Lỗi server khi lấy dịch vụ!', error: error.message });
-=======
-        console.error('❌ Lỗi lấy dịch vụ bổ sung:', error.message);
-        return res.status(500).json({ message: 'Lỗi server khi lấy dịch vụ bổ sung!', error: error.message });
->>>>>>> Stashed changes
     }
 };
 
@@ -311,7 +290,7 @@ exports.getPayosStatus = async (req, res) => {
 exports.guestCheckoutAndRegister = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const { email, fullName, phoneNumber, password, planId, trainerId, services = [], height, weight, fitnessGoal, payosOrderCode } = req.body;
+        const { email, phoneNumber, password, planId, trainerId, services = [], height, weight, fitnessGoal, payosOrderCode } = req.body;
 
         // 1. Validate input
         if (!email || !password || !planId) {
@@ -390,7 +369,7 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             phone_number: phoneNumber || null,
             role_id: 1,
             status: 'Inactive',
-            must_change_password: true,
+            must_change_password: false,
             email_verification_token: verificationToken
         }, { transaction: t });
 
@@ -403,7 +382,6 @@ exports.guestCheckoutAndRegister = async (req, res) => {
         await newUser.update({ email_verification_token: realToken }, { transaction: t });
 
         // 7. Create Member profile
-        const bmi = (height && weight && height > 0) ? (weight / (height * height)).toFixed(2) : null;
         const newMember = await models.Members.create({
             user_id: newUser.user_id,
             joined_date: formatDateToYYYYMMDD(new Date()),
