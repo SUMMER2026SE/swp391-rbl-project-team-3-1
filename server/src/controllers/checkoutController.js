@@ -106,7 +106,6 @@ exports.getTrainers = async (req, res) => {
 
         const result = trainers.map(u => ({
             userId: u.user_id,
-            trainerId: u.Trainer?.trainer_id,
             fullName: u.full_name,
             avatarUrl: u.avatar_url ? `${req.protocol}://${req.get('host')}${u.avatar_url}` : null,
             specialization: u.Trainer?.specialization || 'Gym tổng hợp',
@@ -138,7 +137,7 @@ exports.getPlans = async (req, res) => {
             planName: p.plan_name,
             sportType: p.sport_type,
             durationMonths: p.duration_months,
-            price: getPlanPrice(p),
+            price: p.price,
             description: p.description,
         }));
 
@@ -150,12 +149,17 @@ exports.getPlans = async (req, res) => {
 };
 
 // =====================================================
+<<<<<<< Updated upstream
 // 2b. LẤY DANH SÁCH DỊCH VỤ (PUBLIC)
+=======
+// 2.1 LẤY DANH SÁCH DỊCH VỤ BỔ SUNG (PUBLIC)
+>>>>>>> Stashed changes
 // GET /api/checkout/services
 // =====================================================
 exports.getServices = async (req, res) => {
     try {
         const services = await models.Services.findAll({
+<<<<<<< Updated upstream
             where: { status: 'Active' },
             order: [['price', 'ASC']]
         });
@@ -166,12 +170,36 @@ exports.getServices = async (req, res) => {
             sportType: s.sport_type,
             price: parseFloat(s.price),
             description: s.description,
+=======
+            where: { status: 'Available' },
+            order: [['price', 'ASC']]
+        });
+
+        // Lọc các dịch vụ bị trùng tên do seed nhiều lần
+        const uniqueServicesMap = new Map();
+        for (const s of services) {
+            uniqueServicesMap.set(s.service_name, s);
+        }
+        const uniqueServices = Array.from(uniqueServicesMap.values());
+
+        const result = uniqueServices.map(s => ({
+            serviceId: s.service_id,
+            serviceName: s.service_name,
+            description: s.description,
+            price: parseFloat(s.price),
+            sportType: s.service_name.includes('PT') ? 'Huấn Luyện' : 'Tiện Ích'
+>>>>>>> Stashed changes
         }));
 
         return res.status(200).json({ services: result });
     } catch (error) {
+<<<<<<< Updated upstream
         console.error('❌ Lỗi lấy dịch vụ:', error.message);
         return res.status(500).json({ message: 'Lỗi server khi lấy dịch vụ!', error: error.message });
+=======
+        console.error('❌ Lỗi lấy dịch vụ bổ sung:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi lấy dịch vụ bổ sung!', error: error.message });
+>>>>>>> Stashed changes
     }
 };
 
@@ -185,7 +213,7 @@ exports.getServices = async (req, res) => {
 // =====================================================
 exports.createPayosPayment = async (req, res) => {
     try {
-        const { planId } = req.body;
+        const { planId, services = [] } = req.body;
 
         if (!planId) {
             return res.status(400).json({ message: 'Vui long chon goi tap!' });
@@ -196,7 +224,16 @@ exports.createPayosPayment = async (req, res) => {
             return res.status(400).json({ message: 'Goi tap khong ton tai hoac da bi khoa!' });
         }
 
-        const amount = Math.round(Number(getPlanPrice(plan)));
+        let servicesAmount = 0;
+        let selectedServicesRecords = [];
+        if (services && services.length > 0) {
+            selectedServicesRecords = await models.Services.findAll({
+                where: { service_id: services }
+            });
+            servicesAmount = selectedServicesRecords.reduce((sum, s) => sum + parseFloat(s.price), 0);
+        }
+
+        const amount = Math.round(Number(plan.price) + servicesAmount);
         const orderCode = Number(`${Date.now()}${Math.floor(Math.random() * 90 + 10)}`.slice(-12));
         const description = `FXFITNESS ${orderCode}`.slice(0, 25);
         const returnUrl = buildClientUrl(req, `/checkout?payosOrderCode=${orderCode}`);
@@ -274,7 +311,7 @@ exports.getPayosStatus = async (req, res) => {
 exports.guestCheckoutAndRegister = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const { email, fullName, phoneNumber, password, planId, trainerId, serviceIds, payosOrderCode } = req.body;
+        const { email, fullName, phoneNumber, password, planId, trainerId, services = [], height, weight, fitnessGoal, payosOrderCode } = req.body;
 
         // 1. Validate input
         if (!email || !password || !planId) {
@@ -296,7 +333,16 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             return res.status(400).json({ message: 'Gói tập không tồn tại hoặc đã bị khóa!' });
         }
 
-        const amount = getPlanPrice(plan);
+        let servicesAmount = 0;
+        let selectedServicesRecords = [];
+        if (services && services.length > 0) {
+            selectedServicesRecords = await models.Services.findAll({
+                where: { service_id: services }
+            });
+            servicesAmount = selectedServicesRecords.reduce((sum, s) => sum + parseFloat(s.price), 0);
+        }
+
+        const amount = getPlanPrice(plan) + servicesAmount;
         let payosPayment;
         try {
             payosPayment = await ensurePayosPaid(payosOrderCode, amount);
@@ -357,9 +403,14 @@ exports.guestCheckoutAndRegister = async (req, res) => {
         await newUser.update({ email_verification_token: realToken }, { transaction: t });
 
         // 7. Create Member profile
+        const bmi = (height && weight && height > 0) ? (weight / (height * height)).toFixed(2) : null;
         const newMember = await models.Members.create({
             user_id: newUser.user_id,
-            joined_date: formatDateToYYYYMMDD(new Date())
+            joined_date: formatDateToYYYYMMDD(new Date()),
+            height: height || null,
+            weight: weight || null,
+            bmi: bmi,
+            fitness_goal: fitnessGoal || null
         }, { transaction: t });
 
         // 8. Calculate membership dates
@@ -377,7 +428,20 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             membership_status: 'Active'
         }, { transaction: t });
 
-        // 10. Record Payment
+        // 8.5 Save services
+        if (services && services.length > 0) {
+            for (const srvId of services) {
+                await models.MemberServices.create({
+                    member_id: newMember.member_id,
+                    service_id: srvId,
+                    start_date: formatDateToYYYYMMDD(startDate),
+                    end_date: formatDateToYYYYMMDD(endDate),
+                    service_status: 'Active'
+                }, { transaction: t });
+            }
+        }
+
+        // 9. Record Payment
         const transactionCode = payosPayment.orderCode || payosOrderCode || `FXGUEST-${Date.now()}`;
         await models.Payments.create({
             member_id: newMember.member_id,
@@ -396,6 +460,24 @@ exports.guestCheckoutAndRegister = async (req, res) => {
                 title: `Lộ trình luyện tập với HLV ${trainerRecord.trainer_id}`,
                 description: `Lộ trình được tạo tự động sau khi đăng ký gói tập cùng HLV.`
             }, { transaction: t });
+
+            // Notify Trainer
+            try {
+                const ptUser = await models.Users.findByPk(trainerRecord.user_id);
+                if (ptUser && ptUser.email) {
+                    const emailService = require('../utils/emailService');
+                    await emailService.sendEmail(
+                        ptUser.email,
+                        'FxFitness - Bạn có học viên mới',
+                        `<h3>Xin chào ${ptUser.full_name},</h3>
+                         <p>Hệ thống vừa ghi nhận học viên mới <strong>${fullName}</strong> đã đăng ký tập luyện cùng bạn.</p>
+                         <p>Mục tiêu: ${fitnessGoal || 'Không xác định'}, BMI: ${bmi || 'Chưa cập nhật'}.</p>
+                         <p>Vui lòng đăng nhập vào Dashboard để kiểm tra thông tin và lên giáo án.</p>`
+                    );
+                }
+            } catch (emailErr) {
+                console.error('Error sending email to PT:', emailErr);
+            }
         }
 
         // 12. Register services if selected
@@ -416,30 +498,61 @@ exports.guestCheckoutAndRegister = async (req, res) => {
         // Commit transaction
         await t.commit();
 
-        // 13. Send verification email (async, non-blocking)
-        const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-        const verificationLink = `${clientUrl}/?action=verify-email&token=${realToken}`;
-        sendVerificationEmail(email, derivedName, verificationLink).catch(err => {
-            console.error('⚠️ Gửi email xác thực thất bại:', err.message);
-        });
+        // Generate Verify Token
+        const secret = (process.env.JWT_SECRET || 'BiMatSieuCap_SWP391') + newUser.password_hash;
+        const verifyToken = jwt.sign(
+            { userId: newUser.user_id, email: newUser.email },
+            secret,
+            { expiresIn: '24h' }
+        );
+
+        // Send Email
+        const clientUrl = req.headers.origin || 'http://localhost:5173';
+        const verifyLink = `${clientUrl}/login?action=verify-email&token=${verifyToken}&userId=${newUser.user_id}`;
+
+        const nodemailer = require('nodemailer');
+        if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+            try {
+                const transporter = nodemailer.createTransport({
+                    service: process.env.EMAIL_SERVICE || 'gmail',
+                    auth: {
+                        user: process.env.EMAIL_USER,
+                        pass: process.env.EMAIL_PASS
+                    }
+                });
+
+                await transporter.sendMail({
+                    from: `"FxFitness Center" <${process.env.EMAIL_USER}>`,
+                    to: email,
+                    subject: 'Kích hoạt tài khoản FxFitness Center',
+                    html: `
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                            <h2 style="color: #28a745; text-align: center;">FxFitness Center</h2>
+                            <p>Xin chào ${fullName},</p>
+                            <p>Cảm ơn bạn đã đăng ký tài khoản và mua gói tập tại FxFitness Center. Vui lòng bấm vào liên kết dưới đây để kích hoạt tài khoản của bạn (Liên kết này có hiệu lực trong vòng 24 giờ):</p>
+                            <div style="text-align: center; margin: 30px 0;">
+                                <a href="${verifyLink}" style="background-color: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 16px; display: inline-block;">KÍCH HOẠT TÀI KHOẢN</a>
+                            </div>
+                            <p>Hoặc bạn có thể sao chép liên kết này và dán vào trình duyệt:</p>
+                            <p style="word-break: break-all; color: #007bff; font-size: 13px;">${verifyLink}</p>
+                        </div>
+                    `
+                });
+            } catch (emailErr) {
+                console.error('Lỗi gửi email kích hoạt:', emailErr.message);
+            }
+        }
 
         console.log('\n=====================================================');
-        console.log('🔗 [VERIFICATION LINK - DEV]');
+        console.log('🔑 [EMAIL VERIFY LINK DETECTED - DEV ONLY]');
         console.log(`Email: ${email}`);
-        console.log(`Link: ${verificationLink}`);
+        console.log(`Verify Link: ${verifyLink}`);
         console.log('=====================================================\n');
 
         return res.status(201).json({
-            message: 'Đăng ký và thanh toán thành công! Vui lòng kiểm tra email để xác thực tài khoản.',
+            message: 'Đăng ký và thanh toán thành công! Vui lòng kiểm tra email để kích hoạt tài khoản.',
             success: true,
-            needsVerification: true,
-            user: {
-                userId: newUser.user_id,
-                fullName: newUser.full_name,
-                email: newUser.email,
-                roleId: newUser.role_id,
-                status: newUser.status
-            }
+            requiresVerification: true
         });
 
     } catch (error) {
@@ -461,7 +574,7 @@ exports.loggedInCheckout = async (req, res) => {
     const t = await sequelize.transaction();
     try {
         const userId = req.user.userId || req.user.id;
-        const { planId, trainerId, payosOrderCode, renewMembershipId } = req.body;
+        const { planId, trainerId, services = [], payosOrderCode } = req.body;
 
         if (!planId) {
             await t.rollback();
@@ -482,21 +595,17 @@ exports.loggedInCheckout = async (req, res) => {
             return res.status(400).json({ message: 'Gói tập không tồn tại hoặc đã bị khóa!' });
         }
 
-        const amount = getPlanPrice(plan);
-        let payosPayment;
-        try {
-            payosPayment = await ensurePayosPaid(payosOrderCode, amount);
-        } catch (payosError) {
-            // Nếu đang dev local và PayOS không verify được, vẫn cho phép tiếp tục
-            if (process.env.NODE_ENV === 'production') {
-                await t.rollback();
-                return res.status(400).json({
-                    message: `Xác minh thanh toán PayOS thất bại: ${payosError.message}`
-                });
-            }
-            console.warn('⚠️ [DEV] Bỏ qua verify PayOS:', payosError.message);
-            payosPayment = { orderCode: payosOrderCode, status: 'PAID' };
+        let servicesAmount = 0;
+        let selectedServicesRecords = [];
+        if (services && services.length > 0) {
+            selectedServicesRecords = await models.Services.findAll({
+                where: { service_id: services }
+            });
+            servicesAmount = selectedServicesRecords.reduce((sum, s) => sum + parseFloat(s.price), 0);
         }
+
+        const amount = getPlanPrice(plan) + servicesAmount;
+        const payosPayment = await ensurePayosPaid(payosOrderCode, amount);
 
         // 3. Resolve trainer if selected
         let trainerRecord = null;
@@ -520,53 +629,20 @@ exports.loggedInCheckout = async (req, res) => {
             }, { transaction: t });
         }
 
-        // 5. Create or Update MemberMembership
-        let membershipRecord;
-        if (renewMembershipId) {
-            membershipRecord = await models.MemberMemberships.findByPk(renewMembershipId);
-            if (!membershipRecord || membershipRecord.member_id !== member.member_id) {
-                await t.rollback();
-                return res.status(400).json({ message: 'Không tìm thấy gói tập gia hạn hợp lệ!' });
-            }
+        // 5. Calculate membership start and end date
+        const startDate = new Date();
+        const durationMonths = parseInt(plan.duration_months) || 1;
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + durationMonths);
 
-            const currentEndDate = new Date(membershipRecord.end_date);
-            const durationMonths = parseInt(plan.duration_months) || 1;
-            let startDateVal;
-            let endDateVal;
-
-            if (currentEndDate > new Date()) {
-                // Nếu gói tập cũ còn hạn, ngày bắt đầu gia hạn giữ nguyên, cộng dồn ngày kết thúc
-                startDateVal = membershipRecord.start_date;
-                endDateVal = new Date(membershipRecord.end_date);
-                endDateVal.setMonth(endDateVal.getMonth() + durationMonths);
-            } else {
-                // Nếu gói tập cũ đã hết hạn, ngày bắt đầu tính từ hôm nay
-                startDateVal = formatDateToYYYYMMDD(new Date());
-                endDateVal = new Date();
-                endDateVal.setMonth(endDateVal.getMonth() + durationMonths);
-            }
-
-            await membershipRecord.update({
-                start_date: startDateVal,
-                end_date: formatDateToYYYYMMDD(endDateVal),
-                membership_status: 'Active'
-            }, { transaction: t });
-        } else {
-            // Calculate membership start and end date
-            const startDate = new Date();
-            const durationMonths = parseInt(plan.duration_months) || 1;
-            const endDate = new Date();
-            endDate.setMonth(endDate.getMonth() + durationMonths);
-
-            // Create MemberMembership
-            membershipRecord = await models.MemberMemberships.create({
-                member_id: member.member_id,
-                membership_plan_id: plan.membership_plan_id,
-                start_date: formatDateToYYYYMMDD(startDate),
-                end_date: formatDateToYYYYMMDD(endDate),
-                membership_status: 'Active'
-            }, { transaction: t });
-        }
+        // 6. Create MemberMembership
+        await models.MemberMemberships.create({
+            member_id: member.member_id,
+            membership_plan_id: plan.membership_plan_id,
+            start_date: formatDateToYYYYMMDD(startDate),
+            end_date: formatDateToYYYYMMDD(endDate),
+            membership_status: 'Active'
+        }, { transaction: t });
 
         // 7. Record Payment
         const transactionCode = payosPayment.orderCode || payosOrderCode || `FXUSER-${Date.now()}`;
@@ -579,7 +655,20 @@ exports.loggedInCheckout = async (req, res) => {
             transaction_code: transactionCode
         }, { transaction: t });
 
-        // 8. Link trainer in WorkoutPlans if trainer is selected
+        // 8. Save services
+        if (services && services.length > 0) {
+            for (const srvId of services) {
+                await models.MemberServices.create({
+                    member_id: member.member_id,
+                    service_id: srvId,
+                    start_date: formatDateToYYYYMMDD(startDate),
+                    end_date: formatDateToYYYYMMDD(endDate),
+                    service_status: 'Active'
+                }, { transaction: t });
+            }
+        }
+
+        // 9. Link trainer in WorkoutPlans if trainer is selected
         if (trainerRecord) {
             await models.WorkoutPlans.create({
                 trainer_id: trainerRecord.trainer_id,
@@ -587,21 +676,31 @@ exports.loggedInCheckout = async (req, res) => {
                 title: `Lộ trình luyện tập với HLV ${trainerRecord.trainer_id}`,
                 description: `Lộ trình được tạo tự động sau khi đăng ký gói tập cùng HLV.`
             }, { transaction: t });
-        }
 
-        // Calculate remaining days after update/creation
-        const newEndDate = new Date(membershipRecord.end_date);
-        const diffTime = newEndDate - new Date();
-        let newRemainingDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        if (newRemainingDays < 0) newRemainingDays = 0;
+            // Notify Trainer
+            try {
+                const ptUser = await models.Users.findByPk(trainerRecord.user_id);
+                if (ptUser && ptUser.email) {
+                    const emailService = require('../utils/emailService');
+                    await emailService.sendEmail(
+                        ptUser.email,
+                        'FxFitness - Bạn có học viên mới',
+                        `<h3>Xin chào ${ptUser.full_name},</h3>
+                         <p>Hệ thống vừa ghi nhận hội viên <strong>${user.full_name}</strong> đã gia hạn/mua gói và chọn bạn làm HLV.</p>
+                         <p>Vui lòng đăng nhập vào Dashboard để kiểm tra và lên giáo án.</p>`
+                    );
+                }
+            } catch (emailErr) {
+                console.error('Error sending email to PT:', emailErr);
+            }
+        }
 
         // Commit transaction
         await t.commit();
 
         return res.status(200).json({
             message: 'Thanh toán thành công! Gói tập của bạn đã được kích hoạt.',
-            success: true,
-            newRemainingDays
+            success: true
         });
 
     } catch (error) {
@@ -635,5 +734,27 @@ exports.checkEmail = async (req, res) => {
     } catch (error) {
         console.error('❌ Lỗi kiểm tra email:', error.message);
         return res.status(500).json({ message: 'Lỗi server khi kiểm tra email!', error: error.message });
+    }
+};
+
+// =====================================================
+// 6. LẤY CẤU HÌNH TRANG CHỦ (PUBLIC)
+// GET /api/checkout/homepage-config
+// =====================================================
+exports.getHomepageConfig = async (req, res) => {
+    try {
+        const config = await models.AppConfigs.findOne({ where: { config_key: 'core_sports' } });
+        let coreSports = [];
+        if (config && config.config_value) {
+            try {
+                coreSports = JSON.parse(config.config_value);
+            } catch (e) {
+                console.error('Lỗi parse config core_sports:', e);
+            }
+        }
+        return res.status(200).json({ coreSports });
+    } catch (error) {
+        console.error('❌ Error getting homepage config:', error);
+        return res.status(500).json({ message: 'Lỗi server khi lấy cấu hình trang chủ!' });
     }
 };
