@@ -604,9 +604,6 @@
   transform: translateY(-3px);
 }
 
-/* ===================================================
-     RESPONSIVE
-  =================================================== */
 @media (max-width: 720px) {
   .shell {
     grid-template-columns: 1fr;

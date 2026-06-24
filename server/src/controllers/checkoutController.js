@@ -106,6 +106,7 @@ exports.getTrainers = async (req, res) => {
 
         const result = trainers.map(u => ({
             userId: u.user_id,
+            trainerId: u.Trainer?.trainer_id,
             fullName: u.full_name,
             avatarUrl: u.avatar_url ? `${req.protocol}://${req.get('host')}${u.avatar_url}` : null,
             specialization: u.Trainer?.specialization || 'Gym tổng hợp',

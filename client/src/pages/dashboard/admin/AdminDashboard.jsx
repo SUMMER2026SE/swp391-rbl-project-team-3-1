@@ -36,6 +36,7 @@ function AdminDashboard({ token, userInfo, logout }) {
   const [newPtSpecialty, setNewPtSpecialty] = useState('');
   const [newPtExpYears, setNewPtExpYears] = useState(1);
   const [newPtBio, setNewPtBio] = useState('');
+  const [createdPTDetails, setCreatedPTDetails] = useState(null);
 
   // Edit Package Modal State
   const [showEditPackage, setShowEditPackage] = useState(null);
@@ -152,14 +153,17 @@ function AdminDashboard({ token, userInfo, logout }) {
         return res.json();
       })
       .then(data => {
-        showToast(data.message);
+        setCreatedPTDetails({
+          name: newPtName,
+          email: newPtEmail,
+          password: data.temporaryPassword,
+          emailSent: data.emailSent
+        });
         setNewPtName('');
         setNewPtEmail('');
         setNewPtSpecialty('');
         setNewPtExpYears(1);
         setNewPtBio('');
-        setShowAddPT(false);
-        reloadAllAdminData();
       })
       .catch(err => {
         showToast(err.message || 'Lỗi khi tạo mới tài khoản PT!');
@@ -767,8 +771,8 @@ function AdminDashboard({ token, userInfo, logout }) {
                       <td>{app.time}</td>
                       <td>{app.date}</td>
                       <td>
-                        <span className={`admin-complaint-status-badge ${app.status.toLowerCase() === 'scheduled' ? 'pending' : app.status.toLowerCase() === 'completed' ? 'resolved' : 'cancelled'}`}>
-                          {app.status === 'Scheduled' ? 'Đã lên lịch' : app.status === 'Completed' ? 'Đã hoàn thành' : 'Đã hủy'}
+                        <span className={`admin-complaint-status-badge ${app.status.toLowerCase() === 'scheduled' ? 'pending' : app.status.toLowerCase() === 'completed' ? 'resolved' : app.status.toLowerCase() === 'rejected' ? 'rejected' : 'cancelled'}`}>
+                          {app.status === 'Scheduled' ? 'Đã lên lịch' : app.status === 'Completed' ? 'Đã hoàn thành' : app.status === 'Rejected' ? 'Bị từ chối' : 'Đã hủy'}
                         </span>
                       </td>
                       <td>
@@ -1207,6 +1211,83 @@ function AdminDashboard({ token, userInfo, logout }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* SUCCESS MODAL FOR PT CREATION */}
+      {createdPTDetails && (
+        <div className="admin-modal-overlay">
+          <div className="admin-modal-box" style={{ maxWidth: '450px', textAlign: 'center' }}>
+            <div style={{ color: '#10b981', fontSize: '3.5rem', marginBottom: '16px' }}>
+              <i className="fa-solid fa-circle-check"></i>
+            </div>
+            <h3 className="admin-modal-title" style={{ border: 'none', padding: 0, marginBottom: '8px' }}>Tạo Tài Khoản PT Thành Công!</h3>
+            <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '24px' }}>
+              Tài khoản huấn luyện viên đã được khởi tạo thành công trên hệ thống.
+            </p>
+            
+            <div style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'left', marginBottom: '24px' }}>
+              <div style={{ marginBottom: '14px' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Họ tên PT</span>
+                <div style={{ fontSize: '0.95rem', fontWeight: 'bold', color: '#1e293b', marginTop: '2px' }}>{createdPTDetails.name}</div>
+              </div>
+              <div style={{ marginBottom: '14px' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Email đăng nhập</span>
+                <div style={{ fontSize: '0.95rem', fontWeight: 'bold', color: '#1e293b', marginTop: '2px' }}>{createdPTDetails.email}</div>
+              </div>
+              <div>
+                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Mật khẩu tạm thời</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                  <span style={{ fontSize: '1.25rem', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--orange)', letterSpacing: '1px' }}>
+                    {createdPTDetails.password}
+                  </span>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdPTDetails.password);
+                      showToast('Đã sao chép mật khẩu!');
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#64748b',
+                      cursor: 'pointer',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '0.8rem',
+                      fontWeight: '700',
+                      border: '1px solid #cbd5e1',
+                      backgroundColor: '#ffffff'
+                    }}
+                  >
+                    <i className="fa-regular fa-copy"></i> Sao chép
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 24px 0', lineHeight: '1.4' }}>
+              {createdPTDetails.emailSent 
+                ? '✓ Mật khẩu này đã được gửi đến email thực của PT.' 
+                : '⚠ Không gửi được email (chưa cấu hình hoặc lỗi SMTP). Mật khẩu chỉ hiển thị một lần ở đây.'}
+            </p>
+
+            <button 
+              type="button"
+              className="admin-btn-submit" 
+              style={{ width: '100%', padding: '12px' }}
+              onClick={() => {
+                setCreatedPTDetails(null);
+                setShowAddPT(false);
+                reloadAllAdminData();
+              }}
+            >
+              Hoàn Tất
+            </button>
           </div>
         </div>
       )}

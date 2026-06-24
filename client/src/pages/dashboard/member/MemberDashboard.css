@@ -398,6 +398,12 @@
   color: #991b1b;
 }
 
+.member-badge-status.rejected {
+  background-color: #fce8e6;
+  color: #c53030;
+  border: 1px solid #feb2b2;
+}
+
 .member-action-cancel {
   background: none;
   border: none;
@@ -1052,8 +1058,8 @@
      RESPONSIVE FOR MEMBER DASHBOARD
 =================================================== */
 @media (max-width: 992px) {
-  .member-overview-grid, .member-booking-container, .member-meal-layout, .member-progress-layout {
-    grid-template-columns: 1fr;
+  .member-overview-grid, .member-booking-container, .member-meal-layout, .member-progress-layout, .member-ai-consultation-layout {
+    grid-template-columns: 1fr !important;
   }
   
   .member-calorie-ring-box {
@@ -1087,3 +1093,91 @@
     grid-column: span 1;
   }
 }
+
+/* --- AI Consultation Layout --- */
+.member-ai-consultation-layout {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.ai-history-item {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.ai-history-item:hover {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+.ai-history-item.active {
+  border-color: var(--orange) !important;
+  background-color: #fffaf5 !important;
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.08);
+}
+
+.ai-pulse-loader {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: #fff6ed;
+  box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4);
+  animation: pulse-orange 1.8s infinite;
+}
+
+@keyframes pulse-orange {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 15px rgba(249, 115, 22, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0);
+  }
+}
+
+/* --- Subtabs styles for plan history selectors --- */
+.member-subtabs {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+  margin-bottom: 24px;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 10px;
+}
+
+.member-subtab-btn {
+  padding: 8px 20px;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.member-subtab-btn:hover {
+  background-color: #f1f5f9;
+  color: var(--text);
+}
+
+.member-subtab-btn.active {
+  background-color: var(--orange);
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(249, 115, 22, 0.2);
+}
+

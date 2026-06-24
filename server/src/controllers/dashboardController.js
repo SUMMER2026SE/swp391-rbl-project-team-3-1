@@ -7,6 +7,26 @@ const ROLE = {
   ADMIN: 3
 };
 
+// Helper: convert TIME field (Date object or string) to "HH:mm"
+const toTimeStr = (val, fallback = '00:00') => {
+  if (!val) return fallback;
+  if (typeof val === 'string') return val.slice(0, 5);
+  if (val instanceof Date) {
+    const h = String(val.getUTCHours()).padStart(2, '0');
+    const m = String(val.getUTCMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+  return fallback;
+};
+
+// Helper: format working_date (Date or string) to "DD/MM/YYYY"
+const toDateStr = (val) => {
+  if (!val) return 'N/A';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return String(val).slice(0, 10);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+};
+
 // =====================================================
 // HELPER: SELF-SEEDING DATABASE LOGIC
 // If crucial tracking tables are empty, populate them
@@ -423,25 +443,6 @@ exports.getAdminAppointments = async (req, res) => {
       ]
     });
 
-    // Helper: convert TIME field (Date object or string) to "HH:mm"
-    const toTimeStr = (val, fallback = '00:00') => {
-      if (!val) return fallback;
-      if (typeof val === 'string') return val.slice(0, 5);
-      if (val instanceof Date) {
-        const h = String(val.getUTCHours()).padStart(2, '0');
-        const m = String(val.getUTCMinutes()).padStart(2, '0');
-        return `${h}:${m}`;
-      }
-      return fallback;
-    };
-
-    // Helper: format working_date (Date or string) to "DD/MM/YYYY"
-    const toDateStr = (val) => {
-      if (!val) return 'N/A';
-      const d = new Date(val);
-      if (isNaN(d)) return String(val).slice(0, 10);
-      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-    };
 
     const mappedAppts = appointments.map((a) => {
       return {
@@ -746,7 +747,14 @@ exports.getTrainerMembers = async (req, res) => {
     });
 
     if (workoutMembers.length > 0) {
-      members = workoutMembers.map(wm => wm.member).filter(Boolean);
+      const seen = new Set();
+      members = [];
+      workoutMembers.forEach(wm => {
+        if (wm.member && !seen.has(wm.member.member_id)) {
+          seen.add(wm.member.member_id);
+          members.push(wm.member);
+        }
+      });
     } else {
       // Fallback: grab all system members to prevent empty screen
       members = await models.Members.findAll({
@@ -812,16 +820,35 @@ exports.getTrainerAppointments = async (req, res) => {
     });
 
     const mappedAppts = appointments.map(a => {
-      const startT = a.schedule?.start_time || '07:00:00';
-      const endT = a.schedule?.end_time || '08:30:00';
+      const startTimeFormatted = toTimeStr(a.schedule?.start_time, '07:00');
+      const endTimeFormatted = toTimeStr(a.schedule?.end_time, '08:30');
 
-      // Map working_date like '25', '26', '27' for trainer calendar
-      const dayNum = a.schedule?.working_date ? a.schedule.working_date.split('-')[2] : '25';
+      let dayNum = '25';
+      let dateStr = '2026-06-17';
+      if (a.schedule?.working_date) {
+        const dateVal = a.schedule.working_date;
+        if (typeof dateVal === 'string') {
+          const part = dateVal.split('-')[2];
+          dayNum = part ? part.slice(0, 2) : '25';
+          dateStr = dateVal.slice(0, 10);
+        } else if (dateVal instanceof Date) {
+          dayNum = String(dateVal.getDate()).padStart(2, '0');
+          const y = dateVal.getFullYear();
+          const m = String(dateVal.getMonth() + 1).padStart(2, '0');
+          const d = String(dateVal.getDate()).padStart(2, '0');
+          dateStr = `${y}-${m}-${d}`;
+        } else {
+          const part = String(dateVal).split('-')[2];
+          dayNum = part ? part.slice(0, 2) : '25';
+          dateStr = String(dateVal).slice(0, 10);
+        }
+      }
 
       return {
         id: a.appointment_id,
         day: dayNum,
-        time: `${startT.slice(0, 5)} - ${endT.slice(0, 5)}`,
+        date: dateStr,
+        time: `${startTimeFormatted} - ${endTimeFormatted}`,
         member: a.member?.user?.full_name || 'Hội viên',
         name: a.member?.user?.full_name || 'Hội viên',
         type: a.note || 'Lớp tập luyện riêng',
@@ -849,7 +876,7 @@ exports.confirmTrainerAppointment = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy lịch hẹn!' });
     }
 
-    const nextStatus = action === 'confirm' ? 'Confirmed' : 'Cancelled';
+    const nextStatus = action === 'confirm' ? 'Confirmed' : 'Rejected';
     await appointment.update({ status: nextStatus });
 
     // Free the slot if rejected
@@ -886,8 +913,7 @@ exports.assignPlanToMember = async (req, res) => {
         trainer_id: trainerUser.trainer_id,
         member_id: memberId,
         title: name,
-        description: 'Giáo án được giao từ huấn luyện viên qua dashboard.',
-        created_at: new Date()
+        description: 'Giáo án được giao từ huấn luyện viên qua dashboard.'
       });
     } else {
       await models.MealPlans.create({
@@ -895,8 +921,7 @@ exports.assignPlanToMember = async (req, res) => {
         member_id: memberId,
         title: name,
         calories_per_day: 2000,
-        description: 'Chế độ dinh dưỡng giao trực tiếp từ huấn luyện viên.',
-        created_at: new Date()
+        description: 'Chế độ dinh dưỡng giao trực tiếp từ huấn luyện viên.'
       });
     }
 
@@ -938,15 +963,15 @@ exports.getMemberAppointments = async (req, res) => {
     });
 
     const mappedAppts = appointments.map(a => {
-      const startT = a.schedule?.start_time || '07:00:00';
-      const endT = a.schedule?.end_time || '08:30:00';
+      const startTimeFormatted = toTimeStr(a.schedule?.start_time, '07:00');
+      const endTimeFormatted = toTimeStr(a.schedule?.end_time, '08:30');
 
       return {
         id: a.appointment_id,
         ptName: a.schedule?.trainer?.user?.full_name || 'HLV Cá Nhân',
         trainer: a.schedule?.trainer?.user?.full_name || 'HLV Cá Nhân',
-        date: a.schedule?.working_date || 'N/A',
-        time: a.schedule?.working_date ? `${a.schedule.working_date} (${startT.slice(0, 5)} - ${endT.slice(0, 5)})` : `${startT.slice(0, 5)} - ${endT.slice(0, 5)}`,
+        date: toDateStr(a.schedule?.working_date),
+        time: a.schedule?.working_date ? `${toDateStr(a.schedule.working_date)} (${startTimeFormatted} - ${endTimeFormatted})` : `${startTimeFormatted} - ${endTimeFormatted}`,
         type: a.note || 'Tập thử Gym',
         status: (a.status === 'Confirmed' || a.status === 'Scheduled' ? 'confirmed' : a.status || 'pending').toLowerCase()
       };
@@ -962,10 +987,16 @@ exports.getMemberAppointments = async (req, res) => {
 // POST /api/dashboard/member/appointments
 exports.createMemberAppointment = async (req, res) => {
   try {
-    const { date, time, type, note } = req.body;
+    let { date, time, type, note, trainerId } = req.body;
 
     if (!date || !time) {
       return res.status(400).json({ message: 'Vui lòng cung cấp ngày hẹn và thời gian!' });
+    }
+
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    if (date < todayStr) {
+      return res.status(400).json({ message: 'Không thể đặt lịch hẹn cho những ngày đã qua!' });
     }
 
     const member = await models.Members.findOne({ where: { user_id: req.user.userId } });
@@ -973,24 +1004,55 @@ exports.createMemberAppointment = async (req, res) => {
       return res.status(400).json({ message: 'Hồ sơ hội viên chưa được thiết lập!' });
     }
 
-    // To link an appointment, we need a TrainerSchedule.
-    // Find first active PT or default system PT schedule slot
-    // If no schedule slots exist, we create one dynamically for today/selected date!
-    const defaultTrainer = await models.Trainers.findOne();
-    if (!defaultTrainer) {
-      return res.status(400).json({ message: 'Hệ thống hiện tại chưa có HLV nào hoạt động để đặt lịch!' });
+    if (trainerId) {
+      trainerId = Number(trainerId);
     }
 
-    const start_time = `${time}:00`;
+    // To link an appointment, we need a TrainerSchedule.
+    // Try to find the member's active PT from their workout plans if not explicitly selected
+    if (!trainerId) {
+      const activeWorkoutPlan = await models.WorkoutPlans.findOne({
+        where: { member_id: member.member_id },
+        order: [['created_at', 'DESC']]
+      });
+
+      if (activeWorkoutPlan) {
+        trainerId = activeWorkoutPlan.trainer_id;
+      } else {
+        // Look in MealPlans if no WorkoutPlan exists
+        const activeMealPlan = await models.MealPlans.findOne({
+          where: { member_id: member.member_id },
+          order: [['created_at', 'DESC']]
+        });
+        if (activeMealPlan) {
+          trainerId = activeMealPlan.trainer_id;
+        }
+      }
+    }
+
+    // Fallback: pick the first trainer in database
+    if (!trainerId) {
+      const defaultTrainer = await models.Trainers.findOne();
+      if (!defaultTrainer) {
+        return res.status(400).json({ message: 'Hệ thống hiện tại chưa có HLV nào hoạt động để đặt lịch!' });
+      }
+      trainerId = defaultTrainer.trainer_id;
+    }
+
     // Add 1.5 hours
     const [h, m] = time.split(':').map(Number);
     const totalMinutes = h * 60 + m + 90;
     const endH = Math.floor(totalMinutes / 60) % 24;
     const endM = totalMinutes % 60;
+    
+    // Format times as string (e.g. HH:mm:00) to avoid MSSQL parameter binding / type validation errors
+    const start_time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
     const end_time = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`;
+    const endTimeStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+
     // Create a new Available Trainer Schedule row
     const newSchedule = await models.TrainerSchedules.create({
-      trainer_id: defaultTrainer.trainer_id,
+      trainer_id: trainerId,
       working_date: date,
       start_time,
       end_time,
@@ -1001,17 +1063,22 @@ exports.createMemberAppointment = async (req, res) => {
       member_id: member.member_id,
       schedule_id: newSchedule.schedule_id,
       status: 'Pending',
-      note: note || type || 'Đăng ký tập luyện cá nhân',
-      created_at: new Date()
+      note: note || type || 'Đăng ký tập luyện cá nhân'
+      // Omitted created_at so SQL Server default getdate() is used
+    });
+
+    // Fetch the target trainer details to return in response
+    const targetTrainer = await models.Trainers.findByPk(trainerId, {
+      include: [{ model: models.Users, as: 'user', attributes: ['full_name'] }]
     });
 
     return res.status(201).json({
       message: 'Đăng ký lịch hẹn thành công! Đang chờ huấn luyện viên xác nhận.',
       appointment: {
         id: newAppt.appointment_id,
-        ptName: defaultTrainer.user?.full_name || 'HLV Cá Nhân',
+        ptName: targetTrainer?.user?.full_name || 'HLV Cá Nhân',
         date: date,
-        time: `${time} - ${end_time.slice(0, 5)}`,
+        time: `${time} - ${endTimeStr}`,
         type: newAppt.note,
         status: newAppt.status
       }
@@ -1019,6 +1086,6 @@ exports.createMemberAppointment = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error creating member appointment:', error);
-    return res.status(500).json({ message: 'Lỗi server khi đăng ký lịch tập!' });
+    return res.status(500).json({ message: 'Lỗi server khi đăng ký lịch tập!: ' + error.message });
   }
 };

@@ -1,6 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import './TrainerDashboard.css';
 
+// Helper to format Date to YYYY-MM-DD
+const getTodayDateString = (dateObj) => {
+  const today = dateObj || new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Dynamic date calculation helper for the weekly calendar (Monday to Sunday)
+const getWeekDays = (refDateStr) => {
+  const current = refDateStr ? new Date(refDateStr) : new Date();
+  const day = current.getDay();
+  const monday = new Date(current);
+  monday.setDate(monday.getDate() - day + (day === 0 ? -6 : 1));
+  
+  const days = [];
+  const dayLabels = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
+  
+  for (let i = 0; i < 7; i++) {
+    const nextDay = new Date(monday);
+    nextDay.setDate(monday.getDate() + i);
+    const dayStr = String(nextDay.getDate()).padStart(2, '0');
+    const monthStr = String(nextDay.getMonth() + 1).padStart(2, '0');
+    const yearStr = nextDay.getFullYear();
+    const fullDateStr = `${yearStr}-${monthStr}-${dayStr}`;
+    days.push({
+      key: fullDateStr,
+      lbl: dayLabels[i],
+      num: `${dayStr}/${monthStr}`,
+      dateStr: fullDateStr
+    });
+  }
+  return days;
+};
+
 function TrainerDashboard({
   token,
   userInfo,
@@ -36,8 +72,8 @@ function TrainerDashboard({
   const [membersList, setMembersList] = useState([]);
   const [selectedMember, setSelectedMember] = useState(null);
 
-  // Teaching schedule - default to current day
-  const [selectedDay, setSelectedDay] = useState(new Date().getDate().toString().padStart(2, '0'));
+  // Teaching schedule - default to current date string (YYYY-MM-DD)
+  const [selectedDate, setSelectedDate] = useState(getTodayDateString());
   const [scheduleList, setScheduleList] = useState([]);
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [sessionTimer, setSessionTimer] = useState(900); // 15 minutes in seconds
@@ -67,6 +103,7 @@ function TrainerDashboard({
   // Assign plans builders inputs
   const [customWorkoutName, setCustomWorkoutName] = useState('');
   const [customMealName, setCustomMealName] = useState('');
+  const [successModal, setSuccessModal] = useState({ show: false, message: '' });
 
   // Certifications & Progress Tracking States
   const [certifications, setCertifications] = useState([]);
@@ -373,7 +410,10 @@ function TrainerDashboard({
     })
       .then(res => res.json())
       .then(data => {
-        alert(data.message || `Đã giao giáo án "${templateName}"!`);
+        setSuccessModal({
+          show: true,
+          message: data.message || `Đã giao giáo án "${templateName}" thành công!`
+        });
         reloadTrainerDashboardData();
       })
       .catch(err => console.error('Error assigning workout:', err));
@@ -399,7 +439,10 @@ function TrainerDashboard({
     })
       .then(res => res.json())
       .then(data => {
-        alert(data.message || `Đã giao thực đơn "${templateName}"!`);
+        setSuccessModal({
+          show: true,
+          message: data.message || `Đã giao thực đơn "${templateName}" thành công!`
+        });
         reloadTrainerDashboardData();
       })
       .catch(err => console.error('Error assigning meal:', err));
@@ -423,6 +466,18 @@ function TrainerDashboard({
     setIsSessionActive(true);
     setSessionTimer(900); // 15 mins simulation
     alert('Bắt đầu buổi tập thành công! Đồng hồ đếm ngược đang kích hoạt.');
+  };
+
+  const handlePrevWeek = () => {
+    const d = new Date(selectedDate);
+    d.setDate(d.getDate() - 7);
+    setSelectedDate(getTodayDateString(d));
+  };
+
+  const handleNextWeek = () => {
+    const d = new Date(selectedDate);
+    d.setDate(d.getDate() + 7);
+    setSelectedDate(getTodayDateString(d));
   };
 
   const getCurrentDateString = () => {
@@ -529,10 +584,10 @@ function TrainerDashboard({
               <div className="trainer-stat-card">
                 <span className="trainer-stat-label">Lịch dạy hôm nay</span>
                 <span className="trainer-stat-value">
-                  {scheduleList.filter(s => s.day === selectedDay).length}
+                  {scheduleList.filter(s => s.date === selectedDate).length}
                 </span>
                 <div className="trainer-stat-subtext">
-                  Còn lại {scheduleList.filter(s => s.day === selectedDay).length - (isSessionActive ? 1 : 0)} buổi dạy
+                  Còn lại {scheduleList.filter(s => s.date === selectedDate).length - (isSessionActive ? 1 : 0)} buổi dạy
                 </div>
                 <div className="trainer-stat-icon-wrap">
                   <i className="fa-solid fa-calendar-check"></i>
@@ -616,17 +671,12 @@ function TrainerDashboard({
                   <span className="trainer-link-action" onClick={() => setActiveTab('lichday')}>Xem chi tiết</span>
                 </div>
                 <div className="trainer-weekly-calendar">
-                  <div className="trainer-calendar-days-row">
-                    {[
-                      { key: '08', lbl: 'T2', num: '08' },
-                      { key: '09', lbl: 'T3', num: '09' },
-                      { key: '10', lbl: 'T4', num: '10' },
-                      { key: '11', lbl: 'T5', num: '11' }
-                    ].map(d => (
+                  <div className="trainer-calendar-days-row" style={{ gridTemplateColumns: 'repeat(7, 1fr)', maxWidth: '100%' }}>
+                    {getWeekDays(selectedDate).map(d => (
                       <div 
                         key={d.key} 
-                        className={`trainer-calendar-day-header ${selectedDay === d.key ? 'active' : ''}`}
-                        onClick={() => setSelectedDay(d.key)}
+                        className={`trainer-calendar-day-header ${selectedDate === d.dateStr ? 'active' : ''}`}
+                        onClick={() => setSelectedDate(d.dateStr)}
                       >
                         <div className="trainer-calendar-day-name">{d.lbl}</div>
                         <div className="trainer-calendar-day-num">{d.num}</div>
@@ -635,7 +685,7 @@ function TrainerDashboard({
                   </div>
 
                   <div className="trainer-schedule-slots-stack">
-                    {scheduleList.filter(s => s.day === selectedDay).map((item) => (
+                    {scheduleList.filter(s => s.date === selectedDate).map((item) => (
                       <div key={item.id} className={`trainer-schedule-card ${item.active ? 'active' : ''}`}>
                         <div>
                           <div className="trainer-schedule-time">{item.time}</div>
@@ -644,7 +694,7 @@ function TrainerDashboard({
                         <span className="trainer-schedule-type">{item.type}</span>
                       </div>
                     ))}
-                    {scheduleList.filter(s => s.day === selectedDay).length === 0 && (
+                    {scheduleList.filter(s => s.date === selectedDate).length === 0 && (
                       <div className="trainer-no-data" style={{ padding: '30px 10px' }}>Trống lịch dạy cho ngày này</div>
                     )}
                     <div className="trainer-btn-add-slot" onClick={() => { setActiveTab('lichday'); alert('Bạn đang được chuyển đến trang đặt lịch dạy...'); }}>
@@ -841,8 +891,8 @@ function TrainerDashboard({
                         ].map((temp, idx) => (
                           <div 
                             key={idx} 
-                            className="trainer-template-card"
-                            onClick={() => handleAssignWorkoutTemplate(temp.title)}
+                            className={`trainer-template-card ${customWorkoutName === temp.title ? 'active' : ''}`}
+                            onClick={() => setCustomWorkoutName(temp.title)}
                           >
                             <div className="trainer-template-card-title">{temp.title}</div>
                             <div className="trainer-template-card-desc">{temp.desc}</div>
@@ -877,8 +927,8 @@ function TrainerDashboard({
                         ].map((temp, idx) => (
                           <div 
                             key={idx} 
-                            className="trainer-template-card"
-                            onClick={() => handleAssignMealTemplate(temp.title)}
+                            className={`trainer-template-card ${customMealName === temp.title ? 'active-meal' : ''}`}
+                            onClick={() => setCustomMealName(temp.title)}
                           >
                             <div className="trainer-template-card-title">{temp.title}</div>
                             <div className="trainer-template-card-desc">{temp.desc}</div>
@@ -917,7 +967,7 @@ function TrainerDashboard({
                     <div className="trainer-request-member-info">
                       <div className="trainer-request-avatar">{req.name.charAt(0)}</div>
                       <div className="trainer-request-text">
-                        Học viên <span className="name">{req.name}</span> đăng ký buổi tập lúc <span className="time">{req.time}</span>. <br />
+                        Học viên <span className="name">{req.name}</span> đăng ký buổi tập lúc <span className="time">{req.time}</span>{req.date ? <> ngày <span className="date" style={{ color: 'var(--orange)', fontWeight: 'bold' }}>{req.date.includes('-') ? req.date.split('-').reverse().join('/') : req.date}</span></> : ''}. <br />
                         <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Ghi chú: "{req.note}"</span>
                       </div>
                     </div>
@@ -932,18 +982,49 @@ function TrainerDashboard({
 
             <div className="trainer-card-panel">
               <h3 className="trainer-card-title" style={{ marginBottom: '20px' }}>Lịch dạy tuần chi tiết</h3>
+              
+              {/* Interactive Calendar Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '20px', flexWrap: 'wrap', backgroundColor: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <button 
+                  type="button"
+                  className="trainer-banner-btn-white" 
+                  style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1' }}
+                  onClick={handlePrevWeek}
+                >
+                  <i className="fa-solid fa-chevron-left"></i> Tuần trước
+                </button>
+                <input 
+                  type="date" 
+                  className="trainer-form-input" 
+                  style={{ width: '160px', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }} 
+                  value={selectedDate} 
+                  onChange={(e) => setSelectedDate(e.target.value)} 
+                />
+                <button 
+                  type="button"
+                  className="trainer-banner-btn-white" 
+                  style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1' }}
+                  onClick={handleNextWeek}
+                >
+                  Tuần sau <i className="fa-solid fa-chevron-right"></i>
+                </button>
+                <button 
+                  type="button"
+                  className="trainer-link-action" 
+                  style={{ fontWeight: 'bold', marginLeft: 'auto', border: 'none', background: 'none' }}
+                  onClick={() => setSelectedDate(getTodayDateString())}
+                >
+                  <i className="fa-solid fa-calendar-day"></i> Về hôm nay
+                </button>
+              </div>
+
               <div className="trainer-weekly-calendar">
-                <div className="trainer-calendar-days-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)', maxWidth: '600px' }}>
-                  {[
-                    { key: '08', lbl: 'Thứ Hai', num: '08/06' },
-                    { key: '09', lbl: 'Thứ Ba', num: '09/06' },
-                    { key: '10', lbl: 'Thứ Tư', num: '10/06' },
-                    { key: '11', lbl: 'Thứ Năm', num: '11/06' }
-                  ].map(d => (
+                <div className="trainer-calendar-days-row" style={{ gridTemplateColumns: 'repeat(7, 1fr)', maxWidth: '100%' }}>
+                  {getWeekDays(selectedDate).map(d => (
                     <div 
                       key={d.key} 
-                      className={`trainer-calendar-day-header ${selectedDay === d.key ? 'active' : ''}`}
-                      onClick={() => setSelectedDay(d.key)}
+                      className={`trainer-calendar-day-header ${selectedDate === d.dateStr ? 'active' : ''}`}
+                      onClick={() => setSelectedDate(d.dateStr)}
                     >
                       <div className="trainer-calendar-day-name">{d.lbl}</div>
                       <div className="trainer-calendar-day-num">{d.num}</div>
@@ -962,7 +1043,7 @@ function TrainerDashboard({
                       </tr>
                     </thead>
                     <tbody>
-                      {scheduleList.filter(s => s.day === selectedDay).map((item) => (
+                      {scheduleList.filter(s => s.date === selectedDate).map((item) => (
                         <tr key={item.id}>
                           <td style={{ fontWeight: 'bold', color: 'var(--orange)' }}>{item.time}</td>
                           <td className="trainer-table-name">{item.member}</td>
@@ -972,7 +1053,7 @@ function TrainerDashboard({
                           </td>
                         </tr>
                       ))}
-                      {scheduleList.filter(s => s.day === selectedDay).length === 0 && (
+                      {scheduleList.filter(s => s.date === selectedDate).length === 0 && (
                         <tr>
                           <td colSpan="4" className="trainer-no-data" style={{ padding: '40px 10px' }}>Hôm nay không có giờ dạy nào lên lịch sẵn</td>
                         </tr>
@@ -1443,6 +1524,21 @@ function TrainerDashboard({
         {/* Active view */}
         {renderTabContent()}
       </main>
+
+      {successModal.show && (
+        <div className="trainer-success-modal-overlay">
+          <div className="trainer-success-modal-box">
+            <div className="trainer-success-modal-icon">
+              <i className="fa-solid fa-circle-check"></i>
+            </div>
+            <h4 className="trainer-success-modal-title">Giao thành công!</h4>
+            <p className="trainer-success-modal-msg">{successModal.message}</p>
+            <button className="trainer-success-modal-btn" onClick={() => setSuccessModal({ show: false, message: '' })}>
+              Đồng ý
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

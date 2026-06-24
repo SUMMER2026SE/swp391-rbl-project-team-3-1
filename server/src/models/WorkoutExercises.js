@@ -34,6 +34,10 @@ module.exports = function(sequelize, DataTypes) {
     calories_burned: {
       type: DataTypes.INTEGER,
       allowNull: true
+    },
+    rpe: {
+      type: DataTypes.INTEGER,
+      allowNull: true
     }
   }, {
     sequelize,
