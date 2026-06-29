@@ -643,9 +643,25 @@ exports.getTrainerMembers = async (req, res) => {
     }
 
     const mappedMembers = await Promise.all(members.map(async (m, idx) => {
-      const activeMembership = m.MemberMemberships?.find(
-        ms => ms.membership_status === 'Active'
-      );
+      // Map trainer specialization to membership sport type
+      const trainerSpec = (trainerUser.specialization || '').toLowerCase();
+      let matchedSportTypes = [];
+      if (trainerSpec.includes('yoga')) {
+        matchedSportTypes = ['yoga'];
+      } else if (trainerSpec.includes('fitness') || trainerSpec.includes('bodybuilding') || trainerSpec.includes('gym')) {
+        matchedSportTypes = ['gym', 'mixed'];
+      } else {
+        matchedSportTypes = [trainerSpec];
+      }
+
+      // Filter active memberships matching the trainer's sport types
+      const matchedActiveMemberships = (m.MemberMemberships || []).filter(ms => {
+        const sport = (ms.membership_plan?.sport_type || '').toLowerCase();
+        return ms.membership_status === 'Active' && matchedSportTypes.includes(sport);
+      });
+
+      const primaryMembership = matchedActiveMemberships[0];
+      const planName = primaryMembership?.membership_plan?.plan_name || 'Standard Plan';
 
       // Fetch actual workout and meal plan assigned to this member by this trainer
       const latestWorkoutPlan = await models.WorkoutPlans.findOne({
@@ -668,25 +684,21 @@ exports.getTrainerMembers = async (req, res) => {
       });
 
       let remainingDays = 0;
-      if (m.MemberMemberships && m.MemberMemberships.length > 0) {
-        m.MemberMemberships.forEach(ms => {
-          if (ms.membership_status === 'Active') {
-            const endDate = new Date(ms.end_date);
-            const diffTime = endDate - new Date();
-            let daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            if (daysLeft > 0) {
-              remainingDays += daysLeft;
-            }
-          }
-        });
-      }
+      matchedActiveMemberships.forEach(ms => {
+        const endDate = new Date(ms.end_date);
+        const diffTime = endDate - new Date();
+        let daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (daysLeft > 0) {
+          remainingDays += daysLeft;
+        }
+      });
 
       return {
         id: m.member_id,
         name: m.user ? m.user.full_name : 'Hội viên',
         email: m.user ? m.user.email : 'N/A',
         phone: m.user ? m.user.phone_number : 'N/A',
-        planName: activeMembership?.membership_plan?.plan_name || 'Standard Gym',
+        planName: planName,
         goal: m.fitness_goal || 'Tập lực cơ bản',
         height: Math.round((m.height || 1.7) * 100), // convert to cm
         weight: m.weight || 70,

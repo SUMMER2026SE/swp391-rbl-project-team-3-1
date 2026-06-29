@@ -1064,7 +1064,6 @@ function MemberDashboard({
                     <option value="PT Cá Nhân">PT Cá Nhân (1 kèm 1)</option>
                     <option value="Yoga">Lớp Yoga nhóm</option>
                     <option value="Cardio">Cardio & Giảm mỡ</option>
-                    <option value="Zumba">Lớp Zumba nhóm</option>
                   </select>
                 </div>
                 <div className="member-form-group">
