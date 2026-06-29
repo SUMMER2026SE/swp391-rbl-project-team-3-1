@@ -164,11 +164,23 @@ exports.getTrainerSchedule = async (req, res) => {
             order: [['working_date', 'ASC'], ['start_time', 'ASC']]
         });
 
+        const formatTimeField = (val) => {
+            if (!val) return '00:00:00';
+            if (typeof val === 'string') return val;
+            if (val instanceof Date) {
+                const h = String(val.getUTCHours()).padStart(2, '0');
+                const m = String(val.getUTCMinutes()).padStart(2, '0');
+                const s = String(val.getUTCSeconds()).padStart(2, '0');
+                return `${h}:${m}:${s}`;
+            }
+            return '00:00:00';
+        };
+
         const result = schedules.map(s => ({
             scheduleId: s.schedule_id,
             workingDate: s.working_date,
-            startTime: s.start_time,
-            endTime: s.end_time,
+            startTime: formatTimeField(s.start_time),
+            endTime: formatTimeField(s.end_time),
             status: s.availability_status
         }));
 

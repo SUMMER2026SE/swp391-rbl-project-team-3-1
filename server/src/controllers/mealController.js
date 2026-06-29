@@ -20,6 +20,70 @@ exports.getAllMealPlans = async (req, res) => {
                 return res.status(200).json([]);
             }
             whereCondition.member_id = member.member_id;
+
+            // Auto-assign default templates if member has 0 plans
+            const existingPlanCount = await models.MealPlans.count({
+                where: { member_id: member.member_id }
+            });
+
+            if (existingPlanCount === 0) {
+                // Find member's active membership sport type
+                const activeMembership = await models.MemberMemberships.findOne({
+                    where: { member_id: member.member_id, membership_status: 'Active' },
+                    include: [{ model: models.MembershipPlans, as: 'membership_plan' }]
+                });
+
+                let sportType = 'Gym'; // default fallback
+                if (activeMembership && activeMembership.membership_plan) {
+                    sportType = activeMembership.membership_plan.sport_type || 'Gym';
+                }
+
+                // Query templates from database
+                const config = await models.AppConfigs.findOne({ where: { config_key: 'meal_templates' } });
+                let templates = [];
+                if (config && config.config_value) {
+                    templates = JSON.parse(config.config_value);
+                }
+
+                // Find templates for sport type
+                const sportTemplates = templates.filter(t => t.sport_type.toLowerCase() === sportType.toLowerCase());
+                const targetTemplate = sportTemplates[0] || templates[0];
+
+                if (targetTemplate) {
+                    // Find a trainer matching specialization or use the first trainer
+                    let trainerId = null;
+                    const { Op } = require('sequelize');
+                    const specTrainer = await models.Trainers.findOne({
+                        where: {
+                            specialization: {
+                                [Op.like]: `%${sportType}%`
+                            }
+                        }
+                    });
+                    if (specTrainer) {
+                        trainerId = specTrainer.trainer_id;
+                    } else {
+                        const fallbackTrainer = await models.Trainers.findOne();
+                        if (fallbackTrainer) {
+                            trainerId = fallbackTrainer.trainer_id;
+                        }
+                    }
+
+                    if (trainerId) {
+                        try {
+                            await models.MealPlans.create({
+                                trainer_id: trainerId,
+                                member_id: member.member_id,
+                                title: targetTemplate.title,
+                                description: targetTemplate.description || 'Chế độ dinh dưỡng mặc định cho bộ môn của bạn.',
+                                calories_per_day: 2000
+                            });
+                        } catch (err) {
+                            console.error('Error auto-creating default meal plan:', err);
+                        }
+                    }
+                }
+            }
         } else if (roleId === ROLE.PT) {
             const trainer = await models.Trainers.findOne({ where: { user_id: userId } });
             if (!trainer) {
@@ -232,5 +296,60 @@ exports.deleteMealPlan = async (req, res) => {
     } catch (error) {
         console.error('❌ Lỗi xóa kế hoạch ăn uống:', error.message);
         return res.status(500).json({ message: 'Lỗi server khi xóa kế hoạch ăn uống!', error: error.message });
+    }
+};
+
+// GET /api/meal-plans/templates
+exports.getMealTemplates = async (req, res) => {
+    try {
+        const { roleId, userId } = req.user;
+        let sportFilter = null;
+
+        if (roleId === ROLE.PT) {
+            const trainer = await models.Trainers.findOne({ where: { user_id: userId } });
+            if (trainer) {
+                const trainerSpec = (trainer.specialization || '').toLowerCase();
+                if (trainerSpec.includes('yoga')) {
+                    sportFilter = 'Yoga';
+                } else if (trainerSpec.includes('boxing')) {
+                    sportFilter = 'Boxing';
+                } else if (trainerSpec.includes('fitness') || trainerSpec.includes('bodybuilding') || trainerSpec.includes('gym')) {
+                    sportFilter = 'Gym';
+                } else {
+                    sportFilter = trainer.specialization;
+                }
+            }
+        } else if (roleId === ROLE.MEMBER) {
+            const member = await models.Members.findOne({
+                where: { user_id: userId },
+                include: [{
+                    model: models.MemberMemberships,
+                    as: 'MemberMemberships',
+                    where: { membership_status: 'Active' },
+                    include: [{ model: models.MembershipPlans, as: 'membership_plan' }]
+                }]
+            });
+            if (member && member.MemberMemberships && member.MemberMemberships.length > 0) {
+                const sport = (member.MemberMemberships[0].membership_plan?.sport_type || '').toLowerCase();
+                if (sport.includes('yoga')) sportFilter = 'Yoga';
+                else if (sport.includes('boxing')) sportFilter = 'Boxing';
+                else if (sport.includes('gym')) sportFilter = 'Gym';
+            }
+        }
+
+        const config = await models.AppConfigs.findOne({ where: { config_key: 'meal_templates' } });
+        let templates = [];
+        if (config && config.config_value) {
+            templates = JSON.parse(config.config_value);
+        }
+
+        if (sportFilter) {
+            templates = templates.filter(t => t.sport_type.toLowerCase() === sportFilter.toLowerCase());
+        }
+
+        return res.status(200).json(templates);
+    } catch (error) {
+        console.error('❌ Lỗi lấy mẫu thực đơn:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi lấy mẫu thực đơn!', error: error.message });
     }
 };

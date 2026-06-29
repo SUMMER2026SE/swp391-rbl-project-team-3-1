@@ -56,6 +56,85 @@ exports.getAllWorkoutPlans = async (req, res) => {
                 return res.status(200).json([]); // No plans if not a member yet
             }
             whereCondition.member_id = member.member_id;
+
+            // Auto-assign default templates if member has 0 plans
+            const existingPlanCount = await models.WorkoutPlans.count({
+                where: { member_id: member.member_id }
+            });
+
+            if (existingPlanCount === 0) {
+                // Find member's active membership sport type
+                const activeMembership = await models.MemberMemberships.findOne({
+                    where: { member_id: member.member_id, membership_status: 'Active' },
+                    include: [{ model: models.MembershipPlans, as: 'membership_plan' }]
+                });
+
+                let sportType = 'Gym'; // default fallback
+                if (activeMembership && activeMembership.membership_plan) {
+                    sportType = activeMembership.membership_plan.sport_type || 'Gym';
+                }
+
+                // Query templates from database
+                const config = await models.AppConfigs.findOne({ where: { config_key: 'workout_templates' } });
+                let templates = [];
+                if (config && config.config_value) {
+                    templates = JSON.parse(config.config_value);
+                }
+
+                // Find templates for sport type
+                const sportTemplates = templates.filter(t => t.sport_type.toLowerCase() === sportType.toLowerCase());
+                const targetTemplate = sportTemplates[0] || templates[0];
+
+                if (targetTemplate) {
+                    const transaction = await sequelize.transaction();
+                    try {
+                        // Find a trainer matching specialization or use the first trainer
+                        let trainerId = null;
+                        const { Op } = require('sequelize');
+                        const specTrainer = await models.Trainers.findOne({
+                            where: {
+                                specialization: {
+                                    [Op.like]: `%${sportType}%`
+                                }
+                            }
+                        });
+                        if (specTrainer) {
+                            trainerId = specTrainer.trainer_id;
+                        } else {
+                            const fallbackTrainer = await models.Trainers.findOne();
+                            if (fallbackTrainer) {
+                                trainerId = fallbackTrainer.trainer_id;
+                            }
+                        }
+
+                        if (trainerId) {
+                            const newPlan = await models.WorkoutPlans.create({
+                                trainer_id: trainerId,
+                                member_id: member.member_id,
+                                title: targetTemplate.title,
+                                description: targetTemplate.description || 'Giáo án được tạo tự động cho bộ môn của bạn.'
+                            }, { transaction });
+
+                            if (targetTemplate.exercises && targetTemplate.exercises.length > 0) {
+                                const exercisesToCreate = targetTemplate.exercises.map(ex => ({
+                                    workout_plan_id: newPlan.workout_plan_id,
+                                    exercise_name: ex.exercise_name,
+                                    sets: parseInt(ex.sets) || 3,
+                                    reps: parseInt(ex.reps) || 12,
+                                    duration_minutes: parseInt(ex.duration_minutes) || 0,
+                                    calories_burned: parseInt(ex.calories_burned) || 0,
+                                    rpe: parseInt(ex.rpe) || null
+                                }));
+                                await models.WorkoutExercises.bulkCreate(exercisesToCreate, { transaction });
+                            }
+                        }
+                        await transaction.commit();
+                    } catch (err) {
+                        console.error('Error auto-creating default workout plan:', err);
+                        await transaction.rollback();
+                    }
+                }
+            }
         } else if (roleId === ROLE.PT) {
             const trainer = await models.Trainers.findOne({ where: { user_id: userId } });
             if (!trainer) {
@@ -355,5 +434,60 @@ exports.deleteWorkoutPlan = async (req, res) => {
         await transaction.rollback();
         console.error('❌ Lỗi xóa kế hoạch tập luyện:', error.message);
         return res.status(500).json({ message: 'Lỗi server khi xóa kế hoạch tập luyện!', error: error.message });
+    }
+};
+
+// GET /api/workout-plans/templates
+exports.getWorkoutTemplates = async (req, res) => {
+    try {
+        const { roleId, userId } = req.user;
+        let sportFilter = null;
+
+        if (roleId === ROLE.PT) {
+            const trainer = await models.Trainers.findOne({ where: { user_id: userId } });
+            if (trainer) {
+                const trainerSpec = (trainer.specialization || '').toLowerCase();
+                if (trainerSpec.includes('yoga')) {
+                    sportFilter = 'Yoga';
+                } else if (trainerSpec.includes('boxing')) {
+                    sportFilter = 'Boxing';
+                } else if (trainerSpec.includes('fitness') || trainerSpec.includes('bodybuilding') || trainerSpec.includes('gym')) {
+                    sportFilter = 'Gym';
+                } else {
+                    sportFilter = trainer.specialization;
+                }
+            }
+        } else if (roleId === ROLE.MEMBER) {
+            const member = await models.Members.findOne({
+                where: { user_id: userId },
+                include: [{
+                    model: models.MemberMemberships,
+                    as: 'MemberMemberships',
+                    where: { membership_status: 'Active' },
+                    include: [{ model: models.MembershipPlans, as: 'membership_plan' }]
+                }]
+            });
+            if (member && member.MemberMemberships && member.MemberMemberships.length > 0) {
+                const sport = (member.MemberMemberships[0].membership_plan?.sport_type || '').toLowerCase();
+                if (sport.includes('yoga')) sportFilter = 'Yoga';
+                else if (sport.includes('boxing')) sportFilter = 'Boxing';
+                else if (sport.includes('gym')) sportFilter = 'Gym';
+            }
+        }
+
+        const config = await models.AppConfigs.findOne({ where: { config_key: 'workout_templates' } });
+        let templates = [];
+        if (config && config.config_value) {
+            templates = JSON.parse(config.config_value);
+        }
+
+        if (sportFilter) {
+            templates = templates.filter(t => t.sport_type.toLowerCase() === sportFilter.toLowerCase());
+        }
+
+        return res.status(200).json(templates);
+    } catch (error) {
+        console.error('❌ Lỗi lấy mẫu kế hoạch tập:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi lấy mẫu kế hoạch tập!', error: error.message });
     }
 };

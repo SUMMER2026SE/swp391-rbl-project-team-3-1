@@ -35,6 +35,9 @@ router.get('/trainer/members', dashboardController.getTrainerMembers);
 router.get('/trainer/appointments', dashboardController.getTrainerAppointments);
 router.put('/trainer/appointments/:id/confirm', dashboardController.confirmTrainerAppointment);
 router.post('/trainer/assign-plan', dashboardController.assignPlanToMember);
+router.get('/trainer/schedule', dashboardController.getTrainerScheduleForDashboard);
+router.post('/trainer/schedule/toggle', dashboardController.toggleTrainerSchedule);
+router.post('/trainer/schedule/bulk-save', dashboardController.bulkSaveTrainerSchedule);
 
 // --- MEMBER DASHBOARD ROUTES ---
 router.get('/member/appointments', dashboardController.getMemberAppointments);

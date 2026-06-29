@@ -7,6 +7,7 @@ const authMiddleware = require('../middlewares/authMiddleware');
 router.use(authMiddleware);
 
 // CRUD routes
+router.get('/templates', mealController.getMealTemplates);
 router.get('/', mealController.getAllMealPlans);
 router.get('/:id', mealController.getMealPlanById);
 router.post('/', mealController.createMealPlan);

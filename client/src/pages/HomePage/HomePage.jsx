@@ -21,6 +21,18 @@ function HomePage() {
   const [setupError, setSetupError] = useState('');
   const [isSavingSetup, setIsSavingSetup] = useState(false);
 
+  // States for AI Consultation Modal
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [aiName, setAiName] = useState('');
+  const [aiAge, setAiAge] = useState('');
+  const [aiGender, setAiGender] = useState('Nam');
+  const [aiHeight, setAiHeight] = useState('');
+  const [aiWeight, setAiWeight] = useState('');
+  const [aiGoal, setAiGoal] = useState('Giảm cân');
+  const [isConsulting, setIsConsulting] = useState(false);
+  const [consultResult, setConsultResult] = useState(null);
+  const [consultError, setConsultError] = useState('');
+
   useEffect(() => {
     const handleAuthChange = () => {
       setToken(localStorage.getItem('token') || '');
@@ -189,6 +201,66 @@ function HomePage() {
     setShowSetupModal(false);
   };
 
+  // Gửi thông số lên AI để nhận tư vấn
+  const handleAiConsultSubmit = async (e) => {
+    e.preventDefault();
+    setConsultError('');
+    setIsConsulting(true);
+    setConsultResult(null);
+
+    try {
+      const res = await fetch('/api/ai/consult', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          guestName: aiName || 'Khách',
+          age: Number(aiAge) || 20,
+          gender: aiGender,
+          height: Number(aiHeight),
+          weight: Number(aiWeight),
+          fitnessGoal: aiGoal,
+          consultationType: 'BMI'
+        })
+      });
+
+      const data = await res.json();
+      setIsConsulting(false);
+
+      if (res.ok && data.consultation) {
+        setConsultResult(data.consultation);
+      } else {
+        setConsultError(data.message || 'Lỗi phân tích từ AI. Vui lòng thử lại!');
+      }
+    } catch (err) {
+      setIsConsulting(false);
+      setConsultError('Không thể kết nối đến server!');
+    }
+  };
+
+  // Đăng ký gói tập được đề xuất
+  const handleRegisterRecommended = () => {
+    const recommendedSport = consultResult?.recommended_sport || '';
+    // Tìm gói tập phù hợp với môn thể thao được đề xuất
+    const matchedPlan = plans.find(p => 
+      p.sportType.toLowerCase().includes(recommendedSport.toLowerCase()) || 
+      recommendedSport.toLowerCase().includes(p.sportType.toLowerCase())
+    ) || plans[0];
+    
+    setShowAiModal(false);
+    setConsultResult(null);
+    setConsultError('');
+    if (matchedPlan) {
+      goToCheckout(matchedPlan.planId);
+    } else {
+      const targetElement = document.querySelector('#pricing');
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  };
+
   return (
     <div className="homepage-container">
       {/* ========================================== */}
@@ -343,14 +415,49 @@ function HomePage() {
         </div>
 
         <div className="services-grid">
-          {coreSports.length > 0 ? coreSports.map((sport, index) => (
-            <div key={index} className={`service-card reveal reveal-delay-${(index % 3) + 1}`} style={{ backgroundImage: `url('${sport.image}')` }}>
-              <div className="service-overlay">
-                <h3 className="service-name">{sport.name}</h3>
-                <p className="service-desc">{sport.description}</p>
+          {coreSports.length > 0 ? (
+            <>
+              {coreSports.map((sport, index) => (
+                <div key={index} className={`service-card reveal reveal-delay-${(index % 3) + 1}`} style={{ backgroundImage: `url('${sport.image}')` }}>
+                  <div className="service-overlay">
+                    <h3 className="service-name">{sport.name}</h3>
+                    <p className="service-desc">{sport.description}</p>
+                  </div>
+                </div>
+              ))}
+              {/* 4th Card: AI Consultation */}
+              <div 
+                className="service-card reveal reveal-delay-4" 
+                style={{ 
+                  backgroundImage: "url('/ai_consult_bg.png')",
+                  border: '1.5px solid rgba(249, 115, 22, 0.35)'
+                }}
+                onClick={() => setShowAiModal(true)}
+              >
+                <div className="service-overlay" style={{ background: 'linear-gradient(to top, rgba(10,10,10,0.95) 0%, rgba(10,10,10,0.6) 60%, transparent 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '36px 28px' }}>
+                  <div className="service-icon" style={{ marginBottom: '8px' }}>
+                    <i className="fa-solid fa-robot" style={{ color: 'var(--orange)', fontSize: '2rem' }}></i>
+                  </div>
+                  <h3 className="service-name" style={{ color: 'var(--orange)' }}>Tư vấn sức khỏe AI</h3>
+                  <p className="service-desc" style={{ fontSize: '0.9rem' }}>Tính chỉ số BMI, phân tích thể trạng và nhận lộ trình tập luyện & dinh dưỡng cá nhân hóa miễn phí.</p>
+                  <button 
+                    className="btn-primary-nav" 
+                    style={{ 
+                      marginTop: '12px', 
+                      fontSize: '0.8rem', 
+                      padding: '6px 16px', 
+                      borderRadius: '20px',
+                      boxShadow: '0 4px 12px rgba(249,115,22,0.3)',
+                      border: 'none',
+                      background: 'var(--orange)'
+                    }}
+                  >
+                    Trải nghiệm ngay
+                  </button>
+                </div>
               </div>
-            </div>
-          )) : (
+            </>
+          ) : (
             <div style={{ textAlign: 'center', width: '100%', padding: '40px' }}>Đang tải dịch vụ...</div>
           )}
         </div>
@@ -632,6 +739,220 @@ function HomePage() {
                 BỎ QUA, THIẾT LẬP SAU
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* AI CONSULTATION MODAL OVERLAY */}
+      {showAiModal && (
+        <div className="ai-modal-overlay">
+          <div className="ai-modal-card">
+            <button className="ai-modal-close" onClick={() => { setShowAiModal(false); setConsultResult(null); setConsultError(''); }}>
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+
+            {!consultResult ? (
+              <>
+                <h2 className="ai-results-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                  <i className="fa-solid fa-robot"></i> Tư vấn sức khỏe AI
+                </h2>
+                <p className="setup-modal-subtitle" style={{ color: '#94a3b8' }}>
+                  Nhập thông số cơ thể của bạn để AI tính toán BMI và gợi ý chế độ tập luyện, dinh dưỡng phù hợp nhất.
+                </p>
+
+                {consultError && (
+                  <div className="setup-alert-error animate-fade-in" style={{ marginBottom: '20px' }}>
+                    <i className="fa-solid fa-circle-exclamation"></i>
+                    <span>{consultError}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleAiConsultSubmit} className="setup-form">
+                  <div className="setup-field">
+                    <label style={{ color: '#94a3b8' }}>Họ và tên của bạn</label>
+                    <input
+                      type="text"
+                      className="ai-input"
+                      placeholder="Nguyễn Văn A"
+                      value={aiName}
+                      onChange={(e) => setAiName(e.target.value)}
+                      required
+                      disabled={isConsulting}
+                    />
+                  </div>
+
+                  <div className="setup-form-row">
+                    <div className="setup-field">
+                      <label style={{ color: '#94a3b8' }}>Tuổi</label>
+                      <input
+                        type="number"
+                        className="ai-input"
+                        placeholder="22"
+                        value={aiAge}
+                        onChange={(e) => setAiAge(e.target.value)}
+                        required
+                        disabled={isConsulting}
+                      />
+                    </div>
+
+                    <div className="setup-field">
+                      <label style={{ color: '#94a3b8' }}>Giới tính</label>
+                      <div className="setup-gender-buttons" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                        {['Nam', 'Nữ', 'Khác'].map((g) => (
+                          <button
+                            key={g}
+                            type="button"
+                            className={`ai-gender-btn ${aiGender === g ? 'active' : ''}`}
+                            onClick={() => setAiGender(g)}
+                            disabled={isConsulting}
+                          >
+                            {g}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="setup-form-row">
+                    <div className="setup-field">
+                      <label style={{ color: '#94a3b8' }}>Chiều cao (cm)</label>
+                      <input
+                        type="number"
+                        className="ai-input"
+                        placeholder="170"
+                        value={aiHeight}
+                        onChange={(e) => setAiHeight(e.target.value)}
+                        required
+                        disabled={isConsulting}
+                      />
+                    </div>
+                    <div className="setup-field">
+                      <label style={{ color: '#94a3b8' }}>Cân nặng (kg)</label>
+                      <input
+                        type="number"
+                        className="ai-input"
+                        placeholder="65"
+                        value={aiWeight}
+                        onChange={(e) => setAiWeight(e.target.value)}
+                        required
+                        disabled={isConsulting}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="setup-field">
+                    <label style={{ color: '#94a3b8' }}>Mục tiêu tập luyện</label>
+                    <select
+                      className="ai-input"
+                      value={aiGoal}
+                      onChange={(e) => setAiGoal(e.target.value)}
+                      disabled={isConsulting}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <option value="Giảm cân">Giảm cân</option>
+                      <option value="Tăng cơ">Tăng cơ</option>
+                      <option value="Cải thiện sức bền">Cải thiện sức bền</option>
+                      <option value="Linh hoạt & Dẻo dai">Linh hoạt & Dẻo dai</option>
+                    </select>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="setup-submit-btn"
+                    style={{ background: 'linear-gradient(135deg, var(--orange) 0%, #ea580c 100%)', boxShadow: '0 4px 15px rgba(249,115,22,0.3)', border: 'none' }}
+                    disabled={isConsulting}
+                  >
+                    {isConsulting ? (
+                      <>
+                        <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px' }}></i> AI ĐANG PHÂN TÍCH...
+                      </>
+                    ) : (
+                      'NHẬN ĐỀ XUẤT LỘ TRÌNH'
+                    )}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <h2 className="ai-results-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                  <i className="fa-solid fa-circle-check" style={{ color: '#10b981' }}></i> Kết quả phân tích AI
+                </h2>
+
+                <div className="ai-result-card">
+                  <div className="ai-bmi-section">
+                    <span className="ai-recommend-label" style={{ marginBottom: '8px' }}>Chỉ số BMI của bạn</span>
+                    <span className="ai-bmi-score" style={{ color: 
+                      Number(consultResult.bmi) < 18.5 ? '#3b82f6' :
+                      Number(consultResult.bmi) < 25 ? '#10b981' :
+                      Number(consultResult.bmi) < 30 ? '#f59e0b' : '#ef4444'
+                    }}>
+                      {consultResult.bmi}
+                    </span>
+                    <span className="ai-bmi-badge" style={{ 
+                      backgroundColor: 
+                        Number(consultResult.bmi) < 18.5 ? 'rgba(59, 130, 246, 0.2)' :
+                        Number(consultResult.bmi) < 25 ? 'rgba(16, 185, 129, 0.2)' :
+                        Number(consultResult.bmi) < 30 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                      color:
+                        Number(consultResult.bmi) < 18.5 ? '#3b82f6' :
+                        Number(consultResult.bmi) < 25 ? '#10b981' :
+                        Number(consultResult.bmi) < 30 ? '#f59e0b' : '#ef4444'
+                    }}>
+                      {
+                        Number(consultResult.bmi) < 18.5 ? 'Cân nặng thấp (Gầy)' :
+                        Number(consultResult.bmi) < 25 ? 'Bình thường' :
+                        Number(consultResult.bmi) < 30 ? 'Thừa cân' : 'Béo phì'
+                      }
+                    </span>
+                  </div>
+
+                  <div style={{ marginTop: '16px' }}>
+                    <h4 style={{ color: 'var(--orange)', fontFamily: 'Barlow Condensed', fontSize: '1.2rem', marginBottom: '8px', textTransform: 'uppercase' }}>
+                      <i className="fa-solid fa-notes-medical"></i> Nhận xét & lời khuyên từ AI
+                    </h4>
+                    <p className="ai-advice-text">{consultResult.recommendation_detail}</p>
+                  </div>
+                </div>
+
+                <div className="ai-result-card" style={{ borderLeft: '4px solid var(--orange)' }}>
+                  <h4 style={{ color: 'var(--orange)', fontFamily: 'Barlow Condensed', fontSize: '1.2rem', marginBottom: '12px', textTransform: 'uppercase' }}>
+                    <i className="fa-solid fa-trophy"></i> Lộ trình & Gói tập đề xuất
+                  </h4>
+                  
+                  <div className="ai-recommend-row">
+                    <span className="ai-recommend-label">Bộ môn phù hợp</span>
+                    <span className="ai-recommend-value" style={{ color: 'var(--orange)' }}>{consultResult.recommended_sport}</span>
+                  </div>
+                  
+                  <div className="ai-recommend-row">
+                    <span className="ai-recommend-label">Gói tập khuyên dùng</span>
+                    <span className="ai-recommend-value">{consultResult.recommended_membership}</span>
+                  </div>
+
+                  <div className="ai-recommend-row" style={{ borderBottom: 'none' }}>
+                    <span className="ai-recommend-label">Lịch tập đề xuất</span>
+                    <span className="ai-recommend-value" style={{ fontStyle: 'italic' }}>{consultResult.recommended_schedule}</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                  <button
+                    onClick={() => { setConsultResult(null); setConsultError(''); }}
+                    className="ai-gender-btn"
+                    style={{ flex: 1, padding: '12px' }}
+                  >
+                    Tính lại
+                  </button>
+                  <button
+                    onClick={handleRegisterRecommended}
+                    className="setup-submit-btn"
+                    style={{ flex: 2, padding: '12px', background: 'linear-gradient(135deg, var(--orange) 0%, #ea580c 100%)', border: 'none' }}
+                  >
+                    Đăng ký gói đề xuất ngay
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

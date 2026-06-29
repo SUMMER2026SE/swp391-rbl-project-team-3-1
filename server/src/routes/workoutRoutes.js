@@ -8,6 +8,7 @@ router.use(authMiddleware);
 
 // Get members list for dropdown (PT/Admin only)
 router.get('/members', workoutController.getMembersList);
+router.get('/templates', workoutController.getWorkoutTemplates);
 
 // CRUD routes
 router.get('/', workoutController.getAllWorkoutPlans);

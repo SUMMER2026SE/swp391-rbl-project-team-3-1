@@ -1017,46 +1017,21 @@ exports.assignPlanToMember = async (req, res) => {
     }
 
     if (type === 'workout') {
+      const config = await models.AppConfigs.findOne({ where: { config_key: 'workout_templates' } }, { transaction });
+      let templates = [];
+      if (config && config.config_value) {
+        templates = JSON.parse(config.config_value);
+      }
+      const matchedTemplate = templates.find(t => t.title === name);
+
       const newPlan = await models.WorkoutPlans.create({
         trainer_id: trainerUser.trainer_id,
         member_id: memberId,
         title: name,
-        description: 'Giáo án được giao từ huấn luyện viên qua dashboard.'
+        description: matchedTemplate?.description || 'Giáo án được giao từ huấn luyện viên qua dashboard.'
       }, { transaction });
 
-      // Predefined exercises for workout templates
-      const templates = {
-        'HIIT Đốt Mỡ Nâng Cao': [
-          { exercise_name: 'Nhảy dây (Jumping Jacks)', sets: 3, reps: 30, duration_minutes: 1, calories_burned: 40, rpe: 7 },
-          { exercise_name: 'Squat (Bodyweight)', sets: 4, reps: 15, duration_minutes: 2, calories_burned: 50, rpe: 8 },
-          { exercise_name: 'Plank giữ cơ bụng', sets: 3, reps: 1, duration_minutes: 1, calories_burned: 20, rpe: 6 },
-          { exercise_name: 'Burpees', sets: 4, reps: 15, duration_minutes: 2, calories_burned: 80, rpe: 9 },
-          { exercise_name: 'Chạy nước rút (Sprint)', sets: 3, reps: 1, duration_minutes: 1, calories_burned: 60, rpe: 9 }
-        ],
-        'Full Body Khởi Đầu': [
-          { exercise_name: 'Squat (Bodyweight)', sets: 3, reps: 15, duration_minutes: 2, calories_burned: 45, rpe: 6 },
-          { exercise_name: 'Push-up (Hít đất)', sets: 3, reps: 10, duration_minutes: 1, calories_burned: 30, rpe: 7 },
-          { exercise_name: 'Dumbbell Shoulder Press', sets: 3, reps: 12, duration_minutes: 2, calories_burned: 40, rpe: 7 },
-          { exercise_name: 'Plank giữ cơ bụng', sets: 3, reps: 1, duration_minutes: 1, calories_burned: 20, rpe: 5 }
-        ],
-        'Powerlifting Cơ Bản': [
-          { exercise_name: 'Barbell Squat', sets: 3, reps: 5, duration_minutes: 3, calories_burned: 60, rpe: 8 },
-          { exercise_name: 'Barbell Deadlift', sets: 3, reps: 5, duration_minutes: 4, calories_burned: 80, rpe: 9 },
-          { exercise_name: 'Barbell Bench Press', sets: 3, reps: 5, duration_minutes: 3, calories_burned: 50, rpe: 8 }
-        ],
-        'Yoga dẻo dai khớp vai': [
-          { exercise_name: 'Tư thế em bé (Child Pose)', sets: 3, reps: 1, duration_minutes: 2, calories_burned: 15, rpe: 3 },
-          { exercise_name: 'Tư thế chiến binh (Warrior Pose)', sets: 3, reps: 5, duration_minutes: 2, calories_burned: 25, rpe: 5 },
-          { exercise_name: 'Giãn cơ vai (Shoulder Stretch)', sets: 3, reps: 5, duration_minutes: 2, calories_burned: 20, rpe: 4 }
-        ],
-        'Cardio Core trung cấp': [
-          { exercise_name: 'Plank đi bộ (Plank Walks)', sets: 3, reps: 12, duration_minutes: 2, calories_burned: 40, rpe: 6 },
-          { exercise_name: 'Leo núi (Mountain Climbers)', sets: 4, reps: 20, duration_minutes: 2, calories_burned: 60, rpe: 7 },
-          { exercise_name: 'Gập bụng (Crunches)', sets: 3, reps: 20, duration_minutes: 2, calories_burned: 30, rpe: 6 }
-        ]
-      };
-
-      const exercises = templates[name] || [
+      const exercises = matchedTemplate?.exercises || [
         { exercise_name: name, sets: 3, reps: 10, duration_minutes: 15, calories_burned: 100, rpe: 7 }
       ];
 
@@ -1072,12 +1047,19 @@ exports.assignPlanToMember = async (req, res) => {
 
       await models.WorkoutExercises.bulkCreate(exercisesToCreate, { transaction });
     } else {
+      const config = await models.AppConfigs.findOne({ where: { config_key: 'meal_templates' } }, { transaction });
+      let templates = [];
+      if (config && config.config_value) {
+        templates = JSON.parse(config.config_value);
+      }
+      const matchedTemplate = templates.find(t => t.title === name);
+
       await models.MealPlans.create({
         trainer_id: trainerUser.trainer_id,
         member_id: memberId,
         title: name,
         calories_per_day: 2000,
-        description: 'Chế độ dinh dưỡng giao trực tiếp từ huấn luyện viên.'
+        description: matchedTemplate?.description || 'Chế độ dinh dưỡng giao trực tiếp từ huấn luyện viên.'
       }, { transaction });
     }
 
@@ -1225,7 +1207,7 @@ exports.createMemberAppointment = async (req, res) => {
         trainer_id: trainerId,
         working_date: date,
         start_time: start_time,
-        availability_status: ['Booked', 'Busy']
+        availability_status: ['Busy', 'Off']
       }
     });
 
@@ -1239,7 +1221,7 @@ exports.createMemberAppointment = async (req, res) => {
       working_date: date,
       start_time,
       end_time,
-      availability_status: 'Booked'
+      availability_status: 'Busy'
     });
 
     const newAppt = await models.Appointments.create({
@@ -1325,5 +1307,202 @@ exports.getMemberTrainers = async (req, res) => {
   } catch (error) {
     console.error('❌ Error getting member trainers:', error);
     return res.status(500).json({ message: 'Lỗi server khi lấy danh sách PT của bạn!' });
+  }
+};
+
+// GET /api/dashboard/trainer/schedule
+exports.getTrainerScheduleForDashboard = async (req, res) => {
+  try {
+    const trainerUser = await models.Trainers.findOne({ where: { user_id: req.user.userId } });
+    if (!trainerUser) {
+      return res.status(400).json({ message: 'Chỉ huấn luyện viên mới có thể xem lịch trình!' });
+    }
+
+    const { startDate, endDate } = req.query;
+    const whereCondition = { trainer_id: trainerUser.trainer_id };
+    if (startDate && endDate) {
+      whereCondition.working_date = {
+        [require('sequelize').Op.between]: [startDate, endDate]
+      };
+    }
+
+    const schedules = await models.TrainerSchedules.findAll({
+      where: whereCondition,
+      order: [['working_date', 'ASC'], ['start_time', 'ASC']]
+    });
+
+    const formatTimeField = (val) => {
+      if (!val) return '00:00:00';
+      if (typeof val === 'string') return val;
+      if (val instanceof Date) {
+        const h = String(val.getUTCHours()).padStart(2, '0');
+        const m = String(val.getUTCMinutes()).padStart(2, '0');
+        const s = String(val.getUTCSeconds()).padStart(2, '0');
+        return `${h}:${m}:${s}`;
+      }
+      return '00:00:00';
+    };
+
+    const result = schedules.map(s => ({
+      scheduleId: s.schedule_id,
+      workingDate: s.working_date,
+      startTime: formatTimeField(s.start_time),
+      endTime: formatTimeField(s.end_time),
+      status: s.availability_status
+    }));
+
+    return res.status(200).json({ schedules: result });
+  } catch (error) {
+    console.error('❌ Error getting trainer schedule for dashboard:', error);
+    return res.status(500).json({ message: 'Lỗi server khi lấy lịch trình của bạn!' });
+  }
+};
+
+// POST /api/dashboard/trainer/schedule/toggle
+exports.toggleTrainerSchedule = async (req, res) => {
+  try {
+    const trainerUser = await models.Trainers.findOne({ where: { user_id: req.user.userId } });
+    if (!trainerUser) {
+      return res.status(400).json({ message: 'Chỉ huấn luyện viên mới được phép quản lý lịch!' });
+    }
+
+    const { date, startTime, endTime } = req.body;
+    if (!date || !startTime || !endTime) {
+      return res.status(400).json({ message: 'Vui lòng điền đầy đủ ngày và giờ của ca tập!' });
+    }
+
+    // Check if slot has an active member appointment (pending, confirmed, etc.)
+    const existingSchedule = await models.TrainerSchedules.findOne({
+      where: {
+        trainer_id: trainerUser.trainer_id,
+        working_date: date,
+        start_time: startTime
+      }
+    });
+
+    if (existingSchedule) {
+      // Check if there is an appointment linked to this schedule that is Confirmed, Scheduled, or Pending
+      const linkedAppt = await models.Appointments.findOne({
+        where: {
+          schedule_id: existingSchedule.schedule_id,
+          status: ['Pending', 'Confirmed', 'Scheduled']
+        }
+      });
+
+      if (linkedAppt) {
+        return res.status(400).json({ 
+          message: 'Ca này đã có học viên đăng ký hoặc đang chờ duyệt lịch, bạn không thể thay đổi trạng thái bận! Hãy từ chối/hủy lịch hẹn trước.' 
+        });
+      }
+
+      // Toggle status
+      const nextStatus = existingSchedule.availability_status === 'Busy' ? 'Available' : 'Busy';
+      await existingSchedule.update({ availability_status: nextStatus });
+      return res.status(200).json({ 
+        message: `Đã chuyển ca sang trạng thái ${nextStatus === 'Busy' ? 'BẬN' : 'RẢNH'}.`,
+        status: nextStatus 
+      });
+    } else {
+      // Create new busy schedule row
+      const newSchedule = await models.TrainerSchedules.create({
+        trainer_id: trainerUser.trainer_id,
+        working_date: date,
+        start_time: startTime,
+        end_time: endTime,
+        availability_status: 'Busy'
+      });
+      return res.status(201).json({ 
+        message: 'Đã chuyển ca sang trạng thái BẬN.',
+        status: 'Busy' 
+      });
+    }
+  } catch (error) {
+    console.error('❌ Error toggling trainer schedule:', error);
+    return res.status(500).json({ message: 'Lỗi server khi cập nhật lịch bận của bạn!' });
+  }
+};
+
+// POST /api/dashboard/trainer/schedule/bulk-save
+exports.bulkSaveTrainerSchedule = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const trainerUser = await models.Trainers.findOne({ where: { user_id: req.user.userId } });
+    if (!trainerUser) {
+      await transaction.rollback();
+      return res.status(400).json({ message: 'Chỉ huấn luyện viên mới được phép quản lý lịch!' });
+    }
+
+    const { startDate, endDate, busySlots } = req.body;
+    if (!startDate || !endDate || !Array.isArray(busySlots)) {
+      await transaction.rollback();
+      return res.status(400).json({ message: 'Dữ liệu lưu lịch không hợp lệ!' });
+    }
+
+    // 1. Find all appointments of this PT in this date range to prevent deleting their schedules
+    const activeAppts = await models.Appointments.findAll({
+      include: [{
+        model: models.TrainerSchedules,
+        as: 'schedule',
+        where: {
+          trainer_id: trainerUser.trainer_id,
+          working_date: {
+            [require('sequelize').Op.between]: [startDate, endDate]
+          }
+        }
+      }],
+      transaction
+    });
+
+    const activeScheduleIds = activeAppts.map(a => a.schedule_id);
+
+    // 2. Delete all schedule rows in the range for this trainer EXCEPT those with active appointments
+    const { Op } = require('sequelize');
+    await models.TrainerSchedules.destroy({
+      where: {
+        trainer_id: trainerUser.trainer_id,
+        working_date: {
+          [Op.between]: [startDate, endDate]
+        },
+        schedule_id: {
+          [Op.notIn]: activeScheduleIds.length > 0 ? activeScheduleIds : [-1]
+        }
+      },
+      transaction
+    });
+
+    // 3. Insert new busy slots
+    const schedulesToCreate = [];
+    for (const slot of busySlots) {
+      // Check if there is already a schedule (which must be an active appointment, since others were deleted)
+      const exists = await models.TrainerSchedules.findOne({
+        where: {
+          trainer_id: trainerUser.trainer_id,
+          working_date: slot.date,
+          start_time: slot.startTime
+        },
+        transaction
+      });
+
+      if (!exists) {
+        schedulesToCreate.push({
+          trainer_id: trainerUser.trainer_id,
+          working_date: slot.date,
+          start_time: slot.startTime,
+          end_time: slot.endTime,
+          availability_status: 'Busy'
+        });
+      }
+    }
+
+    if (schedulesToCreate.length > 0) {
+      await models.TrainerSchedules.bulkCreate(schedulesToCreate, { transaction });
+    }
+
+    await transaction.commit();
+    return res.status(200).json({ message: 'Lưu lịch bận thành công!' });
+  } catch (error) {
+    await transaction.rollback();
+    console.error('❌ Error bulk saving trainer schedule:', error);
+    return res.status(500).json({ message: 'Lỗi server khi lưu lịch bận của bạn! Chi tiết: ' + error.message });
   }
 };

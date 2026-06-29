@@ -434,9 +434,9 @@
 
 .services-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 24px;
-    max-width: 1000px;
+    max-width: 1200px;
     margin: 0 auto;
 }
 
@@ -1124,4 +1124,181 @@
 }
 .setup-modal-card::-webkit-scrollbar-thumb:hover {
     background: var(--gray-400);
+}
+
+/* ==========================================
+   AI CONSULTATION MODAL
+   ========================================== */
+.ai-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: rgba(10, 10, 10, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    overflow-y: auto;
+    animation: fadeIn 0.3s ease;
+}
+
+.ai-modal-card {
+    background: #0f172a; /* Slate 900 background for high-tech dark theme */
+    color: #f8fafc;
+    width: 100%;
+    max-width: 650px;
+    border-radius: 20px;
+    box-shadow: 0 25px 50px -12px rgba(249, 115, 22, 0.25);
+    padding: 36px;
+    border: 1px solid rgba(249, 115, 22, 0.3);
+    position: relative;
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: slideUp 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+.ai-modal-card::-webkit-scrollbar {
+    width: 6px;
+}
+.ai-modal-card::-webkit-scrollbar-track {
+    background: transparent;
+}
+.ai-modal-card::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 4px;
+}
+
+.ai-modal-close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.ai-modal-close:hover {
+    color: var(--orange);
+}
+
+.ai-field-label {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #94a3b8;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+}
+
+.ai-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1.5px solid #334155;
+    border-radius: 8px;
+    font-family: 'Barlow', sans-serif;
+    font-size: 0.95rem;
+    color: #f8fafc;
+    outline: none;
+    background: #1e293b;
+    transition: all 0.2s ease;
+}
+
+.ai-input:focus {
+    border-color: var(--orange);
+    background: #0f172a;
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
+}
+
+.ai-gender-btn {
+    padding: 10px;
+    background: #1e293b;
+    border: 1.5px solid #334155;
+    border-radius: 8px;
+    color: #f8fafc;
+    font-family: 'Barlow', sans-serif;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.ai-gender-btn.active {
+    background: var(--orange);
+    border-color: var(--orange);
+    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+}
+
+.ai-results-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 1.8rem;
+    font-weight: 900;
+    color: var(--orange);
+    text-align: center;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    letter-spacing: 1px;
+}
+
+.ai-result-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.ai-bmi-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #334155;
+}
+
+.ai-bmi-score {
+    font-size: 3.5rem;
+    font-weight: 900;
+    line-height: 1;
+    margin-bottom: 6px;
+}
+
+.ai-bmi-badge {
+    padding: 4px 16px;
+    border-radius: 20px;
+    font-weight: bold;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.ai-advice-text {
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #cbd5e1;
+    margin-bottom: 16px;
+}
+
+.ai-recommend-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px dashed #334155;
+}
+
+.ai-recommend-label {
+    color: #94a3b8;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.ai-recommend-value {
+    color: #f8fafc;
+    font-weight: bold;
+    font-size: 0.9rem;
 }

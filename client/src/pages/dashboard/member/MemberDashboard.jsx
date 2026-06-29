@@ -843,9 +843,24 @@ function MemberDashboard({
               </div>
               <div className="member-stat-card">
                 <span className="member-stat-label">PT đang học</span>
-                <span className="member-stat-value" style={{ fontSize: '1.15rem', marginTop: '6px' }}>
-                  {profileData?.memberInfo?.activePtName || 'Chưa đăng ký'}
-                </span>
+                <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {trainersList.length > 0 ? (
+                    trainersList.map((t, idx) => (
+                      <div key={idx} style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span className="member-stat-value" style={{ fontSize: '1rem', fontWeight: '700', lineHeight: '1.2' }}>
+                          {t.fullName}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px', fontWeight: '500' }}>
+                          {t.specialization}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="member-stat-value" style={{ fontSize: '1.15rem' }}>
+                      {profileData?.memberInfo?.activePtName || 'Chưa đăng ký'}
+                    </span>
+                  )}
+                </div>
                 <i className="fa-solid fa-user-tie member-stat-icon"></i>
               </div>
               <div className="member-stat-card">
@@ -1112,7 +1127,7 @@ function MemberDashboard({
                                 d.setDate(diff + dIdx);
                                 const dateStr = d.toISOString().split('T')[0];
                                 
-                                const isBooked = trainerSchedules.some(s => s.workingDate === dateStr && s.startTime.startsWith(slot.start.substring(0,5)) && s.status === 'Booked');
+                                const isBooked = trainerSchedules.some(s => s.workingDate === dateStr && s.startTime.startsWith(slot.start.substring(0,5)) && (s.status === 'Booked' || s.status === 'Busy' || s.status === 'Off'));
                                 const isPast = new Date(`${dateStr}T${slot.start}`) < new Date();
                                 const isSelected = bookingDate === dateStr && bookingTime === slot.start.substring(0,5);
 
@@ -1122,7 +1137,7 @@ function MemberDashboard({
                                 let cursor = 'pointer';
 
                                 if (isBooked) {
-                                  bg = '#e2e8f0'; color = '#64748b'; text = 'Đã Kín'; cursor = 'not-allowed';
+                                  bg = '#e2e8f0'; color = '#64748b'; text = 'Bận'; cursor = 'not-allowed';
                                 } else if (isPast) {
                                   bg = '#f1f5f9'; color = '#94a3b8'; text = 'Đã Qua'; cursor = 'not-allowed';
                                 }
@@ -1547,115 +1562,6 @@ function MemberDashboard({
             </div>
           </div>
         );
-
-      case 'tiendo':
-        {
-          const bmiVal = Number(profileData?.memberInfo?.bmi || 22.4);
-          let bmiPct = 50;
-          if (bmiVal < 18.5) {
-            bmiPct = (bmiVal / 18.5) * 25;
-          } else if (bmiVal >= 18.5 && bmiVal < 25) {
-            bmiPct = 25 + ((bmiVal - 18.5) / 6.5) * 35;
-          } else if (bmiVal >= 25 && bmiVal < 30) {
-            bmiPct = 60 + ((bmiVal - 25) / 5) * 20;
-          } else {
-            bmiPct = 80 + Math.min(((bmiVal - 30) / 10) * 20, 20);
-          }
-
-          let bmiFeedback = 'Cân nặng bình thường';
-          let bmiFeedbackColor = '#10b981';
-          if (bmiVal < 18.5) {
-            bmiFeedback = 'Hơi gầy - Cần bổ sung dinh dưỡng';
-            bmiFeedbackColor = '#3b82f6';
-          } else if (bmiVal >= 25 && bmiVal < 30) {
-            bmiFeedback = 'Thừa cân - Nên duy trì thâm hụt calo nhẹ';
-            bmiFeedbackColor = '#f59e0b';
-          } else if (bmiVal >= 30) {
-            bmiFeedback = 'Béo phì - Cần kiểm soát ăn uống & nâng tập';
-            bmiFeedbackColor = '#ef4444';
-          }
-
-          const maxW = Math.max(...weightHistory.map(w => w.weight), 100);
-
-          return (
-            <div className="member-progress-layout">
-              <div>
-                <div className="member-card-panel" style={{ marginBottom: '24px' }}>
-                  <h3 className="member-card-title">Chỉ số BMI của bạn</h3>
-                  <div style={{ textAlign: 'center', marginTop: '20px' }}>
-                    <span style={{ fontSize: '3rem', fontWeight: 900, color: bmiFeedbackColor }}>{bmiVal}</span>
-                    <div style={{ fontWeight: 700, color: bmiFeedbackColor, marginTop: '4px' }}>{bmiFeedback}</div>
-                  </div>
-
-                  <div className="member-bmi-indicator-bar">
-                    <div className="member-bmi-pointer" style={{ left: `${bmiPct}%` }}></div>
-                  </div>
-                  <div className="member-bmi-labels">
-                    <span>Gầy (&lt;18.5)</span>
-                    <span>Bình thường (18.5-25)</span>
-                    <span>Béo phì (&gt;30)</span>
-                  </div>
-                </div>
-
-                <div className="member-card-panel">
-                  <h3 className="member-card-title" style={{ marginBottom: '16px' }}>Cập nhật cân nặng mới</h3>
-                  <form onSubmit={handleAddWeightHistory} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div className="member-form-group">
-                      <label className="member-form-label">Cân nặng (kg)</label>
-                      <input
-                        type="number"
-                        className="member-form-input"
-                        step="0.1"
-                        placeholder="Nhập số cân nặng"
-                        value={newHistoryWeight}
-                        onChange={(e) => setNewHistoryWeight(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div className="member-form-group">
-                      <label className="member-form-label">Ngày ghi nhận</label>
-                      <input
-                        type="date"
-                        className="member-form-input"
-                        value={newHistoryDate}
-                        onChange={(e) => setNewHistoryDate(e.target.value)}
-                      />
-                    </div>
-                    <button type="submit" className="member-btn-submit" style={{ width: '100%' }}>Lưu số đo mới</button>
-                  </form>
-                </div>
-              </div>
-
-              <div>
-                <div className="member-card-panel">
-                  <h3 className="member-card-title">Lịch sử cân nặng</h3>
-                  <div className="member-bar-chart">
-                    {weightHistory.map((h, idx) => {
-                      const barHeight = Math.round((h.weight / maxW) * 120);
-                      return (
-                        <div className="member-chart-column" key={idx}>
-                          <div className="member-chart-bar-fill" style={{ height: `${barHeight}px` }}>
-                            <span className="member-chart-bar-lbl">{h.weight}</span>
-                          </div>
-                          <span className="member-chart-x-label">{h.date}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="member-progress-history-list">
-                    {[...weightHistory].reverse().map((h, idx) => (
-                      <div className="member-history-item" key={idx}>
-                        <span className="member-history-date">{h.date}</span>
-                        <span className="member-history-val">{h.weight} kg</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        }
 
       case 'thongbao':
         return (
@@ -2202,14 +2108,6 @@ function MemberDashboard({
                 onClick={() => setActiveTab('meal')}
               >
                 <i className="fa-solid fa-bowl-food"></i> Meal Plan
-              </button>
-            </li>
-            <li>
-              <button
-                className={`member-menu-item ${activeTab === 'tiendo' ? 'active' : ''}`}
-                onClick={() => setActiveTab('tiendo')}
-              >
-                <i className="fa-solid fa-person-running"></i> Tiến độ
               </button>
             </li>
             <li>

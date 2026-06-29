@@ -101,7 +101,7 @@ function PTDetailPage() {
   const daysOfWeek = getDaysOfWeek(currentDate);
 
   const isSlotBooked = (dateStr, startTime) => {
-    return schedules.some(s => s.workingDate === dateStr && s.startTime.startsWith(startTime) && s.status === 'Booked');
+    return schedules.some(s => s.workingDate === dateStr && s.startTime.startsWith(startTime) && (s.status === 'Booked' || s.status === 'Busy' || s.status === 'Off'));
   };
 
   return (
@@ -240,7 +240,7 @@ function PTDetailPage() {
                                   color: booked ? '#64748b' : '#166534',
                                   cursor: 'default'
                                 }}>
-                                  {booked ? 'Đã Kín' : 'Rảnh'}
+                                  {booked ? 'Bận' : 'Rảnh'}
                                 </td>
                               );
                             })}

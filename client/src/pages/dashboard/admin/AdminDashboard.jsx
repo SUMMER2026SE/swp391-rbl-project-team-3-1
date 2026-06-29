@@ -1167,18 +1167,21 @@ function AdminDashboard({ token, userInfo, logout }) {
                 <i className="fa-solid fa-person-running"></i> Huấn luyện viên
               </button>
             </li>
-            <li 
-              className={`admin-nav-item ${activeTab === 'trangchu' ? 'active' : ''}`}
-              onClick={() => setActiveTab('trangchu')}
-            >
-              <i className="fa-solid fa-pager admin-nav-icon"></i> 
-              <span className="admin-nav-text">Trang Chủ</span>
+            <li>
+              <button 
+                className={`admin-menu-item ${activeTab === 'trangchu' ? 'active' : ''}`}
+                onClick={() => setActiveTab('trangchu')}
+              >
+                <i className="fa-solid fa-house"></i> Trang Chủ
+              </button>
             </li>
-            <li 
-              className={`admin-nav-item ${activeTab === 'goitap' ? 'active' : ''}`}
-              onClick={() => setActiveTab('goitap')}
-            >    
-              <i className="fa-solid fa-tags"></i> Gói tập
+            <li>
+              <button 
+                className={`admin-menu-item ${activeTab === 'goitap' ? 'active' : ''}`}
+                onClick={() => setActiveTab('goitap')}
+              >
+                <i className="fa-solid fa-tags"></i> Gói tập
+              </button>
             </li>
             <li>
               <button 
@@ -1412,8 +1415,8 @@ function AdminDashboard({ token, userInfo, logout }) {
       {/* Add / Edit Package Modal */}
       {(showEditPackage !== null || showAddPackage) && (
         <div className="admin-modal-overlay">
-          <div className="admin-modal">
-            <button className="admin-modal-close" onClick={() => {setShowEditPackage(null); setShowAddPackage(false);}}>
+          <div className="admin-modal-box">
+            <button type="button" className="admin-modal-close" onClick={() => {setShowEditPackage(null); setShowAddPackage(false);}}>
               <i className="fa-solid fa-xmark"></i>
             </button>
             <h3 className="admin-modal-title">{showAddPackage ? 'Tạo Gói Tập Mới' : 'Cập nhật gói tập'}</h3>
@@ -1473,7 +1476,7 @@ function AdminDashboard({ token, userInfo, logout }) {
               </div>
 
               <div className="admin-form-actions">
-                <button type="button" className="admin-btn-cancel" onClick={() => setShowEditPackage(null)}>
+                <button type="button" className="admin-btn-cancel" onClick={() => { setShowEditPackage(null); setShowAddPackage(false); }}>
                   Hủy Bỏ
                 </button>
                 <button type="submit" className="admin-btn-submit">

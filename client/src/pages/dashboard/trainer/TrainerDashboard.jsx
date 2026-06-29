@@ -16,10 +16,10 @@ const getWeekDays = (refDateStr) => {
   const day = current.getDay();
   const monday = new Date(current);
   monday.setDate(monday.getDate() - day + (day === 0 ? -6 : 1));
-  
+
   const days = [];
   const dayLabels = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
-  
+
   for (let i = 0; i < 7; i++) {
     const nextDay = new Date(monday);
     nextDay.setDate(monday.getDate() + i);
@@ -105,11 +105,27 @@ function TrainerDashboard({
   const [customMealName, setCustomMealName] = useState('');
   const [successModal, setSuccessModal] = useState({ show: false, message: '' });
   const [showProgressModal, setShowProgressModal] = useState(false);
+  const [workoutTemplates, setWorkoutTemplates] = useState([]);
+  const [mealTemplates, setMealTemplates] = useState([]);
+  const [busySchedules, setBusySchedules] = useState([]);
+  const [localSchedules, setLocalSchedules] = useState([]);
+  const [busyWeekStart, setBusyWeekStart] = useState(new Date());
+
+  const TIME_SLOTS = [
+    { start: '05:00:00', end: '06:30:00', label: '05:00 - 06:30' },
+    { start: '07:00:00', end: '08:30:00', label: '07:00 - 08:30' },
+    { start: '09:00:00', end: '10:30:00', label: '09:00 - 10:30' },
+    { start: '11:00:00', end: '12:30:00', label: '11:00 - 12:30' },
+    { start: '14:00:00', end: '15:30:00', label: '14:00 - 15:30' },
+    { start: '16:00:00', end: '17:30:00', label: '16:00 - 17:30' },
+    { start: '18:00:00', end: '19:30:00', label: '18:00 - 19:30' },
+    { start: '20:00:00', end: '21:30:00', label: '20:00 - 21:30' },
+  ];
 
   // Get progress tracking data from localStorage for a selected member
   const getMemberProgress = (member) => {
     if (!member) return { workoutPct: 0, mealPct: 0, completedExercises: {}, completedMeals: {}, hasCurrentWorkout: false, currentMeals: [] };
-    
+
     const isTodayOrFuture = (dateVal) => {
       if (!dateVal) return false;
       const planDate = new Date(dateVal);
@@ -226,6 +242,28 @@ function TrainerDashboard({
         }
       })
       .catch(err => console.error('Error fetching certifications:', err));
+
+    fetch('/api/workout-plans/templates', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setWorkoutTemplates(data);
+        }
+      })
+      .catch(err => console.error('Error fetching workout templates:', err));
+
+    fetch('/api/meal-plans/templates', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setMealTemplates(data);
+        }
+      })
+      .catch(err => console.error('Error fetching meal templates:', err));
   };
 
   useEffect(() => {
@@ -246,6 +284,108 @@ function TrainerDashboard({
         .catch(err => console.error('Error fetching progress:', err));
     }
   }, [selectedMember, activeTab, token]);
+
+  const fetchBusySchedules = () => {
+    if (!token) return;
+    const start = new Date(busyWeekStart);
+    const day = start.getDay();
+    const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+    start.setDate(diff);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+
+    fetch(`/api/dashboard/trainer/schedule?startDate=${start.toISOString().split('T')[0]}&endDate=${end.toISOString().split('T')[0]}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.schedules) {
+          setBusySchedules(data.schedules);
+          setLocalSchedules(data.schedules);
+        }
+      })
+      .catch(err => console.error('Error fetching busy schedules:', err));
+  };
+
+  useEffect(() => {
+    if (activeTab === 'quanlylich') {
+      fetchBusySchedules();
+    }
+  }, [activeTab, busyWeekStart, token]);
+
+  const handleToggleLocalSlot = (dateStr, startTime, endTime) => {
+    const existingIdx = localSchedules.findIndex(s => 
+      s.workingDate === dateStr && s.startTime.startsWith(startTime.substring(0,5))
+    );
+
+    if (existingIdx > -1) {
+      const updated = [...localSchedules];
+      const currentStatus = updated[existingIdx].status;
+      if (currentStatus === 'Busy') {
+        updated[existingIdx] = {
+          ...updated[existingIdx],
+          status: 'Available'
+        };
+      } else {
+        updated[existingIdx] = {
+          ...updated[existingIdx],
+          status: 'Busy'
+        };
+      }
+      setLocalSchedules(updated);
+    } else {
+      setLocalSchedules([
+        ...localSchedules,
+        {
+          workingDate: dateStr,
+          startTime: startTime,
+          endTime: endTime,
+          status: 'Busy'
+        }
+      ]);
+    }
+  };
+
+  const handleSaveSchedules = () => {
+    if (!token) return;
+    const start = new Date(busyWeekStart);
+    const day = start.getDay();
+    const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+    start.setDate(diff);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+
+    const busySlots = localSchedules
+      .filter(s => s.status === 'Busy')
+      .map(s => ({
+        date: s.workingDate,
+        startTime: s.startTime,
+        endTime: s.endTime
+      }));
+
+    fetch('/api/dashboard/trainer/schedule/bulk-save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        startDate: start.toISOString().split('T')[0],
+        endDate: end.toISOString().split('T')[0],
+        busySlots
+      })
+    })
+      .then(async res => {
+        const data = await res.json();
+        if (res.ok) {
+          alert('Đã lưu lịch bận thành công!');
+          fetchBusySchedules();
+        } else {
+          alert(data.message || 'Lỗi khi lưu lịch bận!');
+        }
+      })
+      .catch(err => console.error('Error saving schedules:', err));
+  };
 
   // Synchronize profileData on load
   useEffect(() => {
@@ -451,7 +591,7 @@ function TrainerDashboard({
         text: `Dạ vâng HLV, em đã nhận được tin nhắn và sẽ chuẩn bị cho buổi tập tiếp theo.`,
         time: responseTime
       };
-      
+
       setConversations(prev => ({
         ...prev,
         [activeChatMemberId]: [...(prev[activeChatMemberId] || []), responseMsg]
@@ -617,7 +757,7 @@ function TrainerDashboard({
           setNewProgress({ height: '', weight: '', bodyFat: '', muscleMass: '', note: '' });
           setShowProgressForm(false);
           alert('Đã ghi nhận tiến độ!');
-          
+
           // Update selected member's basic stats if changed
           if (newProgress.weight || newProgress.height) {
             setSelectedMember({
@@ -718,7 +858,7 @@ function TrainerDashboard({
                             </div>
                           </td>
                           <td>
-                            <button 
+                            <button
                               className="trainer-table-action-btn"
                               title="Kiểm tra chi tiết & Giao bài"
                               onClick={() => { setSelectedMember(m); setActiveTab('hocvien'); }}
@@ -742,8 +882,8 @@ function TrainerDashboard({
                 <div className="trainer-weekly-calendar">
                   <div className="trainer-calendar-days-row" style={{ gridTemplateColumns: 'repeat(7, 1fr)', maxWidth: '100%' }}>
                     {getWeekDays(selectedDate).map(d => (
-                      <div 
-                        key={d.key} 
+                      <div
+                        key={d.key}
                         className={`trainer-calendar-day-header ${selectedDate === d.dateStr ? 'active' : ''}`}
                         onClick={() => setSelectedDate(d.dateStr)}
                       >
@@ -786,8 +926,8 @@ function TrainerDashboard({
                   <h3 className="trainer-card-title" style={{ marginBottom: '20px' }}>Học viên của bạn</h3>
                   <div className="trainer-members-grid">
                     {membersList.map((m) => (
-                      <div 
-                        key={m.id} 
+                      <div
+                        key={m.id}
                         className="trainer-member-card"
                         onClick={() => setSelectedMember(m)}
                       >
@@ -803,56 +943,14 @@ function TrainerDashboard({
                       </div>
                     ))}
                   </div>
-                  
-                  {/* Progress Tracking Widget */}
-                  <div className="trainer-card-panel" style={{ marginTop: '20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                      <h4 className="trainer-card-title">Tiến Độ Gần Đây</h4>
-                      <button className="trainer-link-action" style={{ fontSize: '0.8rem' }} onClick={() => setShowProgressForm(!showProgressForm)}>
-                        {showProgressForm ? 'Hủy' : '+ Cập nhật'}
-                      </button>
-                    </div>
-
-                    {showProgressForm && (
-                      <form onSubmit={handleAddProgress} style={{ marginBottom: '16px', background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-                          <input type="number" placeholder="Cân nặng (kg)" className="trainer-form-input" style={{ padding: '6px' }} value={newProgress.weight} onChange={e => setNewProgress({...newProgress, weight: e.target.value})} required />
-                          <input type="number" placeholder="Body Fat (%)" className="trainer-form-input" style={{ padding: '6px' }} value={newProgress.bodyFat} onChange={e => setNewProgress({...newProgress, bodyFat: e.target.value})} />
-                          <input type="number" placeholder="Muscle Mass" className="trainer-form-input" style={{ padding: '6px' }} value={newProgress.muscleMass} onChange={e => setNewProgress({...newProgress, muscleMass: e.target.value})} />
-                        </div>
-                        <input type="text" placeholder="Ghi chú (vd: Tập tiến bộ)..." className="trainer-form-input" style={{ padding: '6px', marginBottom: '10px', width: '100%' }} value={newProgress.note} onChange={e => setNewProgress({...newProgress, note: e.target.value})} />
-                        <button type="submit" className="trainer-btn-submit" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>Lưu tiến độ</button>
-                      </form>
-                    )}
-
-                    <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                      {progressRecords.length === 0 ? (
-                        <div style={{ fontSize: '0.85rem', color: '#94a3b8', textAlign: 'center', padding: '10px' }}>Chưa có ghi nhận tiến độ nào.</div>
-                      ) : (
-                        progressRecords.map(pr => (
-                          <div key={pr.tracking_id} style={{ fontSize: '0.85rem', padding: '10px', borderBottom: '1px solid #f1f5f9' }}>
-                            <div style={{ color: '#64748b', fontSize: '0.75rem', marginBottom: '4px' }}>
-                              {new Date(pr.recorded_date).toLocaleDateString('vi-VN')}
-                            </div>
-                            <div style={{ fontWeight: '500' }}>
-                              {pr.weight && <span>Cân: {pr.weight}kg </span>}
-                              {pr.body_fat && <span style={{ color: '#ef4444' }}>| Mỡ: {pr.body_fat}% </span>}
-                              {pr.muscle_mass && <span style={{ color: '#10b981' }}>| Cơ: {pr.muscle_mass}% </span>}
-                            </div>
-                            {pr.note && <div style={{ color: '#64748b', marginTop: '4px', fontStyle: 'italic' }}>"{pr.note}"</div>}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
                 </div>
               ) : (
                 <div className="trainer-detail-inspection">
                   {/* Left card: Member detailed profile metrics */}
                   <div className="trainer-detail-sidebar">
                     <div className="trainer-card-panel" style={{ textAlign: 'center' }}>
-                      <button 
-                        className="trainer-link-action" 
+                      <button
+                        className="trainer-link-action"
                         style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px' }}
                         onClick={() => setSelectedMember(null)}
                       >
@@ -863,11 +961,11 @@ function TrainerDashboard({
                       </div>
                       <h3 className="trainer-member-card-name" style={{ fontSize: '1.25rem' }}>{selectedMember.name}</h3>
                       <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '4px 0 16px' }}>Hội viên đang quản lý</p>
-                      
+
                       <span className="trainer-table-goal-badge" style={{ marginBottom: '20px' }}>
                         Mục tiêu: {selectedMember.goal}
                       </span>
-  
+
                       <div className="trainer-health-metric-row">
                         <div className="trainer-health-box">
                           <div className="trainer-health-lbl">Cân nặng</div>
@@ -883,7 +981,7 @@ function TrainerDashboard({
                         </div>
                       </div>
                     </div>
-  
+
                     <div className="trainer-card-panel">
                       <h4 className="trainer-card-title" style={{ marginBottom: '14px' }}>Chế độ đang kích hoạt</h4>
                       <div style={{ fontSize: '0.88rem', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -943,7 +1041,7 @@ function TrainerDashboard({
                       </div>
                     </div>
                   </div>
-  
+
                   {/* Right panel: Assigning Workout and Meal plan */}
                   <div className="trainer-detail-main">
                     <div className="trainer-card-panel">
@@ -951,68 +1049,66 @@ function TrainerDashboard({
                       <div style={{ marginBottom: '20px' }}>
                         <label className="trainer-form-label">Chọn giáo án mẫu nhanh</label>
                         <div className="trainer-plan-template-list" style={{ marginTop: '8px' }}>
-                          {[
-                            { title: 'HIIT Đốt Mỡ Nâng Cao', desc: 'Đốt mỡ cường độ cao cho người thừa cân nhẹ.' },
-                            { title: 'Full Body Khởi Đầu', desc: 'Khởi động cơ xương khớp cho người mới bắt đầu.' },
-                            { title: 'Powerlifting Cơ Bản', desc: 'Tập trung xây dựng sức mạnh cơ bắp thô.' }
-                          ].map((temp, idx) => (
-                            <div 
-                              key={idx} 
+                          {workoutTemplates.map((temp, idx) => (
+                            <div
+                              key={idx}
                               className={`trainer-template-card ${customWorkoutName === temp.title ? 'active' : ''}`}
                               onClick={() => setCustomWorkoutName(temp.title)}
                             >
                               <div className="trainer-template-card-title">{temp.title}</div>
-                              <div className="trainer-template-card-desc">{temp.desc}</div>
+                              <div className="trainer-template-card-desc">{temp.description || temp.desc}</div>
                             </div>
                           ))}
+                          {workoutTemplates.length === 0 && (
+                            <div style={{ fontSize: '0.86rem', color: '#94a3b8', padding: '10px' }}>Không có giáo án mẫu cho môn của bạn</div>
+                          )}
                         </div>
                       </div>
-  
+
                       <form onSubmit={handleAssignCustomWorkout} style={{ display: 'flex', gap: '12px' }}>
-                        <input 
-                          type="text" 
-                          className="trainer-form-input" 
-                          placeholder="Nhập tên giáo án tùy chỉnh mới..." 
+                        <input
+                          type="text"
+                          className="trainer-form-input"
+                          placeholder="Nhập tên giáo án tùy chỉnh mới..."
                           style={{ flex: 1 }}
                           value={customWorkoutName}
                           onChange={(e) => setCustomWorkoutName(e.target.value)}
-                          required 
+                          required
                         />
                         <button type="submit" className="trainer-btn-submit" style={{ padding: '10px 20px' }}>Giao giáo án</button>
                       </form>
                     </div>
-  
+
                     <div className="trainer-card-panel">
                       <h3 className="trainer-card-title" style={{ marginBottom: '16px' }}>Thiết lập thực đơn dinh dưỡng (Meal Plan)</h3>
                       <div style={{ marginBottom: '20px' }}>
                         <label className="trainer-form-label">Chọn thực đơn mẫu dinh dưỡng</label>
                         <div className="trainer-plan-template-list" style={{ marginTop: '8px' }}>
-                          {[
-                            { title: 'Chế độ giảm cân thâm hụt 500kcal', desc: 'Giàu đạm, ít tinh bột nhanh.' },
-                            { title: 'Ăn kiêng Low-Carb cơ bản', desc: 'Giảm thiểu tinh bột xấu, tăng chất béo tốt.' },
-                            { title: 'Tăng cơ nạc (Lean Bulking)', desc: 'Dư thừa 200kcal, ưu tiên đạm tinh khiết.' }
-                          ].map((temp, idx) => (
-                            <div 
-                              key={idx} 
+                          {mealTemplates.map((temp, idx) => (
+                            <div
+                              key={idx}
                               className={`trainer-template-card ${customMealName === temp.title ? 'active-meal' : ''}`}
                               onClick={() => setCustomMealName(temp.title)}
                             >
                               <div className="trainer-template-card-title">{temp.title}</div>
-                              <div className="trainer-template-card-desc">{temp.desc}</div>
+                              <div className="trainer-template-card-desc">{temp.description || temp.desc}</div>
                             </div>
                           ))}
+                          {mealTemplates.length === 0 && (
+                            <div style={{ fontSize: '0.86rem', color: '#94a3b8', padding: '10px' }}>Không có thực đơn mẫu cho môn của bạn</div>
+                          )}
                         </div>
                       </div>
-  
+
                       <form onSubmit={handleAssignCustomMeal} style={{ display: 'flex', gap: '12px' }}>
-                        <input 
-                          type="text" 
-                          className="trainer-form-input" 
-                          placeholder="Nhập tên thực đơn dinh dưỡng tùy chỉnh..." 
+                        <input
+                          type="text"
+                          className="trainer-form-input"
+                          placeholder="Nhập tên thực đơn dinh dưỡng tùy chỉnh..."
                           style={{ flex: 1 }}
                           value={customMealName}
                           onChange={(e) => setCustomMealName(e.target.value)}
-                          required 
+                          required
                         />
                         <button type="submit" className="trainer-btn-submit" style={{ padding: '10px 20px', backgroundColor: '#10b981' }}>Giao thực đơn</button>
                       </form>
@@ -1050,35 +1146,35 @@ function TrainerDashboard({
 
             <div className="trainer-card-panel">
               <h3 className="trainer-card-title" style={{ marginBottom: '20px' }}>Lịch dạy tuần chi tiết</h3>
-              
+
               {/* Interactive Calendar Controls */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '20px', flexWrap: 'wrap', backgroundColor: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <button 
+                <button
                   type="button"
-                  className="trainer-banner-btn-white" 
+                  className="trainer-banner-btn-white"
                   style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1' }}
                   onClick={handlePrevWeek}
                 >
                   <i className="fa-solid fa-chevron-left"></i> Tuần trước
                 </button>
-                <input 
-                  type="date" 
-                  className="trainer-form-input" 
-                  style={{ width: '160px', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }} 
-                  value={selectedDate} 
-                  onChange={(e) => setSelectedDate(e.target.value)} 
+                <input
+                  type="date"
+                  className="trainer-form-input"
+                  style={{ width: '160px', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }}
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
                 />
-                <button 
+                <button
                   type="button"
-                  className="trainer-banner-btn-white" 
+                  className="trainer-banner-btn-white"
                   style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1' }}
                   onClick={handleNextWeek}
                 >
                   Tuần sau <i className="fa-solid fa-chevron-right"></i>
                 </button>
-                <button 
+                <button
                   type="button"
-                  className="trainer-link-action" 
+                  className="trainer-link-action"
                   style={{ fontWeight: 'bold', marginLeft: 'auto', border: 'none', background: 'none' }}
                   onClick={() => setSelectedDate(getTodayDateString())}
                 >
@@ -1089,8 +1185,8 @@ function TrainerDashboard({
               <div className="trainer-weekly-calendar">
                 <div className="trainer-calendar-days-row" style={{ gridTemplateColumns: 'repeat(7, 1fr)', maxWidth: '100%' }}>
                   {getWeekDays(selectedDate).map(d => (
-                    <div 
-                      key={d.key} 
+                    <div
+                      key={d.key}
                       className={`trainer-calendar-day-header ${selectedDate === d.dateStr ? 'active' : ''}`}
                       onClick={() => setSelectedDate(d.dateStr)}
                     >
@@ -1134,23 +1230,200 @@ function TrainerDashboard({
           </div>
         );
 
+      case 'quanlylich':
+        {
+          const startOfWeek = new Date(busyWeekStart);
+          const day = startOfWeek.getDay();
+          const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
+          startOfWeek.setDate(diff);
+
+          const days = [];
+          for (let i = 0; i < 7; i++) {
+            const d = new Date(startOfWeek);
+            d.setDate(startOfWeek.getDate() + i);
+            days.push(d);
+          }
+
+          const handlePrevBusyWeek = () => {
+            const newDate = new Date(busyWeekStart);
+            newDate.setDate(busyWeekStart.getDate() - 7);
+            setBusyWeekStart(newDate);
+          };
+
+          const handleNextBusyWeek = () => {
+            const newDate = new Date(busyWeekStart);
+            newDate.setDate(busyWeekStart.getDate() + 7);
+            setBusyWeekStart(newDate);
+          };
+
+          return (
+            <div className="trainer-plan-builder">
+              <div className="trainer-card-panel">
+                <h3 className="trainer-card-title" style={{ marginBottom: '10px' }}>Quản lý lịch rảnh / bận</h3>
+                <p style={{ fontSize: '0.86rem', color: '#64748b', marginBottom: '20px' }}>
+                  Click vào các ô trống màu xanh để đổi sang trạng thái <strong>Bận</strong> (không cho phép đặt lịch). Click vào ô màu cam để kích hoạt lại trạng thái <strong>Rảnh</strong>.
+                </p>
+
+                {/* Calendar Week Navigation */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '20px', flexWrap: 'wrap', backgroundColor: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <button
+                    type="button"
+                    className="trainer-banner-btn-white"
+                    style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1', cursor: 'pointer' }}
+                    onClick={handlePrevBusyWeek}
+                  >
+                    <i className="fa-solid fa-chevron-left"></i> Tuần trước
+                  </button>
+                  <span style={{ fontWeight: 'bold', fontSize: '0.92rem' }}>
+                    Tuần từ {days[0].toLocaleDateString('vi-VN')} đến {days[6].toLocaleDateString('vi-VN')}
+                  </span>
+                  <button
+                    type="button"
+                    className="trainer-banner-btn-white"
+                    style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1', cursor: 'pointer' }}
+                    onClick={handleNextBusyWeek}
+                  >
+                    Tuần sau <i className="fa-solid fa-chevron-right"></i>
+                  </button>
+                  <button
+                    type="button"
+                    className="trainer-link-action"
+                    style={{ fontWeight: 'bold', marginLeft: 'auto', border: 'none', background: 'none', cursor: 'pointer' }}
+                    onClick={() => setBusyWeekStart(new Date())}
+                  >
+                    <i className="fa-solid fa-calendar-day"></i> Về tuần này
+                  </button>
+                </div>
+
+                <div className="trainer-weekly-calendar" style={{ overflowX: 'auto' }}>
+                  <table className="trainer-table" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'center' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '10px', width: '12.5%' }}>Ca \ Ngày</th>
+                        {days.map((day, idx) => (
+                          <th key={idx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '10px', width: '12.5%' }}>
+                            {day.toLocaleDateString('vi-VN', { weekday: 'short' })} <br />
+                            {day.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {TIME_SLOTS.map((slot, sIdx) => (
+                        <tr key={sIdx}>
+                          <td style={{ background: '#f8fafc', border: '1px solid #e2e8f0', fontWeight: 'bold', padding: '10px' }}>{slot.label}</td>
+                          {days.map((day, dIdx) => {
+                            const dateStr = day.toISOString().split('T')[0];
+                            const matchingSchedule = localSchedules.find(s =>
+                              s.workingDate === dateStr && s.startTime.startsWith(slot.start.substring(0, 5))
+                            );
+
+                            const status = matchingSchedule ? matchingSchedule.status : 'Available';
+
+                            // Check if there is a teaching schedule (booked appointment) on this slot
+                            const isTeaching = scheduleList.some(s =>
+                              s.date === dateStr && s.time.startsWith(slot.label.substring(0, 5))
+                            );
+
+                            let bg = '#dcfce7'; // green - Available
+                            let color = '#166534';
+                            let text = 'Rảnh';
+                            let cursor = 'pointer';
+
+                            if (isTeaching) {
+                              bg = '#cbd5e1'; // gray - Booked (Teaching)
+                              color = '#475569';
+                              text = 'Đã đặt lịch';
+                              cursor = 'not-allowed';
+                            } else if (status === 'Busy' || status === 'Off') {
+                              bg = '#ffedd5'; // orange - Busy
+                              color = '#c2410c';
+                              text = 'Bận';
+                            }
+
+                            return (
+                              <td
+                                key={dIdx}
+                                onClick={() => {
+                                  if (!isTeaching) {
+                                    handleToggleLocalSlot(dateStr, slot.start, slot.end);
+                                  }
+                                }}
+                                style={{
+                                  padding: '12px',
+                                  border: '1px solid #e2e8f0',
+                                  background: bg,
+                                  color: color,
+                                  cursor: cursor,
+                                  fontWeight: '500',
+                                  transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!isTeaching) e.target.style.filter = 'brightness(0.95)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!isTeaching) e.target.style.filter = 'none';
+                                }}
+                              >
+                                {text}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+                  <div style={{ display: 'flex', gap: '20px', fontSize: '0.85rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '16px', height: '16px', backgroundColor: '#dcfce7', borderRadius: '4px', border: '1px solid #bbf7d0' }}></div>
+                      <span>Ca rảnh (Có thể book)</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '16px', height: '16px', backgroundColor: '#ffedd5', borderRadius: '4px', border: '1px solid #fed7aa' }}></div>
+                      <span>Lịch bận do PT cài đặt (Khóa không cho book)</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '16px', height: '16px', backgroundColor: '#cbd5e1', borderRadius: '4px', border: '1px solid #94a3b8' }}></div>
+                      <span>Ca đang có lịch dạy đã lên lịch</span>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={handleSaveSchedules}
+                    className="trainer-btn-submit"
+                    style={{ padding: '10px 24px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', background: 'var(--orange)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}
+                  >
+                    <i className="fa-solid fa-floppy-disk"></i> Lưu thay đổi
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
       case 'workout':
         return (
           <div className="trainer-card-panel">
             <h3 className="trainer-card-title" style={{ marginBottom: '20px' }}>Kho giáo án luyện tập mẫu (Workout Templates)</h3>
             <div className="trainer-plan-template-list" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
-              {[
-                { title: 'HIIT Đốt Mỡ Nâng Cao', desc: 'Đốt mỡ cường độ cao cho người thừa cân nhẹ. Bao gồm 5 bài tập nhảy dây, squats, plank, burpees và chạy nước rút.' },
-                { title: 'Full Body Khởi Đầu', desc: 'Khởi động cơ xương khớp cho người mới bắt đầu. Các bài tập không tạ chống mỏi lưng vai gáy và săn đùi.' },
-                { title: 'Powerlifting Cơ Bản', desc: 'Tập trung xây dựng sức mạnh cơ bắp thô. Các bài squats, deadlifts nặng, bench press 3x5 reps.' },
-                { title: 'Yoga dẻo dai khớp vai', desc: 'Các tư thế vặn xoắn và giãn cơ mở rộng khớp vai giúp cơ bắp linh hoạt và phục hồi đau nhức cơ.' },
-                { title: 'Cardio Core trung cấp', desc: 'Các bài tập bụng core, plank đi bộ, leo núi giúp săn chắc múi bụng và tăng sức bền cơ trọng tâm.' }
-              ].map((temp, idx) => (
+              {workoutTemplates.map((temp, idx) => (
                 <div key={idx} className="trainer-template-card" style={{ cursor: 'default' }}>
                   <div className="trainer-template-card-title" style={{ color: 'var(--orange)' }}>{temp.title}</div>
-                  <div className="trainer-template-card-desc" style={{ fontSize: '0.84rem', lineHeight: '1.4', marginTop: '6px' }}>{temp.desc}</div>
+                  <div className="trainer-template-card-desc" style={{ fontSize: '0.84rem', lineHeight: '1.4', marginTop: '6px' }}>
+                    {temp.description || temp.desc}
+                    {temp.exercises && temp.exercises.length > 0 && (
+                      <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#64748b' }}>
+                        <strong>Bài tập:</strong> {temp.exercises.map(e => `${e.exercise_name} (${e.sets}x${e.reps})`).join(', ')}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
+              {workoutTemplates.length === 0 && (
+                <div style={{ padding: '20px', color: '#94a3b8', textAlign: 'center' }}>Không có giáo án mẫu cho bộ môn này</div>
+              )}
             </div>
           </div>
         );
@@ -1160,16 +1433,15 @@ function TrainerDashboard({
           <div className="trainer-card-panel">
             <h3 className="trainer-card-title" style={{ marginBottom: '20px' }}>Kho thực đơn dinh dưỡng mẫu (Meal Templates)</h3>
             <div className="trainer-plan-template-list" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
-              {[
-                { title: 'Chế độ giảm cân thâm hụt 500kcal', desc: 'Giàu đạm, ít tinh bột nhanh. Sáng ức gà chiên không dầu, trưa cơm gạo lứt cá hồi, tối salad xanh.' },
-                { title: 'Ăn kiêng Low-Carb cơ bản', desc: 'Giảm thiểu tinh bột xấu, tăng chất béo tốt. Ưu tiên thịt bò, trứng luộc, quả bơ, rau xanh các bữa chính.' },
-                { title: 'Tăng cơ nạc (Lean Bulking)', desc: 'Dư thừa nhẹ 200kcal, ưu tiên đạm tinh khiết cho sự phát triển của thớ cơ. Sử dụng yến mạch, whey protein hỗ trợ.' }
-              ].map((temp, idx) => (
+              {mealTemplates.map((temp, idx) => (
                 <div key={idx} className="trainer-template-card" style={{ cursor: 'default' }}>
                   <div className="trainer-template-card-title" style={{ color: '#10b981' }}>{temp.title}</div>
-                  <div className="trainer-template-card-desc" style={{ fontSize: '0.84rem', lineHeight: '1.4', marginTop: '6px' }}>{temp.desc}</div>
+                  <div className="trainer-template-card-desc" style={{ fontSize: '0.84rem', lineHeight: '1.4', marginTop: '6px' }}>{temp.description || temp.desc}</div>
                 </div>
               ))}
+              {mealTemplates.length === 0 && (
+                <div style={{ padding: '20px', color: '#94a3b8', textAlign: 'center' }}>Không có thực đơn mẫu cho bộ môn này</div>
+              )}
             </div>
           </div>
         );
@@ -1188,8 +1460,8 @@ function TrainerDashboard({
                   const history = conversations[m.id] || [];
                   const lastMsg = history[history.length - 1]?.text || 'Chưa có tin nhắn mới';
                   return (
-                    <div 
-                      key={m.id} 
+                    <div
+                      key={m.id}
                       className={`trainer-chat-user-row ${activeChatMemberId === m.id ? 'active' : ''}`}
                       onClick={() => setActiveChatMemberId(m.id)}
                     >
@@ -1223,13 +1495,13 @@ function TrainerDashboard({
                 </div>
 
                 <form className="trainer-chat-input-row" onSubmit={handleSendMessage}>
-                  <input 
-                    type="text" 
-                    className="trainer-chat-input" 
+                  <input
+                    type="text"
+                    className="trainer-chat-input"
                     placeholder="Nhập tin nhắn nhắn gửi học viên..."
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
-                    required 
+                    required
                   />
                   <button type="submit" className="trainer-chat-btn-send">
                     <i className="fa-solid fa-paper-plane"></i>
@@ -1262,28 +1534,28 @@ function TrainerDashboard({
               <div className="trainer-form-grid">
                 <div className="trainer-form-group">
                   <label className="trainer-form-label">Họ và Tên</label>
-                  <input 
-                    type="text" 
-                    className="trainer-form-input" 
-                    value={editFullName} 
-                    onChange={(e) => setEditFullName(e.target.value)} 
-                    required 
+                  <input
+                    type="text"
+                    className="trainer-form-input"
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                    required
                   />
                 </div>
                 <div className="trainer-form-group">
                   <label className="trainer-form-label">Số điện thoại</label>
-                  <input 
-                    type="text" 
-                    className="trainer-form-input" 
-                    value={editPhone} 
-                    onChange={(e) => setEditPhone(e.target.value)} 
+                  <input
+                    type="text"
+                    className="trainer-form-input"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
                   />
                 </div>
                 <div className="trainer-form-group">
                   <label className="trainer-form-label">Giới tính</label>
-                  <select 
-                    className="trainer-form-select" 
-                    value={editGender} 
+                  <select
+                    className="trainer-form-select"
+                    value={editGender}
                     onChange={(e) => setEditGender(e.target.value)}
                   >
                     <option value="Nam">Nam</option>
@@ -1293,48 +1565,48 @@ function TrainerDashboard({
                 </div>
                 <div className="trainer-form-group">
                   <label className="trainer-form-label">Ngày sinh</label>
-                  <input 
-                    type="date" 
-                    className="trainer-form-input" 
-                    value={editDob} 
-                    onChange={(e) => setEditDob(e.target.value)} 
+                  <input
+                    type="date"
+                    className="trainer-form-input"
+                    value={editDob}
+                    onChange={(e) => setEditDob(e.target.value)}
                   />
                 </div>
                 <div className="trainer-form-group">
                   <label className="trainer-form-label">Chuyên môn (Specialization)</label>
-                  <input 
-                    type="text" 
-                    className="trainer-form-input" 
-                    placeholder="Ví dụ: Yoga, Thể lực, Giảm cân nhanh..." 
-                    value={editSpecialization} 
-                    onChange={(e) => setEditSpecialization(e.target.value)} 
+                  <input
+                    type="text"
+                    className="trainer-form-input"
+                    placeholder="Ví dụ: Yoga, Thể lực, Giảm cân nhanh..."
+                    value={editSpecialization}
+                    onChange={(e) => setEditSpecialization(e.target.value)}
                   />
                 </div>
                 <div className="trainer-form-group">
                   <label className="trainer-form-label">Số năm kinh nghiệm</label>
-                  <input 
-                    type="number" 
-                    className="trainer-form-input" 
-                    placeholder="Số năm tập luyện/dạy" 
-                    value={editExpYears} 
-                    onChange={(e) => setEditExpYears(e.target.value)} 
+                  <input
+                    type="number"
+                    className="trainer-form-input"
+                    placeholder="Số năm tập luyện/dạy"
+                    value={editExpYears}
+                    onChange={(e) => setEditExpYears(e.target.value)}
                   />
                 </div>
                 <div className="trainer-form-group full-width">
                   <label className="trainer-form-label">Chi tiết kinh nghiệm giảng dạy</label>
-                  <textarea 
-                    className="trainer-form-textarea" 
-                    placeholder="Mô tả cụ thể về thế mạnh, giải thưởng, quá trình công tác..." 
-                    value={editExpDesc} 
+                  <textarea
+                    className="trainer-form-textarea"
+                    placeholder="Mô tả cụ thể về thế mạnh, giải thưởng, quá trình công tác..."
+                    value={editExpDesc}
                     onChange={(e) => setEditExpDesc(e.target.value)}
                   />
                 </div>
                 <div className="trainer-form-group full-width">
                   <label className="trainer-form-label">Tiểu sử (Bio)</label>
-                  <textarea 
-                    className="trainer-form-textarea" 
-                    placeholder="Lời nhắn gửi hoặc triết lý rèn luyện thể chất cá nhân..." 
-                    value={editBio} 
+                  <textarea
+                    className="trainer-form-textarea"
+                    placeholder="Lời nhắn gửi hoặc triết lý rèn luyện thể chất cá nhân..."
+                    value={editBio}
                     onChange={(e) => setEditBio(e.target.value)}
                   />
                 </div>
@@ -1348,12 +1620,12 @@ function TrainerDashboard({
             <h3 className="trainer-card-title" style={{ marginTop: '40px', marginBottom: '16px', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px' }}>
               <i className="fa-solid fa-award" style={{ marginRight: '8px', color: '#f59e0b' }}></i> Chứng chỉ chuyên môn
             </h3>
-            
+
             <form onSubmit={handleAddCertification} style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-              <input 
-                type="text" 
-                className="trainer-form-input" 
-                placeholder="Tên chứng chỉ mới (vd: NASM CPT, Yoga Alliance 200hr)" 
+              <input
+                type="text"
+                className="trainer-form-input"
+                placeholder="Tên chứng chỉ mới (vd: NASM CPT, Yoga Alliance 200hr)"
                 style={{ flex: 1 }}
                 value={newCertName}
                 onChange={(e) => setNewCertName(e.target.value)}
@@ -1377,7 +1649,7 @@ function TrainerDashboard({
                         {cert.issued_date && <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Ngày cấp: {new Date(cert.issued_date).toLocaleDateString('vi-VN')}</div>}
                       </div>
                     </div>
-                    <button 
+                    <button
                       onClick={() => handleDeleteCertification(cert.certification_id)}
                       style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '8px' }}
                       title="Xóa chứng chỉ"
@@ -1402,35 +1674,35 @@ function TrainerDashboard({
             <form onSubmit={doChangePw} style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '500px' }}>
               <div className="trainer-form-group">
                 <label className="trainer-form-label">Mật khẩu cũ</label>
-                <input 
-                  type="password" 
-                  className="trainer-form-input" 
-                  placeholder="Nhập mật khẩu hiện tại" 
-                  value={cpwOld} 
-                  onChange={(e) => setCpwOld(e.target.value)} 
-                  required 
+                <input
+                  type="password"
+                  className="trainer-form-input"
+                  placeholder="Nhập mật khẩu hiện tại"
+                  value={cpwOld}
+                  onChange={(e) => setCpwOld(e.target.value)}
+                  required
                 />
               </div>
               <div className="trainer-form-group">
                 <label className="trainer-form-label">Mật khẩu mới</label>
-                <input 
-                  type="password" 
-                  className="trainer-form-input" 
-                  placeholder="Tối thiểu 6 ký tự" 
-                  value={cpwNew} 
-                  onChange={(e) => setCpwNew(e.target.value)} 
-                  required 
+                <input
+                  type="password"
+                  className="trainer-form-input"
+                  placeholder="Tối thiểu 6 ký tự"
+                  value={cpwNew}
+                  onChange={(e) => setCpwNew(e.target.value)}
+                  required
                 />
               </div>
               <div className="trainer-form-group">
                 <label className="trainer-form-label">Xác nhận mật khẩu mới</label>
-                <input 
-                  type="password" 
-                  className="trainer-form-input" 
-                  placeholder="Nhập lại mật khẩu mới" 
-                  value={cpwConf} 
-                  onChange={(e) => setCpwConf(e.target.value)} 
-                  required 
+                <input
+                  type="password"
+                  className="trainer-form-input"
+                  placeholder="Nhập lại mật khẩu mới"
+                  value={cpwConf}
+                  onChange={(e) => setCpwConf(e.target.value)}
+                  required
                 />
               </div>
               <button type="submit" className="trainer-btn-submit">Thay đổi mật khẩu</button>
@@ -1468,12 +1740,12 @@ function TrainerDashboard({
                 userInfo?.fullName ? userInfo.fullName.charAt(0).toUpperCase() : 'T'
               )}
             </div>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              accept="image/*" 
-              style={{ display: 'none' }} 
-              onChange={uploadAvatar} 
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={uploadAvatar}
             />
             <div className="trainer-profile-info">
               <div className="trainer-profile-name" title={userInfo?.fullName}>
@@ -1488,7 +1760,7 @@ function TrainerDashboard({
           {/* Menu Items */}
           <ul className="trainer-menu-list">
             <li>
-              <button 
+              <button
                 className={`trainer-menu-item ${activeTab === 'tongquan' ? 'active' : ''}`}
                 onClick={() => setActiveTab('tongquan')}
               >
@@ -1496,7 +1768,7 @@ function TrainerDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
                 className={`trainer-menu-item ${activeTab === 'hocvien' ? 'active' : ''}`}
                 onClick={() => setActiveTab('hocvien')}
               >
@@ -1504,7 +1776,7 @@ function TrainerDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
                 className={`trainer-menu-item ${activeTab === 'lichday' ? 'active' : ''}`}
                 onClick={() => setActiveTab('lichday')}
               >
@@ -1512,7 +1784,15 @@ function TrainerDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
+                className={`trainer-menu-item ${activeTab === 'quanlylich' ? 'active' : ''}`}
+                onClick={() => setActiveTab('quanlylich')}
+              >
+                <i className="fa-solid fa-calendar-minus"></i> Quản lý lịch
+              </button>
+            </li>
+            <li>
+              <button
                 className={`trainer-menu-item ${activeTab === 'workout' ? 'active' : ''}`}
                 onClick={() => setActiveTab('workout')}
               >
@@ -1520,7 +1800,7 @@ function TrainerDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
                 className={`trainer-menu-item ${activeTab === 'meal' ? 'active' : ''}`}
                 onClick={() => setActiveTab('meal')}
               >
@@ -1528,7 +1808,7 @@ function TrainerDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
                 className={`trainer-menu-item ${activeTab === 'chat' ? 'active' : ''}`}
                 onClick={() => setActiveTab('chat')}
               >
@@ -1536,7 +1816,7 @@ function TrainerDashboard({
               </button>
             </li>
             <li>
-              <button 
+              <button
                 className={`trainer-menu-item ${activeTab === 'hoso' ? 'active' : ''}`}
                 onClick={() => setActiveTab('hoso')}
               >
@@ -1629,7 +1909,7 @@ function TrainerDashboard({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxHeight: '450px', overflowY: 'auto', paddingRight: '6px' }}>
-                
+
                 {/* Workout Section */}
                 <div style={{ backgroundColor: '#fff8f1', borderRadius: '12px', padding: '16px', border: '1px solid #ffedd5' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
