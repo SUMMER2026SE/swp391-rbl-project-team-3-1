@@ -180,48 +180,130 @@
     min-height: 700px;
     overflow: hidden;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    padding-top: 64px;
+    align-items: flex-end;
+    padding-bottom: 80px;
 }
 
 .hero-bg {
     position: absolute;
     inset: 0;
-    background: url('/gym_hero_bg.png') no-repeat center center;
+    background: url('/HomePage.png') no-repeat center center;
     background-size: cover;
     overflow: hidden;
 }
 
-/* Dark elegant gradient overlay */
+/* Gym interior simulation with CSS */
 .hero-bg::before {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-        to bottom,
-        rgba(10, 10, 10, 0.7) 0%,
-        rgba(10, 10, 10, 0.5) 60%,
-        rgba(10, 10, 10, 0.2) 100%
-    );
-    z-index: 1;
+    background: 
+        /* ceiling lights */
+        radial-gradient(ellipse 200px 30px at 30% 8%, rgba(255,255,255,0.9) 0%, transparent 100%),
+        radial-gradient(ellipse 200px 30px at 70% 8%, rgba(255,255,255,0.9) 0%, transparent 100%),
+        /* orange vertical accent lights */
+        linear-gradient(to bottom, var(--orange) 0%, rgba(249,115,22,0.3) 60%, transparent 100%),
+        linear-gradient(to bottom, var(--orange) 0%, rgba(249,115,22,0.3) 60%, transparent 100%);
+    background-size: auto, auto, 4px 80%, 4px 80%;
+    background-position: center top, center top, 14% center, 86% center;
+    background-repeat: no-repeat, no-repeat, no-repeat, no-repeat;
 }
 
-/* Smooth fade transition to white at the bottom */
+/* Simulated gym floor perspective */
 .hero-bg::after {
     content: '';
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
-    height: 35%;
-    background: linear-gradient(
-        to bottom,
-        rgba(255, 255, 255, 0) 0%,
-        rgba(255, 255, 255, 0.55) 50%,
+    height: 100%;
+    background: linear-gradient(to bottom, 
+        rgba(255, 255, 255, 0.15) 0%,
+        rgba(255, 255, 255, 0.45) 55%,
         rgba(255, 255, 255, 1) 100%
     );
-    z-index: 2;
+}
+
+.hero-gym-visual {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+/* Central corridor effect */
+.corridor {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60%;
+    height: 100%;
+}
+
+.corridor::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 10%;
+    right: 10%;
+    bottom: 0;
+    background: linear-gradient(to bottom,
+        rgba(240,235,228,0.8) 0%,
+        rgba(220,215,208,0.4) 50%,
+        rgba(200,195,188,0.2) 100%
+    );
+}
+
+/* Orange side pillars */
+.pillar-left, .pillar-right {
+    position: absolute;
+    top: 5%;
+    width: 6px;
+    height: 70%;
+    background: linear-gradient(to bottom, var(--orange) 0%, rgba(249,115,22,0.2) 100%);
+    box-shadow: 0 0 30px rgba(249,115,22,0.6), 0 0 60px rgba(249,115,22,0.3);
+}
+
+.pillar-left { left: 14%; }
+.pillar-right { right: 14%; }
+
+/* Horizontal light bars on ceiling */
+.ceiling-bar {
+    position: absolute;
+    top: 0;
+    left: 5%;
+    right: 5%;
+    height: 3px;
+    background: linear-gradient(to right, transparent, rgba(249,115,22,0.8) 30%, rgba(249,115,22,0.8) 70%, transparent);
+    box-shadow: 0 0 20px rgba(249,115,22,0.5);
+}
+
+/* Top white ceiling lights */
+.ceiling-light {
+    position: absolute;
+    top: 5%;
+    width: 140px;
+    height: 12px;
+    background: rgba(255,255,255,0.9);
+    border-radius: 2px;
+    box-shadow: 0 0 25px rgba(255,255,255,0.8), 0 4px 40px rgba(255,255,255,0.4);
+}
+
+.ceiling-light-1 { left: 22%; }
+.ceiling-light-2 { right: 22%; }
+.ceiling-light-3 { left: 50%; transform: translateX(-50%); }
+
+/* Small accent lights */
+.accent-dot {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: var(--white);
+    border-radius: 50%;
+    box-shadow: 0 0 15px rgba(255,255,255,0.9);
 }
 
 .hero-content {
@@ -234,14 +316,14 @@
 
 .hero-title {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: clamp(2.8rem, 6vw, 4.8rem);
+    font-size: clamp(2.8rem, 6vw, 4.5rem);
     font-weight: 900;
-    color: var(--white);
+    color: var(--black);
     text-transform: uppercase;
     letter-spacing: 2px;
     line-height: 1.05;
     margin-bottom: 16px;
-    text-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
+    text-shadow: none;
     animation: fadeInUp 0.8s ease forwards;
 }
 
@@ -251,13 +333,13 @@
 }
 
 .hero-subtitle {
-    font-size: clamp(0.95rem, 2vw, 1.2rem);
+    font-size: clamp(0.95rem, 2vw, 1.1rem);
     font-weight: 500;
-    color: var(--gray-200);
-    max-width: 600px;
+    color: var(--gray-800);
+    max-width: 540px;
     margin: 0 auto 36px auto;
     line-height: 1.65;
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+    text-shadow: none;
     animation: fadeInUp 0.8s 0.15s ease forwards;
     opacity: 0;
 }
@@ -297,11 +379,11 @@
 .btn-hero-outline {
     padding: 13px 36px;
     background: transparent;
-    color: var(--white);
+    color: var(--text-dark);
     font-family: 'Barlow', sans-serif;
     font-size: 0.95rem;
     font-weight: 600;
-    border: 1.5px solid rgba(255, 255, 255, 0.75);
+    border: 1.5px solid rgba(10, 10, 10, 0.45);
     border-radius: 4px;
     cursor: pointer;
     text-decoration: none;
@@ -310,9 +392,8 @@
 }
 
 .btn-hero-outline:hover {
-    border-color: var(--white);
-    background: rgba(255, 255, 255, 0.15);
-    color: var(--white);
+    border-color: var(--black);
+    background: rgba(10, 10, 10, 0.06);
 }
 
 /* ============================
@@ -353,42 +434,48 @@
 
 .services-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 24px;
-    max-width: 1140px;
+    max-width: 1000px;
     margin: 0 auto;
 }
 
 .service-card {
-    background: var(--white);
-    border: 1px solid var(--gray-200);
-    border-radius: 8px;
-    padding: 36px 28px;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    border-radius: 16px;
     text-align: center;
-    transition: all 0.3s ease;
-    cursor: default;
+    transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+    cursor: pointer;
+    overflow: hidden;
+    position: relative;
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+.service-overlay {
+    background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 50%, transparent 100%);
+    padding: 36px 28px;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    transition: all 0.4s ease;
 }
 
 .service-card:hover {
-    border-color: var(--orange);
-    box-shadow: 0 8px 32px rgba(249,115,22,0.12);
-    transform: translateY(-4px);
+    box-shadow: 0 16px 40px rgba(249, 115, 22, 0.3);
+    transform: translateY(-6px) scale(1.02);
 }
 
-.service-icon {
-    width: 64px;
-    height: 64px;
-    background: var(--gray-100);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 20px auto;
-    transition: background 0.3s ease;
-}
-
-.service-card:hover .service-icon {
-    background: rgba(249,115,22,0.1);
+.service-card:hover .service-overlay {
+    background: linear-gradient(to top, rgba(249,115,22,0.9) 0%, rgba(0,0,0,0.6) 60%, transparent 100%);
 }
 
 .service-icon i {
@@ -398,15 +485,17 @@
 
 .service-name {
     font-family: 'Barlow', sans-serif;
-    font-size: 1.05rem;
-    font-weight: 700;
-    color: var(--text-dark);
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: var(--white);
     margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
 .service-desc {
-    font-size: 0.9rem;
-    color: var(--text-muted);
+    font-size: 0.95rem;
+    color: rgba(255, 255, 255, 0.85);
     line-height: 1.65;
 }
 
@@ -414,35 +503,9 @@
    PRICING SECTION
 ============================ */
 .section-pricing {
-    background: var(--gray-50);
+    background: linear-gradient(135deg, var(--gray-50) 0%, rgba(249,115,22,0.03) 100%);
     padding: 80px 48px;
     border-top: 1px solid var(--gray-200);
-}
-
-/* 4 sport selector styles */
-.pricing-sport-selector {
-    display: flex;
-    justify-content: center;
-    gap: 16px;
-    margin-bottom: 48px;
-    flex-wrap: wrap;
-}
-
-.pricing-sport-btn {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
-    overflow: hidden;
-}
-
-.pricing-sport-btn:hover {
-    transform: translateY(-2px);
-    border-color: var(--orange-light) !important;
-    box-shadow: 0 10px 20px rgba(0,0,0,0.05);
-}
-
-.pricing-sport-btn.active:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 24px rgba(249, 115, 22, 0.3) !important;
 }
 
 .pricing-grid {
@@ -455,17 +518,20 @@
 }
 
 .pricing-card {
-    background: var(--white);
-    border: 1px solid var(--gray-200);
-    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-radius: 16px;
     padding: 36px 28px;
     position: relative;
-    transition: all 0.3s ease;
+    transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
 }
 
 .pricing-card:hover {
-    box-shadow: 0 8px 32px rgba(0,0,0,0.08);
-    transform: translateY(-2px);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+    transform: translateY(-6px) scale(1.02);
 }
 
 .pricing-card.featured {
@@ -806,7 +872,6 @@
     letter-spacing: 1px;
 }
 
-.setup-field input[type="text"],
 .setup-field input[type="number"],
 .setup-field input[type="date"] {
     width: 100%;
@@ -821,38 +886,11 @@
     background: var(--gray-50);
 }
 
-.setup-field input[type="text"]:focus,
 .setup-field input[type="number"]:focus,
 .setup-field input[type="date"]:focus {
     border-color: var(--orange);
     background: var(--white);
     box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
-}
-
-/* Floating Close Button for Modals */
-.modal-close-btn {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    background: transparent;
-    border: none;
-    font-size: 1.3rem;
-    color: var(--gray-400);
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    z-index: 10;
-}
-
-.modal-close-btn:hover {
-    background: var(--gray-100);
-    color: var(--orange);
-    transform: rotate(90deg);
 }
 
 /* Gender Selection Buttons */
@@ -1087,69 +1125,3 @@
 .setup-modal-card::-webkit-scrollbar-thumb:hover {
     background: var(--gray-400);
 }
-
-/* --- Guest AI Consultation Styles & Keyframes --- */
-.ai-pulse-loader {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 90px;
-    height: 90px;
-    border-radius: 50%;
-    background: #fff6ed;
-    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4);
-    animation: pulse-orange 1.8s infinite;
-}
-
-@keyframes pulse-orange {
-    0% {
-        transform: scale(0.95);
-        box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.7);
-    }
-    70% {
-        transform: scale(1);
-        box-shadow: 0 0 0 15px rgba(249, 115, 22, 0);
-    }
-    100% {
-        transform: scale(0.95);
-        box-shadow: 0 0 0 0 rgba(249, 115, 22, 0);
-    }
-}
-
-/* Tablet view adjustment for services grid */
-@media (max-width: 1100px) and (min-width: 901px) {
-    .services-grid {
-        grid-template-columns: repeat(2, 1fr);
-        max-width: 680px;
-    }
-}
-
-/* ==========================================
-   INTERACTIVE PRICING FLOW STYLES (SIMPLIFIED)
-   ========================================== */
-/* Centered single plan for Mixed sport */
-.pricing-grid.single-plan {
-    display: flex;
-    justify-content: center;
-    max-width: 420px;
-    margin: 0 auto;
-}
-
-.pricing-grid.single-plan .pricing-card {
-    width: 100%;
-    transform: scale(1.02);
-    box-shadow: 0 16px 48px rgba(249, 115, 22, 0.12);
-    border: 2px solid var(--orange);
-}
-
-.pricing-grid.single-plan .pricing-card:hover {
-    transform: scale(1.04) translateY(-4px);
-    box-shadow: 0 20px 56px rgba(249, 115, 22, 0.22);
-}
-
-.pricing-grid-wrapper {
-    transition: min-height 0.3s ease;
-    width: 100%;
-}
-
-

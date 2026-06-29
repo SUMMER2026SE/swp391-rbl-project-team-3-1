@@ -13,14 +13,22 @@ router.put('/admin/users/:id/status', dashboardController.toggleUserStatus);
 router.get('/admin/trainers', dashboardController.getAdminTrainers);
 router.post('/admin/trainers', dashboardController.createTrainer);
 router.get('/admin/plans', dashboardController.getAdminPlans);
+router.post('/admin/plans', dashboardController.createAdminPlan);
 router.put('/admin/plans/:id', dashboardController.updateAdminPlan);
 router.get('/admin/appointments', dashboardController.getAdminAppointments);
 router.put('/admin/appointments/:id/cancel', dashboardController.cancelAdminAppointment);
 router.get('/api/admin/services', dashboardController.getAdminServices); // backward compatibility
 router.get('/admin/services', dashboardController.getAdminServices);
+router.post('/admin/services', dashboardController.createAdminService);
 router.put('/admin/services/:id', dashboardController.toggleAdminService);
+router.put('/admin/services/:id/update', dashboardController.updateAdminService);
 router.get('/admin/complaints', dashboardController.getAdminComplaints);
 router.put('/admin/complaints/:id/resolve', dashboardController.resolveAdminComplaint);
+
+// Homepage Config routes
+const uploadHomepageImages = require('../middlewares/uploadHomepageMiddleware');
+router.get('/admin/homepage-config', dashboardController.getHomepageConfig);
+router.put('/admin/homepage-config', uploadHomepageImages.single('image'), dashboardController.updateHomepageConfig);
 
 // --- TRAINER DASHBOARD ROUTES ---
 router.get('/trainer/members', dashboardController.getTrainerMembers);

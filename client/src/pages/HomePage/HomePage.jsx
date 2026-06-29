@@ -1,146 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import './HomePage.css';
 
-const PRICING_DATA = {
-  Gym: [
-    {
-      name: 'Gói 3 Tháng (Gym)',
-      price: '5.000đ',
-      period: '/3 tháng',
-      features: [
-        { text: 'Truy cập đầy đủ thiết bị Gym', active: true },
-        { text: 'Tủ đồ cá nhân', active: true },
-        { text: 'Miễn phí giữ xe', active: true },
-        { text: 'Chưa bao gồm lớp Yoga/Boxing', active: false },
-      ],
-      planKey: 'Gym 3 Tháng',
-    },
-    {
-      name: 'Gói 6 Tháng (Gym)',
-      price: '10.000đ',
-      period: '/6 tháng',
-      features: [
-        { text: 'Truy cập đầy đủ thiết bị Gym', active: true },
-        { text: 'Tủ đồ VIP riêng biệt', active: true },
-        { text: 'Miễn phí giữ xe', active: true },
-        { text: 'Hỗ trợ đo chỉ số Inbody miễn phí', active: true },
-        { text: 'Ưu tiên đặt lịch HLV', active: true },
-      ],
-      planKey: 'Gym 6 Tháng',
-      featured: true,
-    },
-    {
-      name: 'Gói 12 Tháng (Gym)',
-      price: '15.000đ',
-      period: '/năm',
-      features: [
-        { text: 'Toàn bộ quyền lợi của gói 6 tháng', active: true },
-        { text: 'Tặng 1 tháng tập luyện miễn phí', active: true },
-        { text: 'Tặng 2 buổi tập thử với PT riêng', active: true },
-        { text: 'Kiểm tra sức khỏe Inbody định kỳ', active: true },
-      ],
-      planKey: 'Gym 12 Tháng',
-    },
-  ],
-  Yoga: [
-    {
-      name: 'Gói 3 Tháng (Yoga)',
-      price: '5.000đ',
-      period: '/3 tháng',
-      features: [
-        { text: 'Tham gia các lớp Yoga cơ bản', active: true },
-        { text: 'Huấn luyện viên Yoga chuyên nghiệp', active: true },
-        { text: 'Tủ đồ cá nhân', active: true },
-        { text: 'Miễn phí gửi xe', active: true },
-      ],
-      planKey: 'Yoga 3 Tháng',
-    },
-    {
-      name: 'Gói 6 Tháng (Yoga)',
-      price: '10.000đ',
-      period: '/6 tháng',
-      features: [
-        { text: 'Toàn bộ quyền lợi của gói 3 tháng', active: true },
-        { text: 'Lớp Yoga nâng cao & phục hồi', active: true },
-        { text: '1 buổi tư vấn thiền định chuyên sâu', active: true },
-        { text: 'Đo chỉ số cơ thể định kỳ', active: true },
-      ],
-      planKey: 'Yoga 6 Tháng',
-      featured: true,
-    },
-    {
-      name: 'Gói 12 Tháng (Yoga)',
-      price: '15.000đ',
-      period: '/năm',
-      features: [
-        { text: 'Toàn bộ quyền lợi của gói 6 tháng', active: true },
-        { text: 'Tặng thảm tập Yoga cao cấp', active: true },
-        { text: 'Tặng 2 buổi Workshop trị liệu cổ vai gáy', active: true },
-        { text: 'Tặng 1 tháng tập miễn phí', active: true },
-      ],
-      planKey: 'Yoga 12 Tháng',
-    },
-  ],
-  Boxing: [
-    {
-      name: 'Gói 3 Tháng (Boxing)',
-      price: '5.000đ',
-      period: '/3 tháng',
-      features: [
-        { text: 'Tập luyện khu vực bao cát & ring Boxing', active: true },
-        { text: 'Trang bị găng tay & băng quấn', active: true },
-        { text: 'Tủ đồ cá nhân', active: true },
-        { text: 'Miễn phí gửi xe', active: true },
-      ],
-      planKey: 'Boxing 3 Tháng',
-    },
-    {
-      name: 'Gói 6 Tháng (Boxing)',
-      price: '10.000đ',
-      period: '/6 tháng',
-      features: [
-        { text: 'Toàn bộ quyền lợi của gói 3 tháng', active: true },
-        { text: 'Đấu tập đối kháng có bảo hộ', active: true },
-        { text: 'HLV Boxing hướng dẫn kỹ thuật cơ bản', active: true },
-        { text: 'Đo Inbody định kỳ', active: true },
-      ],
-      planKey: 'Boxing 6 Tháng',
-      featured: true,
-    },
-    {
-      name: 'Gói 12 Tháng (Boxing)',
-      price: '15.000đ',
-      period: '/năm',
-      features: [
-        { text: 'Toàn bộ quyền lợi của gói 6 tháng', active: true },
-        { text: 'Tặng găng tay Boxing chính hãng', active: true },
-        { text: 'Tặng 2 buổi tập thử với võ sĩ chuyên nghiệp', active: true },
-        { text: 'Tặng 1 tháng tập miễn phí', active: true },
-      ],
-      planKey: 'Boxing 12 Tháng',
-    },
-  ],
-  Mixed: [
-    {
-      name: 'Premium Toàn Diện 12 Tháng',
-      price: '60.000đ',
-      period: '/năm',
-      features: [
-        { text: 'Sử dụng tất cả dịch vụ Gym, Yoga, Boxing', active: true },
-        { text: 'Đặc quyền VIP đầy đủ nhất hệ thống', active: true },
-        { text: 'Miễn phí đo chỉ số Inbody hàng tháng', active: true },
-        { text: 'Được hỗ trợ bởi Huấn luyện viên chuyên nghiệp', active: true },
-      ],
-      planKey: 'Premium Toàn Diện 12 Tháng',
-      featured: true,
-    },
-  ],
-};
-
 function HomePage() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [userInfo, setUserInfo] = useState(JSON.parse(localStorage.getItem('userInfo') || 'null'));
+
+  const [plans, setPlans] = useState([]);
+  const [services, setServices] = useState([]);
+  const [coreSports, setCoreSports] = useState([]);
 
   // Trạng thái cho bảng thiết lập hồ sơ (Profile Setup Modal)
   const [showSetupModal, setShowSetupModal] = useState(localStorage.getItem('showProfileSetup') === 'true');
@@ -152,21 +20,6 @@ function HomePage() {
   const [setupLevel, setSetupLevel] = useState('Người mới bắt đầu');
   const [setupError, setSetupError] = useState('');
   const [isSavingSetup, setIsSavingSetup] = useState(false);
-
-  // Trạng thái cho Tư vấn AI Guest (Guest AI Consultation)
-  const [showAiModal, setShowAiModal] = useState(false);
-  const [aiName, setAiName] = useState('');
-  const [aiAge, setAiAge] = useState('25');
-  const [aiGender, setAiGender] = useState('Nam');
-  const [aiHeight, setAiHeight] = useState('170');
-  const [aiWeight, setAiWeight] = useState('65');
-  const [aiFitnessGoal, setAiFitnessGoal] = useState('Tăng cơ');
-  const [aiConsultationType, setAiConsultationType] = useState('BMI');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiLoadingStep, setAiLoadingStep] = useState('');
-  const [aiResult, setAiResult] = useState(null);
-  const [aiError, setAiError] = useState('');
-  const [selectedPricingSport, setSelectedPricingSport] = useState('Gym');
 
   useEffect(() => {
     const handleAuthChange = () => {
@@ -193,7 +46,12 @@ function HomePage() {
     };
 
     window.addEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
 
+  useEffect(() => {
     // Scroll reveal animations
     const reveals = document.querySelectorAll('.reveal');
     const observer = new IntersectionObserver(
@@ -209,23 +67,41 @@ function HomePage() {
 
     reveals.forEach((el) => observer.observe(el));
 
-    // Cleanup
     return () => {
-      window.removeEventListener('scroll', handleScroll);
-      observer.disconnect();
+      reveals.forEach(r => observer.unobserve(r));
     };
+  }, [plans, services]); // Depend on dynamic data so observer updates
+
+  useEffect(() => {
+    // Fetch Plans
+    fetch('/api/checkout/plans')
+      .then(res => res.json())
+      .then(data => {
+        if (data.plans) setPlans(data.plans);
+      })
+      .catch(err => console.error('Error fetching plans:', err));
+
+    // Fetch Services
+    fetch('/api/checkout/services')
+      .then(res => res.json())
+      .then(data => {
+        if (data.services) setServices(data.services);
+      })
+      .catch(err => console.error('Error fetching services:', err));
+
+    // Fetch Homepage config
+    fetch('/api/checkout/homepage-config')
+      .then(res => res.json())
+      .then(data => {
+        if (data.coreSports && data.coreSports.length > 0) setCoreSports(data.coreSports);
+      })
+      .catch(err => console.error('Error fetching homepage config:', err));
   }, []);
 
   // Navigate to checkout with selected plan
   const goToCheckout = (planKey) => {
     localStorage.setItem('checkoutPlan', planKey);
     window.history.pushState({}, '', `/checkout?plan=${planKey}`);
-    window.dispatchEvent(new Event('popstate'));
-  };
-
-  // Navigate to service detail page
-  const goToServiceDetail = (serviceKey) => {
-    window.history.pushState({}, '', `/detail/${serviceKey}`);
     window.dispatchEvent(new Event('popstate'));
   };
 
@@ -313,72 +189,6 @@ function HomePage() {
     setShowSetupModal(false);
   };
 
-  const handleGuestAiConsult = async (e) => {
-    e.preventDefault();
-    setAiError('');
-    setAiResult(null);
-    setAiLoading(true);
-
-    if (!aiHeight || Number(aiHeight) <= 0) {
-      setAiError('Chiều cao không hợp lệ!');
-      setAiLoading(false);
-      return;
-    }
-    if (!aiWeight || Number(aiWeight) <= 0) {
-      setAiError('Cân nặng không hợp lệ!');
-      setAiLoading(false);
-      return;
-    }
-
-    const steps = [
-      'Đang kết nối máy chủ tư vấn...',
-      'AI đang tính toán chỉ số BMI thể hình...',
-      'AI đang phân tích mục tiêu & thể chất...',
-      'Đang tổng hợp lộ trình khuyến nghị...'
-    ];
-
-    let currentStepIdx = 0;
-    setAiLoadingStep(steps[0]);
-    const stepInterval = setInterval(() => {
-      currentStepIdx++;
-      if (currentStepIdx < steps.length) {
-        setAiLoadingStep(steps[currentStepIdx]);
-      }
-    }, 1200);
-
-    try {
-      const res = await fetch('/api/ai/consult', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          guestName: aiName || 'Khách truy cập',
-          age: aiAge,
-          gender: aiGender,
-          height: aiHeight,
-          weight: aiWeight,
-          fitnessGoal: aiFitnessGoal,
-          consultationType: aiConsultationType
-        })
-      });
-
-      clearInterval(stepInterval);
-      const data = await res.json();
-      setAiLoading(false);
-
-      if (res.ok) {
-        setAiResult(data.consultation);
-      } else {
-        setAiError(data.message || 'Yêu cầu tư vấn AI thất bại!');
-      }
-    } catch (err) {
-      clearInterval(stepInterval);
-      setAiLoading(false);
-      setAiError('Không thể kết nối đến máy chủ AI!');
-    }
-  };
-
   return (
     <div className="homepage-container">
       {/* ========================================== */}
@@ -412,8 +222,8 @@ function HomePage() {
             </a>
           </li>
           <li>
-            <a href="#trainers" onClick={(e) => handleAnchorClick(e, '#trainers')}>
-              Huấn Luyện Viên
+            <a href="#addons" onClick={(e) => handleAnchorClick(e, '#addons')}>
+              Dịch Vụ Bổ Sung & PT
             </a>
           </li>
           {token && (
@@ -488,7 +298,25 @@ function HomePage() {
       {/* HERO SECTION                               */}
       {/* ========================================== */}
       <section className="hero" id="home">
-        <div className="hero-bg"></div>
+        <div className="hero-bg">
+          <div className="hero-gym-visual">
+            <div className="corridor">
+              {/* Ceiling bar (orange horizontal accent) */}
+              <div className="ceiling-bar"></div>
+              {/* White ceiling strip lights */}
+              <div className="ceiling-light ceiling-light-1"></div>
+              <div className="ceiling-light ceiling-light-2"></div>
+              <div className="ceiling-light ceiling-light-3"></div>
+              {/* Small accent dots */}
+              <div className="accent-dot" style={{ left: '35%', top: '14%' }}></div>
+              <div className="accent-dot" style={{ left: '55%', top: '14%' }}></div>
+              <div className="accent-dot" style={{ left: '50%', top: '20%' }}></div>
+            </div>
+            {/* Orange vertical accent pillars */}
+            <div className="pillar-left"></div>
+            <div className="pillar-right"></div>
+          </div>
+        </div>
 
         <div className="hero-content">
           <h1 className="hero-title">Bứt Phá Giới Hạn</h1>
@@ -496,19 +324,11 @@ function HomePage() {
             Hệ thống quản lý phòng gym thông minh, tối ưu hóa quy trình tập luyện và trải nghiệm khách hàng đẳng cấp.
           </p>
           <div className="hero-actions">
-            <a
-              href="#pricing"
-              onClick={(e) => handleAnchorClick(e, '#pricing')}
-              className="btn-hero-primary"
-            >
-              MUA GÓI TẬP
+            <a href="#pricing" onClick={(e) => handleAnchorClick(e, '#pricing')} className="btn-hero-primary">
+              Xem Gói Tập
             </a>
-            <a
-              href="#services"
-              onClick={(e) => handleAnchorClick(e, '#services')}
-              className="btn-hero-outline"
-            >
-              TÌM HIỂU THÊM
+            <a href="#services" onClick={(e) => handleAnchorClick(e, '#services')} className="btn-hero-outline">
+              Tìm Hiểu Thêm
             </a>
           </div>
         </div>
@@ -523,65 +343,16 @@ function HomePage() {
         </div>
 
         <div className="services-grid">
-          <div 
-            className="service-card reveal reveal-delay-1"
-            onClick={() => goToServiceDetail('gym')}
-            style={{ cursor: 'pointer' }}
-          >
-            <div className="service-icon">
-              <i className="fas fa-dumbbell"></i>
+          {coreSports.length > 0 ? coreSports.map((sport, index) => (
+            <div key={index} className={`service-card reveal reveal-delay-${(index % 3) + 1}`} style={{ backgroundImage: `url('${sport.image}')` }}>
+              <div className="service-overlay">
+                <h3 className="service-name">{sport.name}</h3>
+                <p className="service-desc">{sport.description}</p>
+              </div>
             </div>
-            <h3 className="service-name">Gym</h3>
-            <p className="service-desc">
-              Trang thiết bị hiện đại, không gian rộng rãi đáp ứng mọi nhu cầu tập luyện thể hình.
-            </p>
-            <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--orange)', marginTop: '8.5px', display: 'inline-block' }}>XEM CHI TIẾT →</span>
-          </div>
-
-          <div 
-            className="service-card reveal reveal-delay-2"
-            onClick={() => goToServiceDetail('yoga')}
-            style={{ cursor: 'pointer' }}
-          >
-            <div className="service-icon">
-              <i className="fas fa-person-praying"></i>
-            </div>
-            <h3 className="service-name">Yoga</h3>
-            <p className="service-desc">
-              Lớp học đa dạng từ cơ bản đến nâng cao, giúp cân bằng thân – tâm – trí.
-            </p>
-            <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--orange)', marginTop: '8.5px', display: 'inline-block' }}>XEM CHI TIẾT →</span>
-          </div>
-
-          <div 
-            className="service-card reveal reveal-delay-3"
-            onClick={() => goToServiceDetail('pt')}
-            style={{ cursor: 'pointer' }}
-          >
-            <div className="service-icon">
-              <i className="fas fa-user-tie"></i>
-            </div>
-            <h3 className="service-name">PT Cá Nhân</h3>
-            <p className="service-desc">
-              Lộ trình tập luyện thiết kế riêng biệt, đồng hành cùng huấn luyện viên chuyên nghiệp.
-            </p>
-            <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--orange)', marginTop: '8.5px', display: 'inline-block' }}>XEM CHI TIẾT →</span>
-          </div>
-
-          <div 
-            className="service-card reveal reveal-delay-4"
-            onClick={() => setShowAiModal(true)}
-            style={{ cursor: 'pointer', border: '1px dashed var(--orange)' }}
-          >
-            <div className="service-icon" style={{ backgroundColor: '#fff8f1', color: 'var(--orange)' }}>
-              <i className="fas fa-robot"></i>
-            </div>
-            <h3 className="service-name">Trợ lý Tư vấn AI</h3>
-            <p className="service-desc">
-              Nhập chỉ số thể chất của bạn để nhận phân tích BMI và lời khuyên tập luyện tức thời từ AI.
-            </p>
-            <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--orange)', marginTop: '8px', display: 'inline-block' }}>DÙNG THỬ NGAY →</span>
-          </div>
+          )) : (
+            <div style={{ textAlign: 'center', width: '100%', padding: '40px' }}>Đang tải dịch vụ...</div>
+          )}
         </div>
       </section>
 
@@ -589,93 +360,92 @@ function HomePage() {
       {/* PRICING SECTION                            */}
       {/* ========================================== */}
       <section className="section-pricing" id="pricing">
-        <div className="section-header reveal visible">
+        <div className="section-header reveal">
           <h2 className="section-title">Gói Tập</h2>
+          <p style={{textAlign: 'center', marginTop: '10px', color: '#64748b'}}>Khám phá các lựa chọn phù hợp nhất cho mục tiêu của bạn.</p>
         </div>
 
-        {/* 4 buttons for the 4 main disciplines */}
-        <div className="pricing-sport-selector" style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginBottom: '40px', flexWrap: 'wrap', padding: '0 20px' }}>
-          {[
-            { id: 'Gym', label: 'Gym', icon: 'fa-solid fa-dumbbell', desc: 'Sức mạnh & Cơ bắp' },
-            { id: 'Yoga', label: 'Yoga', icon: 'fa-solid fa-person-praying', desc: 'Dẻo dai & Tĩnh lặng' },
-            { id: 'Boxing', label: 'Boxing', icon: 'fa-solid fa-hand-fist', desc: 'Phản xạ & Tốc độ' },
-            { id: 'Mixed', label: 'Mixed', icon: 'fa-solid fa-star', desc: 'Toàn diện & Cao cấp' },
-          ].map((sport) => {
-            const isActive = selectedPricingSport === sport.id;
-            return (
-              <button
-                key={sport.id}
-                type="button"
-                className={`pricing-sport-btn ${isActive ? 'active' : ''}`}
-                style={{
-                  background: isActive ? 'linear-gradient(135deg, var(--orange) 0%, #f97316 100%)' : '#ffffff',
-                  border: isActive ? '1px solid transparent' : '1px solid #e2e8f0',
-                  color: isActive ? '#ffffff' : 'var(--text-dark)',
-                  padding: '16px 24px',
-                  borderRadius: '16px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  minWidth: '200px',
-                  boxShadow: isActive ? '0 10px 20px rgba(249, 115, 22, 0.2)' : '0 4px 10px rgba(0, 0, 0, 0.02)',
-                  transition: 'all 0.3s ease',
-                  textAlign: 'left'
-                }}
-                onClick={() => setSelectedPricingSport(sport.id)}
-              >
-                <div style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '10px',
-                  background: isActive ? 'rgba(255,255,255,0.2)' : '#fff8f1',
-                  color: isActive ? '#ffffff' : 'var(--orange)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '1.2rem',
-                  transition: 'all 0.3s ease'
-                }}>
-                  <i className={sport.icon}></i>
-                </div>
-                <div>
-                  <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{sport.label}</div>
-                  <div style={{ fontSize: '0.75rem', opacity: isActive ? 0.9 : 0.6, marginTop: '2px', color: isActive ? '#ffffff' : '#64748b' }}>{sport.desc}</div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        <div key={selectedPricingSport} className="pricing-grid-wrapper animate-fade-in" style={{ minHeight: '480px' }}>
-          <div className={`pricing-grid ${selectedPricingSport === 'Mixed' ? 'single-plan' : ''}`}>
-            {PRICING_DATA[selectedPricingSport]?.map((plan, idx) => (
-              <div key={idx} className={`pricing-card reveal visible ${plan.featured ? 'featured' : ''}`} style={{ transitionDelay: `${idx * 0.1}s` }}>
-                {plan.featured && <div className="popular-badge">Phổ biến nhất</div>}
-                <p className={`plan-name ${plan.featured ? 'featured-name' : ''}`}>{plan.name}</p>
-                <div className="plan-price">
-                  <div className="price-amount">
-                    {plan.price}<span className="price-period">{plan.period}</span>
+        {(coreSports.length > 0 ? coreSports.map(s => s.name) : ['Gym', 'Yoga', 'Boxing']).map((sport) => {
+          const sportPlans = plans.filter(p => p.sportType === sport).sort((a,b) => a.durationMonths - b.durationMonths);
+          if (sportPlans.length === 0) return null;
+          return (
+            <div key={sport} style={{ marginBottom: '60px' }}>
+              <h3 style={{ textAlign: 'center', marginBottom: '30px', fontFamily: 'Barlow Condensed', fontSize: '2rem', color: 'var(--orange)' }}>{sport}</h3>
+              <div className="pricing-grid">
+                {sportPlans.map((plan, index) => (
+                  <div key={plan.planId} className={`pricing-card reveal reveal-delay-${(index % 3) + 1} ${plan.durationMonths === 6 ? 'featured' : ''}`}>
+                    {plan.durationMonths === 6 && <div className="popular-badge">Phổ biến nhất</div>}
+                    <p className={`plan-name ${plan.durationMonths === 6 ? 'featured-name' : ''}`}>{plan.planName}</p>
+                    <div className="plan-price">
+                      <div className="price-amount">
+                        {plan.price.toLocaleString('vi-VN')}đ<span className="price-period">/{plan.durationMonths} tháng</span>
+                      </div>
+                    </div>
+                    <div className="plan-divider"></div>
+                    <ul className="plan-features">
+                      <li><i className="fas fa-check-circle"></i> Truy cập bộ môn: <strong>{plan.sportType}</strong></li>
+                      <li><i className="fas fa-check-circle"></i> {plan.description}</li>
+                    </ul>
+                    <button
+                      onClick={() => goToCheckout(plan.planId)}
+                      className={`btn-plan ${plan.durationMonths === 6 ? 'btn-featured' : ''}`}
+                    >
+                      Mua Ngay
+                    </button>
                   </div>
-                </div>
-                <div className="plan-divider"></div>
-                <ul className="plan-features">
-                  {plan.features.map((feat, fidx) => (
-                    <li key={fidx} className={feat.active ? '' : 'disabled'}>
-                      <i className={feat.active ? 'fas fa-check-circle' : 'fas fa-circle'}></i> {feat.text}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  onClick={() => goToCheckout(plan.planKey)}
-                  className={`btn-plan ${plan.featured ? 'btn-featured' : ''}`}
-                >
-                  {plan.featured ? 'MUA NGAY' : 'Mua Ngay'}
-                </button>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          );
+        })}
+        {plans.length === 0 && <p style={{textAlign: 'center', width: '100%'}}>Đang tải gói tập...</p>}
+      </section>
+
+      {/* ========================================== */}
+      {/* ADD-ON SERVICES SECTION                    */}
+      {/* ========================================== */}
+      <section className="section-pricing" id="addons" style={{ backgroundColor: '#f1f5f9' }}>
+        <div className="section-header reveal">
+          <h2 className="section-title">Dịch Vụ Bổ Sung & Thuê PT</h2>
+          <p style={{textAlign: 'center', marginTop: '10px', color: '#64748b'}}>Nâng tầm trải nghiệm tập luyện của bạn với các dịch vụ chuyên sâu.</p>
+        </div>
+
+        <div className="pricing-grid">
+          {services.sort((a,b) => {
+            const isAPT = a.serviceName.includes('PT') ? -1 : 1;
+            const isBPT = b.serviceName.includes('PT') ? -1 : 1;
+            if (isAPT !== isBPT) return isAPT - isBPT;
+            return a.price - b.price;
+          }).map((srv, index) => (
+            <div key={srv.serviceId} className={`pricing-card reveal reveal-delay-${(index % 3) + 1}`} style={{ borderTop: `4px solid ${srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6'}` }}>
+              <p className="plan-name" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6', fontSize: '1.2rem' }}>{srv.serviceName}</p>
+              <div className="plan-price" style={{ marginTop: '10px' }}>
+                <div className="price-amount" style={{ fontSize: '1.6rem' }}>
+                  {srv.price.toLocaleString('vi-VN')}đ
+                </div>
+              </div>
+              <div className="plan-divider" style={{ margin: '15px 0' }}></div>
+              <ul className="plan-features" style={{ flexGrow: 1 }}>
+                <li><i className="fas fa-check-circle" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6' }}></i> Phân loại: <strong>{srv.sportType || 'Tiện ích'}</strong></li>
+                <li><i className="fas fa-check-circle" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6' }}></i> {srv.description}</li>
+              </ul>
+              {srv.serviceName.includes('PT') && (
+                <button
+                  onClick={() => {
+                    window.history.pushState({}, '', '/pt-details');
+                    window.dispatchEvent(new Event('popstate'));
+                  }}
+                  className="btn-plan"
+                  style={{ marginTop: '20px', borderColor: '#f59e0b', color: '#f59e0b' }}
+                  onMouseEnter={(e) => { e.target.style.backgroundColor = '#f59e0b'; e.target.style.color = 'white'; }}
+                  onMouseLeave={(e) => { e.target.style.backgroundColor = 'transparent'; e.target.style.color = '#f59e0b'; }}
+                >
+                  Xem Chi Tiết PT
+                </button>
+              )}
+            </div>
+          ))}
+          {services.length === 0 && <p style={{textAlign: 'center', width: '100%'}}>Đang tải dịch vụ...</p>}
         </div>
       </section>
 
@@ -699,15 +469,6 @@ function HomePage() {
       {showSetupModal && (
         <div className="setup-modal-overlay">
           <div className="setup-modal-card animate-slide-up">
-            <button 
-              type="button" 
-              className="modal-close-btn" 
-              onClick={handleSetupSkip}
-              disabled={isSavingSetup}
-              title="Đóng"
-            >
-              <i className="fa-solid fa-xmark"></i>
-            </button>
             
             {/* Steps indicator */}
             <div className="setup-step-indicator">
@@ -871,197 +632,6 @@ function HomePage() {
                 BỎ QUA, THIẾT LẬP SAU
               </button>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* GUEST AI CONSULTATION MODAL OVERLAY */}
-      {showAiModal && (
-        <div className="setup-modal-overlay">
-          <div className="setup-modal-card animate-slide-up" style={{ maxWidth: '650px' }}>
-            <button 
-              type="button" 
-              className="modal-close-btn" 
-              onClick={() => { setShowAiModal(false); setAiResult(null); setAiError(''); }}
-              title="Đóng"
-            >
-              <i className="fa-solid fa-xmark"></i>
-            </button>
-            
-            {/* Steps indicator */}
-            <div className="setup-step-indicator" style={{ background: '#fff7ed', color: 'var(--orange)' }}>
-              TRỢ LÝ SỨC KHỎE FX AI
-            </div>
-
-            {/* Header */}
-            <h2 className="setup-modal-title">Tư vấn Sức khỏe AI</h2>
-            <p className="setup-modal-subtitle">
-              Nhập chỉ số thể chất của bạn để nhận phân tích BMI và lời khuyên tập luyện tức thì từ trí tuệ nhân tạo
-            </p>
-
-            {aiError && (
-              <div className="setup-alert-error animate-fade-in" style={{ marginBottom: '16px' }}>
-                <i className="fa-solid fa-circle-exclamation"></i>
-                <span>{aiError}</span>
-              </div>
-            )}
-
-            {aiLoading && (
-              <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                <div className="ai-pulse-loader" style={{ display: 'inline-flex', alignItems: 'center', justify: 'center', width: '90px', height: '90px', borderRadius: '50%', background: '#fff6ed', animation: 'pulse-orange 1.8s infinite', margin: '0 auto' }}>
-                  <i className="fa-solid fa-robot fa-bounce" style={{ fontSize: '3rem', color: 'var(--orange)' }}></i>
-                </div>
-                <h4 style={{ marginTop: '20px', color: '#1e293b' }}>{aiLoadingStep}</h4>
-                <p style={{ color: '#94a3b8', fontSize: '0.86rem', marginTop: '8px' }}>Quá trình phân tích chỉ số có thể mất vài giây...</p>
-              </div>
-            )}
-
-            {!aiLoading && !aiResult && (
-              <form onSubmit={handleGuestAiConsult} className="setup-form">
-                
-                {/* Row for Name & Age */}
-                <div className="setup-form-row">
-                  <div className="setup-field">
-                    <label>HỌ VÀ TÊN</label>
-                    <input 
-                      type="text" 
-                      placeholder="Nguyễn Văn A" 
-                      value={aiName} 
-                      onChange={(e) => setAiName(e.target.value)} 
-                    />
-                  </div>
-                  <div className="setup-field">
-                    <label>TUỔI (NĂM)</label>
-                    <input 
-                      type="number" 
-                      placeholder="25" 
-                      value={aiAge} 
-                      onChange={(e) => setAiAge(e.target.value)} 
-                      required 
-                    />
-                  </div>
-                </div>
-
-                {/* Row for Gender & Type */}
-                <div className="setup-form-row">
-                  <div className="setup-field">
-                    <label>GIỚI TÍNH</label>
-                    <select 
-                      className="member-form-select" 
-                      value={aiGender} 
-                      onChange={(e) => setAiGender(e.target.value)}
-                      style={{ height: '48px', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0 16px', background: '#f8fafc', fontWeight: '600', width: '100%' }}
-                    >
-                      <option value="Nam">Nam</option>
-                      <option value="Nữ">Nữ</option>
-                      <option value="Khác">Khác</option>
-                    </select>
-                  </div>
-                  <div className="setup-field">
-                    <label>PHƯƠNG THỨC TƯ VẤN</label>
-                    <select 
-                      className="member-form-select" 
-                      value={aiConsultationType} 
-                      onChange={(e) => setAiConsultationType(e.target.value)}
-                      style={{ height: '48px', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0 16px', background: '#f8fafc', fontWeight: '600', width: '100%' }}
-                    >
-                      <option value="BMI">Chỉ số BMI thể chất</option>
-                      <option value="General Fitness">Luyện tập thể hình</option>
-                      <option value="Weight Loss">Kế hoạch giảm mỡ</option>
-                      <option value="Muscle Gain">Kế hoạch tăng cơ</option>
-                      <option value="Relaxation">Yoga & Phục hồi</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Row for Height & Weight */}
-                <div className="setup-form-row">
-                  <div className="setup-field">
-                    <label>CHIỀU CAO (CM)</label>
-                    <input 
-                      type="number" 
-                      placeholder="170" 
-                      value={aiHeight} 
-                      onChange={(e) => setAiHeight(e.target.value)} 
-                      required 
-                    />
-                  </div>
-                  <div className="setup-field">
-                    <label>CÂN NẶNG (KG)</label>
-                    <input 
-                      type="number" 
-                      placeholder="65" 
-                      value={aiWeight} 
-                      onChange={(e) => setAiWeight(e.target.value)} 
-                      required 
-                    />
-                  </div>
-                </div>
-
-                <div className="setup-field">
-                  <label>MỤC TIÊU LUYỆN TẬP</label>
-                  <select 
-                    className="member-form-select" 
-                    value={aiFitnessGoal} 
-                    onChange={(e) => setAiFitnessGoal(e.target.value)}
-                    style={{ height: '48px', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0 16px', background: '#f8fafc', fontWeight: '600', width: '100%' }}
-                  >
-                    <option value="Giảm cân">Giảm cân</option>
-                    <option value="Tăng cơ">Tăng cơ</option>
-                    <option value="Cải thiện sức bền">Cải thiện sức bền</option>
-                    <option value="Linh hoạt & Dẻo dai">Linh hoạt & Dẻo dai</option>
-                    <option value="Sức khỏe tổng thể">Sức khỏe tổng thể</option>
-                  </select>
-                </div>
-
-                <button type="submit" className="setup-submit-btn" style={{ marginBottom: '10px' }}>
-                  NHẬN TƯ VẤN SỨC KHỎE
-                </button>
-              </form>
-            )}
-
-            {aiResult && !aiLoading && (
-              <div className="ai-results-wrapper animate-slide-up" style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '8px', textAlign: 'left' }}>
-                
-                {/* BMI display card */}
-                <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                  <h4 style={{ color: '#64748b', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase' }}>CHỈ SỐ BMI CỦA BẠN</h4>
-                  <div style={{ fontSize: '2.5rem', fontWeight: '900', color: 'var(--orange)', marginTop: '8px' }}>{aiResult.bmi}</div>
-                  <div style={{ fontSize: '0.86rem', color: '#475569', fontWeight: '700', marginTop: '4px' }}>
-                    ({aiResult.weight}kg / {aiResult.height}cm)
-                  </div>
-                </div>
-
-                <div className="member-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginTop: '16px' }}>
-                  <div className="member-stat-card" style={{ borderLeft: '4px solid var(--orange)', padding: '16px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                    <span style={{ fontSize: '0.74rem', color: '#94a3b8', fontWeight: 'bold' }}>MÔN TẬP GỢI Ý</span>
-                    <h4 style={{ fontSize: '1.1rem', marginTop: '6px', color: '#1e293b' }}>{aiResult.recommended_sport}</h4>
-                  </div>
-                  <div className="member-stat-card" style={{ borderLeft: '4px solid #10b981', padding: '16px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                    <span style={{ fontSize: '0.74rem', color: '#94a3b8', fontWeight: 'bold' }}>GÓI TẬP ĐỀ XUẤT</span>
-                    <h4 style={{ fontSize: '1.1rem', marginTop: '6px', color: '#1e293b' }}>{aiResult.recommended_membership}</h4>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: '16px', padding: '16px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <h4 style={{ fontSize: '0.86rem', color: '#1e293b', fontWeight: 'bold' }}>LỊCH TRÌNH RÈN LUYỆN GỢI Ý</h4>
-                  <p style={{ marginTop: '8px', fontSize: '0.86rem', color: '#ff7a00', fontWeight: '600' }}>{aiResult.recommended_schedule}</p>
-                </div>
-
-                <div style={{ marginTop: '16px', padding: '16px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <h4 style={{ fontSize: '0.86rem', color: '#1e293b', fontWeight: 'bold' }}>TƯ VẤN CHI TIẾT TỪ AI</h4>
-                  <p style={{ marginTop: '8px', fontSize: '0.86rem', color: '#475569', lineHeight: '1.5', textAlign: 'justify' }}>{aiResult.recommendation_detail}</p>
-                </div>
-
-                <button 
-                  onClick={() => setAiResult(null)} 
-                  className="setup-submit-btn" 
-                  style={{ marginTop: '20px', width: '100%' }}
-                >
-                  TƯ VẤN MỚI
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
