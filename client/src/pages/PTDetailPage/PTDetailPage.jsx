@@ -1,24 +1,65 @@
 import React, { useState, useEffect } from 'react';
 import './PTDetailPage.css';
 
+const TIME_SLOTS = [
+  { start: '05:00:00', end: '06:30:00', label: '05:00 - 06:30' },
+  { start: '07:00:00', end: '08:30:00', label: '07:00 - 08:30' },
+  { start: '09:00:00', end: '10:30:00', label: '09:00 - 10:30' },
+  { start: '11:00:00', end: '12:30:00', label: '11:00 - 12:30' },
+  { start: '14:00:00', end: '15:30:00', label: '14:00 - 15:30' },
+  { start: '16:00:00', end: '17:30:00', label: '16:00 - 17:30' },
+  { start: '18:00:00', end: '19:30:00', label: '18:00 - 19:30' },
+  { start: '20:00:00', end: '21:30:00', label: '20:00 - 21:30' },
+];
+
 function PTDetailPage() {
   const [trainers, setTrainers] = useState([]);
   const [selectedPT, setSelectedPT] = useState(null);
+  
+  // Timetable states
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [schedules, setSchedules] = useState([]);
+  const [isLoadingSchedule, setIsLoadingSchedule] = useState(false);
 
   useEffect(() => {
-    // Scroll to top when mounted
     window.scrollTo(0, 0);
-
     fetch('/api/checkout/trainers')
       .then(res => res.json())
       .then(data => {
         if (data.trainers && data.trainers.length > 0) {
           setTrainers(data.trainers);
-          setSelectedPT(data.trainers[0]); // Select first PT by default
+          setSelectedPT(data.trainers[0]);
         }
       })
       .catch(err => console.error('Error fetching trainers:', err));
   }, []);
+
+  useEffect(() => {
+    if (selectedPT) {
+      fetchSchedules();
+    }
+  }, [selectedPT, currentDate]);
+
+  const fetchSchedules = async () => {
+    setIsLoadingSchedule(true);
+    try {
+      // Fetch 1 month around current date just to be safe
+      const start = new Date(currentDate);
+      start.setDate(currentDate.getDate() - 15);
+      const end = new Date(currentDate);
+      end.setDate(currentDate.getDate() + 15);
+      
+      const res = await fetch(`/api/checkout/trainers/${selectedPT.userId}/schedule?startDate=${start.toISOString().split('T')[0]}&endDate=${end.toISOString().split('T')[0]}`);
+      const data = await res.json();
+      if (data.schedules) {
+        setSchedules(data.schedules);
+      }
+    } catch (err) {
+      console.error('Error fetching schedule', err);
+    } finally {
+      setIsLoadingSchedule(false);
+    }
+  };
 
   const goHome = (e) => {
     e.preventDefault();
@@ -26,9 +67,42 @@ function PTDetailPage() {
     window.dispatchEvent(new Event('popstate'));
   };
 
+  const getDaysOfWeek = (date) => {
+    const startOfWeek = new Date(date);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+    startOfWeek.setDate(diff);
+    
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startOfWeek);
+      d.setDate(startOfWeek.getDate() + i);
+      days.push(d);
+    }
+    return days;
+  };
+
+  const handlePrevWeek = () => {
+    const newDate = new Date(currentDate);
+    newDate.setDate(currentDate.getDate() - 7);
+    setCurrentDate(newDate);
+  };
+
+  const handleNextWeek = () => {
+    const newDate = new Date(currentDate);
+    newDate.setDate(currentDate.getDate() + 7);
+    setCurrentDate(newDate);
+  };
+
   if (trainers.length === 0) {
     return <div style={{ padding: '100px', textAlign: 'center' }}>Đang tải thông tin Huấn Luyện Viên...</div>;
   }
+
+  const daysOfWeek = getDaysOfWeek(currentDate);
+
+  const isSlotBooked = (dateStr, startTime) => {
+    return schedules.some(s => s.workingDate === dateStr && s.startTime.startsWith(startTime) && s.status === 'Booked');
+  };
 
   return (
     <div className="pt-detail-container">
@@ -114,45 +188,94 @@ function PTDetailPage() {
               <div className="pt-certificates">
                 <h3><i className="fa-solid fa-certificate" style={{color: 'var(--orange)'}}></i> Bằng cấp & Chứng chỉ</h3>
                 <ul>
-                  <li><i className="fa-solid fa-check"></i> Chứng chỉ NASM Certified Personal Trainer</li>
-                  <li><i className="fa-solid fa-check"></i> Chuyên gia Dinh dưỡng Thể thao (ISSA)</li>
-                  <li><i className="fa-solid fa-check"></i> Sơ cấp cứu y tế CPR/AED</li>
+                  {selectedPT.certifications && selectedPT.certifications.length > 0 ? (
+                    selectedPT.certifications.map(cert => (
+                      <li key={cert.id}><i className="fa-solid fa-check"></i> {cert.name} (Cấp bởi: {cert.issuedBy})</li>
+                    ))
+                  ) : (
+                    <li><i className="fa-solid fa-check"></i> Chứng chỉ cá nhân chuyên nghiệp</li>
+                  )}
                 </ul>
               </div>
 
-              {/* SCHEDULE */}
-              <div className="pt-schedule">
-                <h3><i className="fa-solid fa-calendar-alt" style={{color: '#3b82f6'}}></i> Lịch làm việc</h3>
-                <div className="schedule-grid">
-                  <div className="schedule-item">Thứ 2 - Thứ 6 <br/><span>06:00 - 14:00</span></div>
-                  <div className="schedule-item">Thứ 7 - CN <br/><span>08:00 - 18:00</span></div>
+              {/* SCHEDULE / TIMETABLE */}
+              <div className="pt-schedule" style={{ marginTop: '30px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3><i className="fa-solid fa-calendar-alt" style={{color: '#3b82f6'}}></i> Lịch làm việc (Tham khảo)</h3>
+                  <div className="week-controls" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <button onClick={handlePrevWeek} style={{ cursor: 'pointer', padding: '5px 10px', borderRadius: '4px', border: '1px solid #ccc' }}><i className="fa-solid fa-chevron-left"></i> Tuần trước</button>
+                    <span style={{ fontWeight: 'bold' }}>{daysOfWeek[0].toLocaleDateString('vi-VN')} - {daysOfWeek[6].toLocaleDateString('vi-VN')}</span>
+                    <button onClick={handleNextWeek} style={{ cursor: 'pointer', padding: '5px 10px', borderRadius: '4px', border: '1px solid #ccc' }}>Tuần sau <i className="fa-solid fa-chevron-right"></i></button>
+                  </div>
                 </div>
+                
+                {isLoadingSchedule ? (
+                  <div style={{ padding: '20px', textAlign: 'center' }}>Đang tải lịch...</div>
+                ) : (
+                  <div className="timetable-container" style={{ marginTop: '20px', overflowX: 'auto' }}>
+                    <table className="timetable" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ padding: '10px', border: '1px solid #e2e8f0', background: '#f8fafc' }}>Ca \ Ngày</th>
+                          {daysOfWeek.map((day, idx) => (
+                            <th key={idx} style={{ padding: '10px', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                              {day.toLocaleDateString('vi-VN', { weekday: 'short' })} <br/>
+                              {day.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {TIME_SLOTS.map((slot, sIdx) => (
+                          <tr key={sIdx}>
+                            <td style={{ padding: '10px', border: '1px solid #e2e8f0', fontWeight: 'bold', background: '#f8fafc' }}>{slot.label}</td>
+                            {daysOfWeek.map((day, dIdx) => {
+                              const dateStr = day.toISOString().split('T')[0];
+                              const booked = isSlotBooked(dateStr, slot.start.substring(0,5));
+                              return (
+                                <td key={dIdx} style={{ 
+                                  padding: '10px', 
+                                  border: '1px solid #e2e8f0',
+                                  background: booked ? '#e2e8f0' : '#dcfce7',
+                                  color: booked ? '#64748b' : '#166534',
+                                  cursor: 'default'
+                                }}>
+                                  {booked ? 'Đã Kín' : 'Rảnh'}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
                 <p style={{fontSize: '0.85rem', color: '#64748b', marginTop: '10px'}}>
-                  *Lịch có thể điều chỉnh tùy theo gói đăng ký.
+                  *Màu xanh lá là các ca HLV đang rảnh, bạn có thể chọn HLV này nếu thời gian phù hợp với bạn.
                 </p>
               </div>
             </div>
 
-            {/* BEFORE AND AFTER SECTION */}
+            {/* FEEDBACKS SECTION */}
             <div className="pt-transformations">
-              <h3 className="transform-title">Học Viên Tiêu Biểu (Before & After)</h3>
-              <p className="transform-desc">Kết quả thực tế từ những học viên đã đồng hành cùng {selectedPT.fullName}.</p>
+              <h3 className="transform-title">Học Viên Tiêu Biểu (Feedback)</h3>
+              <p className="transform-desc">Đánh giá thực tế từ những học viên đã đồng hành cùng {selectedPT.fullName}.</p>
               
-              <div className="transform-grid">
-                <div className="transform-card">
-                  <img src="/assets/images/pt_ba_1.png" alt="Before and After 1" />
-                  <div className="transform-info">
-                    <h4>Anh Tuấn - Giảm 12kg mỡ thừa</h4>
-                    <p>Thời gian: 4 tháng</p>
+              <div className="transform-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
+                {(selectedPT.feedbacks || []).map(fb => (
+                  <div key={fb.id} className="transform-card" style={{ display: 'flex', flexDirection: 'column', padding: '20px', background: 'white', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px' }}>
+                      <img src={fb.imageUrl} alt={fb.user} style={{ width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover', marginRight: '15px' }} />
+                      <div>
+                        <h4 style={{ margin: '0 0 5px 0' }}>{fb.user}</h4>
+                        <div style={{ color: '#fbbf24', fontSize: '0.9rem' }}>
+                          {[...Array(fb.rating)].map((_, i) => <i key={i} className="fa-solid fa-star"></i>)}
+                        </div>
+                      </div>
+                    </div>
+                    <p style={{ fontStyle: 'italic', color: '#475569', flex: 1 }}>"{fb.text}"</p>
                   </div>
-                </div>
-                <div className="transform-card">
-                  <img src="/assets/images/pt_ba_2.png" alt="Before and After 2" />
-                  <div className="transform-info">
-                    <h4>Chị Lan - Độ dáng chuẩn fitness</h4>
-                    <p>Thời gian: 6 tháng</p>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 

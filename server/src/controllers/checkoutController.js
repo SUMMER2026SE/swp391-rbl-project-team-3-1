@@ -99,25 +99,83 @@ exports.getTrainers = async (req, res) => {
                     model: models.Trainers,
                     as: 'Trainer',
                     required: false,
-                    attributes: ['trainer_id', 'specialization', 'experience_years', 'bio', 'rating']
+                    attributes: ['trainer_id', 'specialization', 'experience_years', 'bio', 'rating'],
+                    include: [
+                        {
+                            model: models.TrainerCertifications,
+                            as: 'TrainerCertifications',
+                            required: false
+                        }
+                    ]
                 }
             ]
         });
 
         const result = trainers.map(u => ({
             userId: u.user_id,
+            trainerId: u.Trainer?.trainer_id || null,
             fullName: u.full_name,
             avatarUrl: u.avatar_url ? `${req.protocol}://${req.get('host')}${u.avatar_url}` : null,
             specialization: u.Trainer?.specialization || 'Gym tổng hợp',
             experienceYears: u.Trainer?.experience_years || 0,
             bio: u.Trainer?.bio || '',
             rating: u.Trainer?.rating || 4.5,
+            certifications: u.Trainer?.TrainerCertifications?.map(c => ({
+                id: c.certification_id,
+                name: c.certification_name,
+                issuedBy: c.issued_by
+            })) || [],
+            // Mock feedback giả lập image cho PT Details
+            feedbacks: [
+                { id: 1, text: "HLV cực kỳ nhiệt tình, hướng dẫn chi tiết từng động tác!", rating: 5, user: "Học viên A", imageUrl: "https://i.pravatar.cc/150?u=" + u.user_id + "1" },
+                { id: 2, text: "Tôi đã giảm được 5kg sau 2 tháng tập cùng PT này.", rating: 5, user: "Học viên B", imageUrl: "https://i.pravatar.cc/150?u=" + u.user_id + "2" }
+            ]
         }));
 
         return res.status(200).json({ trainers: result });
     } catch (error) {
         console.error('❌ Lỗi lấy danh sách HLV:', error.message);
         return res.status(500).json({ message: 'Lỗi server khi lấy danh sách HLV!', error: error.message });
+    }
+};
+
+// =====================================================
+// 1b. LẤY LỊCH TRÌNH CỦA HLV (PUBLIC)
+// GET /api/checkout/trainers/:trainerId/schedule
+// =====================================================
+exports.getTrainerSchedule = async (req, res) => {
+    try {
+        const { trainerId } = req.params;
+        const { startDate, endDate } = req.query;
+
+        if (!trainerId) {
+            return res.status(400).json({ message: 'Thiếu trainerId!' });
+        }
+
+        const whereCondition = { trainer_id: trainerId };
+        if (startDate && endDate) {
+            whereCondition.working_date = {
+                [require('sequelize').Op.between]: [startDate, endDate]
+            };
+        }
+
+        const schedules = await models.TrainerSchedules.findAll({
+            where: whereCondition,
+            order: [['working_date', 'ASC'], ['start_time', 'ASC']]
+        });
+
+        const result = schedules.map(s => ({
+            scheduleId: s.schedule_id,
+            workingDate: s.working_date,
+            startTime: s.start_time,
+            endTime: s.end_time,
+            status: s.availability_status
+        }));
+
+        return res.status(200).json({ schedules: result });
+    } catch (error) {
+        console.error('❌ Lỗi lấy lịch HLV:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi lấy lịch HLV!', error: error.message });
     }
 };
 
@@ -194,13 +252,19 @@ exports.createPayosPayment = async (req, res) => {
     try {
         const { planId, services = [] } = req.body;
 
-        if (!planId) {
-            return res.status(400).json({ message: 'Vui long chon goi tap!' });
+        if (!planId && (!services || services.length === 0)) {
+            return res.status(400).json({ message: 'Vui lòng chọn gói tập hoặc dịch vụ!' });
         }
 
-        const plan = await models.MembershipPlans.findByPk(planId);
-        if (!plan || plan.status !== 'Active') {
-            return res.status(400).json({ message: 'Goi tap khong ton tai hoac da bi khoa!' });
+        let planAmount = 0;
+        let planName = 'Dich vu tai FXFitness';
+        if (planId) {
+            const plan = await models.MembershipPlans.findByPk(planId);
+            if (!plan || plan.status !== 'Active') {
+                return res.status(400).json({ message: 'Gói tập không tồn tại hoặc đã bị khóa!' });
+            }
+            planAmount = Number(plan.price);
+            planName = plan.plan_name;
         }
 
         let servicesAmount = 0;
@@ -212,7 +276,7 @@ exports.createPayosPayment = async (req, res) => {
             servicesAmount = selectedServicesRecords.reduce((sum, s) => sum + parseFloat(s.price), 0);
         }
 
-        const amount = Math.round(Number(plan.price) + servicesAmount);
+        const amount = Math.round(planAmount + servicesAmount);
         const orderCode = Number(`${Date.now()}${Math.floor(Math.random() * 90 + 10)}`.slice(-12));
         const description = `FXFITNESS ${orderCode}`.slice(0, 25);
         const returnUrl = buildClientUrl(req, `/checkout?payosOrderCode=${orderCode}`);
@@ -224,7 +288,7 @@ exports.createPayosPayment = async (req, res) => {
             buyerName: 'FX Fitness Member',
             items: [
                 {
-                    name: plan.plan_name,
+                    name: planName,
                     quantity: 1,
                     price: amount
                 }
@@ -554,9 +618,9 @@ exports.loggedInCheckout = async (req, res) => {
         const userId = req.user.userId || req.user.id;
         const { planId, trainerId, services = [], payosOrderCode } = req.body;
 
-        if (!planId) {
+        if (!planId && (!services || services.length === 0)) {
             await t.rollback();
-            return res.status(400).json({ message: 'Vui lòng cung cấp gói tập!' });
+            return res.status(400).json({ message: 'Vui lòng chọn gói tập hoặc dịch vụ!' });
         }
 
         // 1. Check if user exists
@@ -567,10 +631,15 @@ exports.loggedInCheckout = async (req, res) => {
         }
 
         // 2. Find plan details
-        const plan = await models.MembershipPlans.findByPk(planId);
-        if (!plan || plan.status !== 'Active') {
-            await t.rollback();
-            return res.status(400).json({ message: 'Gói tập không tồn tại hoặc đã bị khóa!' });
+        let plan = null;
+        let planAmount = 0;
+        if (planId) {
+            plan = await models.MembershipPlans.findByPk(planId);
+            if (!plan || plan.status !== 'Active') {
+                await t.rollback();
+                return res.status(400).json({ message: 'Gói tập không tồn tại hoặc đã bị khóa!' });
+            }
+            planAmount = getPlanPrice(plan);
         }
 
         let servicesAmount = 0;
@@ -582,7 +651,7 @@ exports.loggedInCheckout = async (req, res) => {
             servicesAmount = selectedServicesRecords.reduce((sum, s) => sum + parseFloat(s.price), 0);
         }
 
-        const amount = getPlanPrice(plan) + servicesAmount;
+        const amount = planAmount + servicesAmount;
         const payosPayment = await ensurePayosPaid(payosOrderCode, amount);
 
         // 3. Resolve trainer if selected
@@ -607,42 +676,83 @@ exports.loggedInCheckout = async (req, res) => {
             }, { transaction: t });
         }
 
-        // 5. Calculate membership start and end date
-        const startDate = new Date();
-        const durationMonths = parseInt(plan.duration_months) || 1;
-        const endDate = new Date();
-        endDate.setMonth(endDate.getMonth() + durationMonths);
+        // 5. Calculate membership start and end date with STACKING
+        if (plan) {
+            const activeMembership = await models.MemberMemberships.findOne({
+                where: { member_id: member.member_id, membership_status: 'Active' },
+                include: [
+                    {
+                        model: models.MembershipPlans,
+                        as: 'membership_plan',
+                        where: { sport_type: plan.sport_type }
+                    }
+                ],
+                order: [['end_date', 'DESC']],
+                transaction: t
+            });
 
-        // 6. Create MemberMembership
-        await models.MemberMemberships.create({
-            member_id: member.member_id,
-            membership_plan_id: plan.membership_plan_id,
-            start_date: formatDateToYYYYMMDD(startDate),
-            end_date: formatDateToYYYYMMDD(endDate),
-            membership_status: 'Active'
-        }, { transaction: t });
+            const durationMonths = parseInt(plan.duration_months) || 1;
 
-        // 7. Record Payment
+            if (activeMembership) {
+                // Stack: extend end_date
+                const newEndDate = new Date(activeMembership.end_date);
+                newEndDate.setMonth(newEndDate.getMonth() + durationMonths);
+                await activeMembership.update({
+                    end_date: formatDateToYYYYMMDD(newEndDate)
+                }, { transaction: t });
+            } else {
+                const startDate = new Date();
+                const endDate = new Date();
+                endDate.setMonth(endDate.getMonth() + durationMonths);
+                await models.MemberMemberships.create({
+                    member_id: member.member_id,
+                    membership_plan_id: plan.membership_plan_id,
+                    start_date: formatDateToYYYYMMDD(startDate),
+                    end_date: formatDateToYYYYMMDD(endDate),
+                    membership_status: 'Active'
+                }, { transaction: t });
+            }
+        }
+
+        // 6. Record Payment
         const transactionCode = payosPayment.orderCode || payosOrderCode || `FXUSER-${Date.now()}`;
         await models.Payments.create({
             member_id: member.member_id,
             amount: amount,
-            payment_type: 'Membership',
+            payment_type: plan ? 'Membership' : 'Service',
             payment_method: 'PayOS',
             payment_status: 'Paid',
             transaction_code: transactionCode
         }, { transaction: t });
 
-        // 8. Save services
+        // 7. Save services - 1 month duration
         if (services && services.length > 0) {
             for (const srvId of services) {
-                await models.MemberServices.create({
-                    member_id: member.member_id,
-                    service_id: srvId,
-                    start_date: formatDateToYYYYMMDD(startDate),
-                    end_date: formatDateToYYYYMMDD(endDate),
-                    service_status: 'Active'
-                }, { transaction: t });
+                const activeService = await models.MemberServices.findOne({
+                    where: { member_id: member.member_id, service_id: srvId, service_status: 'Active' },
+                    order: [['end_date', 'DESC']],
+                    transaction: t
+                });
+
+                if (activeService) {
+                    const newEndDate = new Date(activeService.end_date);
+                    newEndDate.setMonth(newEndDate.getMonth() + 1);
+                    await activeService.update({
+                        end_date: formatDateToYYYYMMDD(newEndDate)
+                    }, { transaction: t });
+                } else {
+                    const startDate = new Date();
+                    const endDate = new Date();
+                    endDate.setMonth(endDate.getMonth() + 1);
+
+                    await models.MemberServices.create({
+                        member_id: member.member_id,
+                        service_id: srvId,
+                        start_date: formatDateToYYYYMMDD(startDate),
+                        end_date: formatDateToYYYYMMDD(endDate),
+                        service_status: 'Active'
+                    }, { transaction: t });
+                }
             }
         }
 

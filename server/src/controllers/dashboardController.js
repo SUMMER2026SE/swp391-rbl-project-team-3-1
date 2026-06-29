@@ -1207,13 +1207,27 @@ exports.createMemberAppointment = async (req, res) => {
     const end_time = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`;
     const endTimeStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
 
+    // Check if slot already booked
+    const existingSchedule = await models.TrainerSchedules.findOne({
+      where: {
+        trainer_id: trainerId,
+        working_date: date,
+        start_time: start_time,
+        availability_status: ['Booked', 'Busy']
+      }
+    });
+
+    if (existingSchedule) {
+      return res.status(400).json({ message: 'Ca tập này đã có người đặt hoặc HLV đang bận, vui lòng chọn ca khác!' });
+    }
+
     // Create a new Available Trainer Schedule row
     const newSchedule = await models.TrainerSchedules.create({
       trainer_id: trainerId,
       working_date: date,
       start_time,
       end_time,
-      availability_status: 'Busy'
+      availability_status: 'Booked'
     });
 
     const newAppt = await models.Appointments.create({

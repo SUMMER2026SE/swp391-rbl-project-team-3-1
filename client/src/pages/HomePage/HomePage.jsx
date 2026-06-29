@@ -222,8 +222,8 @@ function HomePage() {
             </a>
           </li>
           <li>
-            <a href="#trainers" onClick={(e) => handleAnchorClick(e, '#trainers')}>
-              Huấn Luyện Viên
+            <a href="#addons" onClick={(e) => handleAnchorClick(e, '#addons')}>
+              Dịch Vụ Bổ Sung & PT
             </a>
           </li>
           {token && (

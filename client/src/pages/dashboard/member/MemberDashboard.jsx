@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import './MemberDashboard.css';
 
+const TIME_SLOTS = [
+  { start: '05:00:00', end: '06:30:00', label: '05:00 - 06:30' },
+  { start: '07:00:00', end: '08:30:00', label: '07:00 - 08:30' },
+  { start: '09:00:00', end: '10:30:00', label: '09:00 - 10:30' },
+  { start: '11:00:00', end: '12:30:00', label: '11:00 - 12:30' },
+  { start: '14:00:00', end: '15:30:00', label: '14:00 - 15:30' },
+  { start: '16:00:00', end: '17:30:00', label: '16:00 - 17:30' },
+  { start: '18:00:00', end: '19:30:00', label: '18:00 - 19:30' },
+  { start: '20:00:00', end: '21:30:00', label: '20:00 - 21:30' },
+];
+
 function MemberDashboard({
   token,
   userInfo,
@@ -35,7 +46,7 @@ function MemberDashboard({
   const [workoutSubTab, setWorkoutSubTab] = useState('today');
   const [mealSubTab, setMealSubTab] = useState('today');
   const [bookingDate, setBookingDate] = useState('');
-  const [bookingTime, setBookingTime] = useState('07:00');
+  const [bookingTime, setBookingTime] = useState('');
   const [bookingType, setBookingType] = useState('PT Cá Nhân');
   const [bookingNote, setBookingNote] = useState('');
   const [isBookingLoading, setIsBookingLoading] = useState(false);
@@ -43,6 +54,9 @@ function MemberDashboard({
   // Active trainers list & chosen trainer state
   const [trainersList, setTrainersList] = useState([]);
   const [selectedTrainerId, setSelectedTrainerId] = useState('');
+  const [currentWeekStart, setCurrentWeekStart] = useState(new Date());
+  const [trainerSchedules, setTrainerSchedules] = useState([]);
+  const [isTrainerScheduleLoading, setIsTrainerScheduleLoading] = useState(false);
 
   // Password change states
   const [cpwOld, setCpwOld] = useState('');
@@ -58,6 +72,32 @@ function MemberDashboard({
   const [completedMeals, setCompletedMeals] = useState({
     'morning': false, 'noon': false, 'evening': false
   });
+
+  // Fetch trainer schedule
+  useEffect(() => {
+    if (selectedTrainerId && activeTab === 'lichhen') {
+      const fetchSchedules = async () => {
+        setIsTrainerScheduleLoading(true);
+        try {
+          const start = new Date(currentWeekStart);
+          start.setDate(currentWeekStart.getDate() - 15);
+          const end = new Date(currentWeekStart);
+          end.setDate(currentWeekStart.getDate() + 15);
+          
+          const res = await fetch(`/api/checkout/trainers/${selectedTrainerId}/schedule?startDate=${start.toISOString().split('T')[0]}&endDate=${end.toISOString().split('T')[0]}`);
+          const data = await res.json();
+          if (data.schedules) {
+            setTrainerSchedules(data.schedules);
+          }
+        } catch (err) {
+          console.error('Error fetching trainer schedules', err);
+        } finally {
+          setIsTrainerScheduleLoading(false);
+        }
+      };
+      fetchSchedules();
+    }
+  }, [selectedTrainerId, currentWeekStart, activeTab]);
 
   // Load completed exercises and meals from localStorage when memberInfo is available
   useEffect(() => {
@@ -998,44 +1038,9 @@ function MemberDashboard({
             <div className="member-form-card">
               <h3 className="member-card-title" style={{ marginBottom: '20px' }}>Đăng ký lịch hẹn mới</h3>
               <form className="member-booking-form" onSubmit={handleBookAppointment}>
+
                 <div className="member-form-group">
-                  <label className="member-form-label">Chọn ngày tập</label>
-                  <input
-                    type="date"
-                    className="member-form-input"
-                    value={bookingDate}
-                    onChange={(e) => setBookingDate(e.target.value)}
-                    min={(() => {
-                      const today = new Date();
-                      const year = today.getFullYear();
-                      const month = String(today.getMonth() + 1).padStart(2, '0');
-                      const day = String(today.getDate()).padStart(2, '0');
-                      return `${year}-${month}-${day}`;
-                    })()}
-                    required
-                  />
-                </div>
-                <div className="member-form-group">
-                  <label className="member-form-label">Chọn khung giờ</label>
-                  <select
-                    className="member-form-select"
-                    value={bookingTime}
-                    onChange={(e) => setBookingTime(e.target.value)}
-                  >
-                    <option value="07:00">07:00 - Sáng</option>
-                    <option value="08:00">08:00 - Sáng</option>
-                    <option value="09:00">09:00 - Sáng</option>
-                    <option value="10:00">10:00 - Sáng</option>
-                    <option value="14:00">14:00 - Chiều</option>
-                    <option value="15:00">15:00 - Chiều</option>
-                    <option value="16:00">16:00 - Chiều</option>
-                    <option value="17:00">17:00 - Chiều</option>
-                    <option value="18:00">18:00 - Tối</option>
-                    <option value="19:00">19:00 - Tối</option>
-                  </select>
-                </div>
-                <div className="member-form-group">
-                  <label className="member-form-label">Chọn Huấn Luyện Viên (PT)</label>
+                  <label className="member-form-label">Chọn Huấn Luyện Viên (PT) để xem lịch</label>
                   <select
                     className="member-form-select"
                     value={selectedTrainerId}
@@ -1054,6 +1059,109 @@ function MemberDashboard({
                     )}
                   </select>
                 </div>
+
+                {selectedTrainerId && (
+                  <div className="member-form-group" style={{ marginTop: '16px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <label className="member-form-label" style={{ margin: 0 }}>Thời khóa biểu (Click vào ca trống để chọn)</label>
+                      <div className="week-controls" style={{ display: 'flex', gap: '8px' }}>
+                        <button type="button" onClick={() => {
+                          const d = new Date(currentWeekStart);
+                          d.setDate(d.getDate() - 7);
+                          setCurrentWeekStart(d);
+                        }} style={{ padding: '4px 8px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                          <i className="fa-solid fa-chevron-left"></i> Tuần trước
+                        </button>
+                        <button type="button" onClick={() => {
+                          const d = new Date(currentWeekStart);
+                          d.setDate(d.getDate() + 7);
+                          setCurrentWeekStart(d);
+                        }} style={{ padding: '4px 8px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                          Tuần sau <i className="fa-solid fa-chevron-right"></i>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="timetable-container" style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                      <table className="timetable" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center', fontSize: '0.85rem' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ padding: '8px', borderBottom: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', background: '#f8fafc' }}>Ca \ Ngày</th>
+                            {[0,1,2,3,4,5,6].map(i => {
+                              const d = new Date(currentWeekStart);
+                              const day = d.getDay();
+                              const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+                              d.setDate(diff + i);
+                              return (
+                                <th key={i} style={{ padding: '8px', borderBottom: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                                  {d.toLocaleDateString('vi-VN', { weekday: 'short' })} <br/>
+                                  {d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                                </th>
+                              );
+                            })}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {TIME_SLOTS.map((slot, sIdx) => (
+                            <tr key={sIdx}>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', fontWeight: 'bold', background: '#f8fafc' }}>{slot.label}</td>
+                              {[0,1,2,3,4,5,6].map(dIdx => {
+                                const d = new Date(currentWeekStart);
+                                const day = d.getDay();
+                                const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+                                d.setDate(diff + dIdx);
+                                const dateStr = d.toISOString().split('T')[0];
+                                
+                                const isBooked = trainerSchedules.some(s => s.workingDate === dateStr && s.startTime.startsWith(slot.start.substring(0,5)) && s.status === 'Booked');
+                                const isPast = new Date(`${dateStr}T${slot.start}`) < new Date();
+                                const isSelected = bookingDate === dateStr && bookingTime === slot.start.substring(0,5);
+
+                                let bg = '#dcfce7';
+                                let color = '#166534';
+                                let text = 'Trống';
+                                let cursor = 'pointer';
+
+                                if (isBooked) {
+                                  bg = '#e2e8f0'; color = '#64748b'; text = 'Đã Kín'; cursor = 'not-allowed';
+                                } else if (isPast) {
+                                  bg = '#f1f5f9'; color = '#94a3b8'; text = 'Đã Qua'; cursor = 'not-allowed';
+                                }
+                                
+                                if (isSelected) {
+                                  bg = '#3b82f6'; color = '#ffffff'; text = 'Đang chọn';
+                                }
+
+                                return (
+                                  <td key={dIdx} onClick={() => {
+                                    if (!isBooked && !isPast) {
+                                      setBookingDate(dateStr);
+                                      setBookingTime(slot.start.substring(0,5));
+                                    }
+                                  }} style={{ 
+                                    padding: '8px', 
+                                    borderBottom: '1px solid #e2e8f0',
+                                    borderRight: '1px solid #e2e8f0',
+                                    background: bg,
+                                    color: color,
+                                    cursor: cursor,
+                                    transition: 'all 0.2s ease',
+                                    boxShadow: isSelected ? 'inset 0 0 0 2px #2563eb' : 'none'
+                                  }}>
+                                    {text}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {isTrainerScheduleLoading && <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '8px' }}>Đang tải lịch trình...</p>}
+                    <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '8px' }}>
+                      Đã chọn: <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{bookingDate ? new Date(bookingDate).toLocaleDateString('vi-VN') : 'Chưa chọn'}</span> lúc <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{bookingTime || 'Chưa chọn'}</span>
+                    </p>
+                  </div>
+                )}
                 <div className="member-form-group">
                   <label className="member-form-label">Loại hình tập luyện</label>
                   <select

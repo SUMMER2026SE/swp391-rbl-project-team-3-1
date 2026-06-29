@@ -183,7 +183,7 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
   }, []);
 
   useEffect(() => {
-    if (step !== 2 || !selectedPlan) return;
+    if (step !== 2 || (!selectedPlan && selectedServices.length === 0)) return;
 
     const createPayosPayment = async () => {
       setAlert({ show: false, msg: '', type: 'error' });
@@ -195,7 +195,10 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
         const res = await fetch('/api/checkout/payos/create-payment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId: selectedPlan.planId })
+          body: JSON.stringify({ 
+            planId: selectedPlan?.planId || null,
+            services: selectedServices.map(s => s.serviceId)
+          })
         });
         const data = await res.json();
 
@@ -235,8 +238,9 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          planId: selectedPlan.planId,
+          planId: selectedPlan?.planId || null,
           trainerId: selectedTrainer?.userId || null,
+          services: selectedServices.map(s => s.serviceId),
           payosOrderCode: payosPayment?.orderCode
         })
       });
@@ -369,6 +373,11 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
     return sum + (svc ? svc.price : 0);
   }, 0);
   const totalPrice = planPrice + servicesPrice;
+
+  const hasPTService = selectedServices.some(svcId => {
+    const svc = services.find(s => s.serviceId === svcId);
+    return svc?.sportType === 'Huấn Luyện';
+  });
 
   const qrCodeUrl = payosPayment?.qrCode
     ? `https://quickchart.io/qr?size=240&text=${encodeURIComponent(payosPayment.qrCode)}`
@@ -523,13 +532,25 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
                   <div className="co-section-title">
                     <i className="fa-solid fa-tag"></i> Gói Tập Đã Chọn
                   </div>
-                  <button className="btn-change-plan" onClick={() => setShowPlanPicker(v => !v)}>
-                    <i className="fa-solid fa-pen"></i>
-                    {showPlanPicker ? 'Ẩn bớt' : 'Thay đổi gói'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button className="btn-change-plan" onClick={() => setShowPlanPicker(v => !v)}>
+                      <i className="fa-solid fa-pen"></i>
+                      {showPlanPicker ? 'Ẩn bớt' : 'Thay đổi gói'}
+                    </button>
+                    {selectedPlan && (
+                      <button className="btn-change-plan" style={{ background: '#ef4444', color: '#fff', border: 'none' }} onClick={() => { setSelectedPlan(null); setSelectedTrainer(null); }}>
+                        <i className="fa-solid fa-trash"></i> Bỏ chọn gói
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="co-section-body">
+                  {!selectedPlan && (
+                    <div className="selected-plan-card" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      <p style={{ margin: 0 }}>Bạn chưa chọn gói tập. Hệ thống sẽ thanh toán cho các Dịch vụ bổ sung bên dưới.</p>
+                    </div>
+                  )}
                   {selectedPlan && (
                     <div className="selected-plan-card">
                       <div className="plan-info-left">
@@ -581,7 +602,12 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
                 </div>
 
                 <div className="co-section-body">
-                  {isLoadingTrainers ? (
+                  {!hasPTService ? (
+                    <div className="co-empty" style={{ backgroundColor: '#fdf2f8', color: '#be185d', borderColor: '#fbcfe8' }}>
+                      <i className="fa-solid fa-circle-exclamation" style={{ color: '#be185d' }}></i>
+                      Vui lòng chọn mua một Dịch vụ PT (bên dưới) trước khi được phép chọn Huấn luyện viên!
+                    </div>
+                  ) : isLoadingTrainers ? (
                     <div className="trainers-grid">
                       {[1, 2, 3, 4].map(i => (
                         <div key={i} className="trainer-skeleton">
@@ -933,7 +959,7 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
             <div className="pay-summary-body">
               <div className="pay-row">
                 <span className="label">Gói tập:</span>
-                <span className="value">{selectedPlan?.planName || '—'}</span>
+                <span className="value">{selectedPlan?.planName || 'Chỉ mua dịch vụ'}</span>
               </div>
 
               {selectedTrainer && (
@@ -974,7 +1000,7 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
               {step === 1 && (
                 <button
                   className="btn-confirm-pay"
-                  disabled={!selectedPlan}
+                  disabled={!selectedPlan && selectedServices.length === 0}
                   onClick={() => setStep(2)}
                 >
                   <i className="fa-solid fa-arrow-right"></i>
