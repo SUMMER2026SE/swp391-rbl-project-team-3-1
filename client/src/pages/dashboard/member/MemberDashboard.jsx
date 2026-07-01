@@ -12,6 +12,14 @@ const TIME_SLOTS = [
   { start: '20:00:00', end: '21:30:00', label: '20:00 - 21:30' },
 ];
 
+const getLocalDateString = (dateObj) => {
+  const d = dateObj || new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 function MemberDashboard({
   token,
   userInfo,
@@ -83,8 +91,10 @@ function MemberDashboard({
           start.setDate(currentWeekStart.getDate() - 15);
           const end = new Date(currentWeekStart);
           end.setDate(currentWeekStart.getDate() + 15);
-          
-          const res = await fetch(`/api/checkout/trainers/${selectedTrainerId}/schedule?startDate=${start.toISOString().split('T')[0]}&endDate=${end.toISOString().split('T')[0]}`);
+
+          const startStr = getLocalDateString(start);
+          const endStr = getLocalDateString(end);
+          const res = await fetch(`/api/checkout/trainers/${selectedTrainerId}/schedule?startDate=${startStr}&endDate=${endStr}`);
           const data = await res.json();
           if (data.schedules) {
             setTrainerSchedules(data.schedules);
@@ -169,7 +179,7 @@ function MemberDashboard({
         dateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
       }
     }
-    
+
     if (!ap.endTime && ap.time) {
       const matches = ap.time.match(/(\d{2}):(\d{2})/g);
       if (matches && matches.length >= 2) {
@@ -1102,14 +1112,14 @@ function MemberDashboard({
                         <thead>
                           <tr>
                             <th style={{ padding: '8px', borderBottom: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', background: '#f8fafc' }}>Ca \ Ngày</th>
-                            {[0,1,2,3,4,5,6].map(i => {
+                            {[0, 1, 2, 3, 4, 5, 6].map(i => {
                               const d = new Date(currentWeekStart);
                               const day = d.getDay();
                               const diff = d.getDate() - day + (day === 0 ? -6 : 1);
                               d.setDate(diff + i);
                               return (
                                 <th key={i} style={{ padding: '8px', borderBottom: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                                  {d.toLocaleDateString('vi-VN', { weekday: 'short' })} <br/>
+                                  {d.toLocaleDateString('vi-VN', { weekday: 'short' })} <br />
                                   {d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
                                 </th>
                               );
@@ -1120,28 +1130,31 @@ function MemberDashboard({
                           {TIME_SLOTS.map((slot, sIdx) => (
                             <tr key={sIdx}>
                               <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', fontWeight: 'bold', background: '#f8fafc' }}>{slot.label}</td>
-                              {[0,1,2,3,4,5,6].map(dIdx => {
+                              {[0, 1, 2, 3, 4, 5, 6].map(dIdx => {
                                 const d = new Date(currentWeekStart);
                                 const day = d.getDay();
                                 const diff = d.getDate() - day + (day === 0 ? -6 : 1);
                                 d.setDate(diff + dIdx);
-                                const dateStr = d.toISOString().split('T')[0];
-                                
-                                const isBooked = trainerSchedules.some(s => s.workingDate === dateStr && s.startTime.startsWith(slot.start.substring(0,5)) && (s.status === 'Booked' || s.status === 'Busy' || s.status === 'Off'));
-                                const isPast = new Date(`${dateStr}T${slot.start}`) < new Date();
-                                const isSelected = bookingDate === dateStr && bookingTime === slot.start.substring(0,5);
+                                const dateStr = getLocalDateString(d);
+
+                                const isBooked = trainerSchedules.some(s => s.workingDate === dateStr && s.startTime.startsWith(slot.start.substring(0, 5)) && (s.status === 'Booked' || s.status === 'Busy' || s.status === 'Off'));
+
+                                const [slotH, slotM, slotS] = slot.start.split(':').map(Number);
+                                const slotDate = new Date(d.getFullYear(), d.getMonth(), d.getDate(), slotH, slotM, slotS || 0);
+                                const isPast = slotDate < new Date();
+                                const isSelected = bookingDate === dateStr && bookingTime === slot.start.substring(0, 5);
 
                                 let bg = '#dcfce7';
                                 let color = '#166534';
                                 let text = 'Trống';
                                 let cursor = 'pointer';
 
-                                if (isBooked) {
+                                if (isPast) {
+                                  bg = '#f1f5f9'; color = '#94a3b8'; text = 'Đã qua'; cursor = 'not-allowed';
+                                } else if (isBooked) {
                                   bg = '#e2e8f0'; color = '#64748b'; text = 'Bận'; cursor = 'not-allowed';
-                                } else if (isPast) {
-                                  bg = '#f1f5f9'; color = '#94a3b8'; text = 'Đã Qua'; cursor = 'not-allowed';
                                 }
-                                
+
                                 if (isSelected) {
                                   bg = '#3b82f6'; color = '#ffffff'; text = 'Đang chọn';
                                 }
@@ -1150,10 +1163,10 @@ function MemberDashboard({
                                   <td key={dIdx} onClick={() => {
                                     if (!isBooked && !isPast) {
                                       setBookingDate(dateStr);
-                                      setBookingTime(slot.start.substring(0,5));
+                                      setBookingTime(slot.start.substring(0, 5));
                                     }
-                                  }} style={{ 
-                                    padding: '8px', 
+                                  }} style={{
+                                    padding: '8px',
                                     borderBottom: '1px solid #e2e8f0',
                                     borderRight: '1px solid #e2e8f0',
                                     background: bg,
@@ -1313,14 +1326,14 @@ function MemberDashboard({
 
             {/* Subtabs control */}
             <div className="member-subtabs">
-              <button 
+              <button
                 type="button"
                 className={`member-subtab-btn ${workoutSubTab === 'today' ? 'active' : ''}`}
                 onClick={() => setWorkoutSubTab('today')}
               >
                 Hôm nay
               </button>
-              <button 
+              <button
                 type="button"
                 className={`member-subtab-btn ${workoutSubTab === 'history' ? 'active' : ''}`}
                 onClick={() => setWorkoutSubTab('history')}
@@ -1460,14 +1473,14 @@ function MemberDashboard({
 
               {/* Subtabs control */}
               <div className="member-subtabs">
-                <button 
+                <button
                   type="button"
                   className={`member-subtab-btn ${mealSubTab === 'today' ? 'active' : ''}`}
                   onClick={() => setMealSubTab('today')}
                 >
                   Hôm nay
                 </button>
-                <button 
+                <button
                   type="button"
                   className={`member-subtab-btn ${mealSubTab === 'history' ? 'active' : ''}`}
                   onClick={() => setMealSubTab('history')}
@@ -2171,3 +2184,4 @@ function MemberDashboard({
 }
 
 export default MemberDashboard;
+

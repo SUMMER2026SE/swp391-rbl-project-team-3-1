@@ -984,8 +984,13 @@ exports.confirmTrainerAppointment = async (req, res) => {
     const nextStatus = action === 'confirm' ? 'Confirmed' : 'Rejected';
     await appointment.update({ status: nextStatus });
 
-    // Free the slot if rejected
-    if (action === 'reject' && appointment.schedule_id) {
+    // Update schedule availability based on action
+    if (action === 'confirm' && appointment.schedule_id) {
+      await models.TrainerSchedules.update(
+        { availability_status: 'Busy' },
+        { where: { schedule_id: appointment.schedule_id } }
+      );
+    } else if (action === 'reject' && appointment.schedule_id) {
       await models.TrainerSchedules.update(
         { availability_status: 'Available' },
         { where: { schedule_id: appointment.schedule_id } }
@@ -1221,7 +1226,7 @@ exports.createMemberAppointment = async (req, res) => {
       working_date: date,
       start_time,
       end_time,
-      availability_status: 'Busy'
+      availability_status: 'Available'
     });
 
     const newAppt = await models.Appointments.create({

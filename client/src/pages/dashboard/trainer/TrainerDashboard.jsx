@@ -294,7 +294,10 @@ function TrainerDashboard({
     const end = new Date(start);
     end.setDate(start.getDate() + 6);
 
-    fetch(`/api/dashboard/trainer/schedule?startDate=${start.toISOString().split('T')[0]}&endDate=${end.toISOString().split('T')[0]}`, {
+    const startStr = getTodayDateString(start);
+    const endStr = getTodayDateString(end);
+
+    fetch(`/api/dashboard/trainer/schedule?startDate=${startStr}&endDate=${endStr}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => res.json())
@@ -314,6 +317,14 @@ function TrainerDashboard({
   }, [activeTab, busyWeekStart, token]);
 
   const handleToggleLocalSlot = (dateStr, startTime, endTime) => {
+    const [yr, mo, dy] = dateStr.split('-').map(Number);
+    const [h, m, s] = startTime.split(':').map(Number);
+    const slotDate = new Date(yr, mo - 1, dy, h, m, s || 0);
+    if (slotDate < new Date()) {
+      alert('Không thể thay đổi lịch của thời gian đã qua!');
+      return;
+    }
+
     const existingIdx = localSchedules.findIndex(s => 
       s.workingDate === dateStr && s.startTime.startsWith(startTime.substring(0,5))
     );
@@ -370,8 +381,8 @@ function TrainerDashboard({
         Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({
-        startDate: start.toISOString().split('T')[0],
-        endDate: end.toISOString().split('T')[0],
+        startDate: getTodayDateString(start),
+        endDate: getTodayDateString(end),
         busySlots
       })
     })
@@ -1313,7 +1324,7 @@ function TrainerDashboard({
                         <tr key={sIdx}>
                           <td style={{ background: '#f8fafc', border: '1px solid #e2e8f0', fontWeight: 'bold', padding: '10px' }}>{slot.label}</td>
                           {days.map((day, dIdx) => {
-                            const dateStr = day.toISOString().split('T')[0];
+                            const dateStr = getTodayDateString(day);
                             const matchingSchedule = localSchedules.find(s =>
                               s.workingDate === dateStr && s.startTime.startsWith(slot.start.substring(0, 5))
                             );
@@ -1325,12 +1336,21 @@ function TrainerDashboard({
                               s.date === dateStr && s.time.startsWith(slot.label.substring(0, 5))
                             );
 
+                            const [slotH, slotM, slotS] = slot.start.split(':').map(Number);
+                            const slotDate = new Date(day.getFullYear(), day.getMonth(), day.getDate(), slotH, slotM, slotS || 0);
+                            const isPast = slotDate < new Date();
+
                             let bg = '#dcfce7'; // green - Available
                             let color = '#166534';
                             let text = 'Rảnh';
                             let cursor = 'pointer';
 
-                            if (isTeaching) {
+                            if (isPast) {
+                              bg = '#f1f5f9'; // gray - Passed
+                              color = '#94a3b8';
+                              text = 'Đã qua';
+                              cursor = 'not-allowed';
+                            } else if (isTeaching) {
                               bg = '#cbd5e1'; // gray - Booked (Teaching)
                               color = '#475569';
                               text = 'Đã đặt lịch';
@@ -1345,7 +1365,7 @@ function TrainerDashboard({
                               <td
                                 key={dIdx}
                                 onClick={() => {
-                                  if (!isTeaching) {
+                                  if (!isTeaching && !isPast) {
                                     handleToggleLocalSlot(dateStr, slot.start, slot.end);
                                   }
                                 }}
@@ -1359,10 +1379,10 @@ function TrainerDashboard({
                                   transition: 'all 0.15s ease'
                                 }}
                                 onMouseEnter={(e) => {
-                                  if (!isTeaching) e.target.style.filter = 'brightness(0.95)';
+                                  if (!isTeaching && !isPast) e.target.style.filter = 'brightness(0.95)';
                                 }}
                                 onMouseLeave={(e) => {
-                                  if (!isTeaching) e.target.style.filter = 'none';
+                                  if (!isTeaching && !isPast) e.target.style.filter = 'none';
                                 }}
                               >
                                 {text}
@@ -1388,6 +1408,10 @@ function TrainerDashboard({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{ width: '16px', height: '16px', backgroundColor: '#cbd5e1', borderRadius: '4px', border: '1px solid #94a3b8' }}></div>
                       <span>Ca đang có lịch dạy đã lên lịch</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '16px', height: '16px', backgroundColor: '#f1f5f9', borderRadius: '4px', border: '1px solid #cbd5e1' }}></div>
+                      <span>Ca đã qua (Không thể chọn)</span>
                     </div>
                   </div>
                   <button 

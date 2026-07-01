@@ -12,6 +12,14 @@ const TIME_SLOTS = [
   { start: '20:00:00', end: '21:30:00', label: '20:00 - 21:30' },
 ];
 
+const getLocalDateString = (dateObj) => {
+  const d = dateObj || new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 function PTDetailPage() {
   const [trainers, setTrainers] = useState([]);
   const [selectedPT, setSelectedPT] = useState(null);
@@ -48,8 +56,9 @@ function PTDetailPage() {
       start.setDate(currentDate.getDate() - 15);
       const end = new Date(currentDate);
       end.setDate(currentDate.getDate() + 15);
-      
-      const res = await fetch(`/api/checkout/trainers/${selectedPT.userId}/schedule?startDate=${start.toISOString().split('T')[0]}&endDate=${end.toISOString().split('T')[0]}`);
+      const startStr = getLocalDateString(start);
+      const endStr = getLocalDateString(end);
+      const res = await fetch(`/api/checkout/trainers/${selectedPT.userId}/schedule?startDate=${startStr}&endDate=${endStr}`);
       const data = await res.json();
       if (data.schedules) {
         setSchedules(data.schedules);
@@ -230,17 +239,36 @@ function PTDetailPage() {
                           <tr key={sIdx}>
                             <td style={{ padding: '10px', border: '1px solid #e2e8f0', fontWeight: 'bold', background: '#f8fafc' }}>{slot.label}</td>
                             {daysOfWeek.map((day, dIdx) => {
-                              const dateStr = day.toISOString().split('T')[0];
+                              const dateStr = getLocalDateString(day);
                               const booked = isSlotBooked(dateStr, slot.start.substring(0,5));
+                              
+                              const [slotH, slotM, slotS] = slot.start.split(':').map(Number);
+                              const slotDate = new Date(day.getFullYear(), day.getMonth(), day.getDate(), slotH, slotM, slotS || 0);
+                              const isPast = slotDate < new Date();
+                              
+                              let bg = '#dcfce7';
+                              let color = '#166534';
+                              let text = 'Rảnh';
+                              
+                              if (isPast) {
+                                bg = '#f1f5f9';
+                                color = '#94a3b8';
+                                text = 'Đã qua';
+                              } else if (booked) {
+                                bg = '#e2e8f0';
+                                color = '#64748b';
+                                text = 'Bận';
+                              }
+
                               return (
                                 <td key={dIdx} style={{ 
                                   padding: '10px', 
                                   border: '1px solid #e2e8f0',
-                                  background: booked ? '#e2e8f0' : '#dcfce7',
-                                  color: booked ? '#64748b' : '#166534',
+                                  background: bg,
+                                  color: color,
                                   cursor: 'default'
                                 }}>
-                                  {booked ? 'Bận' : 'Rảnh'}
+                                  {text}
                                 </td>
                               );
                             })}
