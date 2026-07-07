@@ -147,6 +147,72 @@ function MemberDashboard({
   // Notifications state
   const [notifications, setNotifications] = useState([]);
 
+  const reloadNotifications = () => {
+    if (!token || token === 'mock-preview-token') return;
+    fetch('/api/notifications', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.notifications) {
+          const mapped = data.notifications.map(n => ({
+            id: n.notification_id,
+            message: n.content,
+            title: n.title,
+            type: n.notification_type,
+            unread: !n.is_read,
+            time: n.created_at ? new Date(n.created_at).toLocaleString('vi-VN') : 'Vừa xong'
+          }));
+          setNotifications(mapped);
+        }
+      })
+      .catch(err => console.error('Error fetching notifications:', err));
+  };
+
+  // Set up real-time notification stream via SSE
+  useEffect(() => {
+    if (!token || token === 'mock-preview-token') return;
+    
+    const streamUrl = `/api/notifications/stream?token=${encodeURIComponent(token)}`;
+    const eventSource = new EventSource(streamUrl);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.connected) {
+          console.log('[SSE] Connected to notification stream.');
+          return;
+        }
+
+        const newNotif = {
+          id: data.notification_id,
+          message: data.content,
+          title: data.title,
+          type: data.notification_type,
+          unread: !data.is_read,
+          time: data.created_at ? new Date(data.created_at).toLocaleString('vi-VN') : 'Vừa xong'
+        };
+
+        setNotifications(prev => {
+          if (prev.some(n => n.id === newNotif.id)) return prev;
+          return [newNotif, ...prev];
+        });
+
+      } catch (err) {
+        console.error('[SSE] Error processing stream message:', err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('[SSE] Stream connection error:', err);
+    };
+
+    return () => {
+      eventSource.close();
+      console.log('[SSE] Closed stream connection.');
+    };
+  }, [token]);
+
   // Weight history tracking state
   const [weightHistory, setWeightHistory] = useState([]);
   const [newHistoryWeight, setNewHistoryWeight] = useState('');
@@ -257,34 +323,8 @@ function MemberDashboard({
         setEditLevel(profileData.memberInfo.fitness_level || 'Người mới bắt đầu');
         setEditEmergency(profileData.memberInfo.emergency_contact || '');
 
-        // Initialize notifications
-        const pt = profileData.memberInfo.activePtName || 'Bùi Nguyễn Minh Tuệ';
-        const futureDate = new Date();
-        futureDate.setDate(futureDate.getDate() + 2);
-        const daysOfWeek = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-        const dayOfWeekStr = daysOfWeek[futureDate.getDay()];
-        const futureDateFormatted = `${dayOfWeekStr} lúc 07:00`;
-
-        setNotifications([
-          {
-            id: 1,
-            message: `Lịch hẹn tập thử với HLV ${pt !== 'Chưa đăng ký' ? pt : 'Bùi Nguyễn Minh Tuệ'} vào ${futureDateFormatted} đã được xác nhận.`,
-            time: '2 giờ trước',
-            unread: true
-          },
-          {
-            id: 2,
-            message: `Gói tập Gói Năm của bạn hiện đang kích hoạt (còn ${profileData.memberInfo.remainingDays || 287} ngày).`,
-            time: '1 ngày trước',
-            unread: false
-          },
-          {
-            id: 3,
-            message: 'Chào mừng hội viên mới! Bạn đã thiết lập thông tin sức khỏe thành công.',
-            time: '2 ngày trước',
-            unread: false
-          }
-        ]);
+        // Initialize notifications (now handled by API fetch and SSE)
+        reloadNotifications();
 
         // Initialize weight history
         const curW = profileData.memberInfo.weight || 65;
@@ -381,6 +421,7 @@ function MemberDashboard({
     reloadPlans();
     reloadAiHistory();
     fetchTrainersList();
+    reloadNotifications();
   }, [token]);
 
   // --- ACTIONS & HANDLERS ---
@@ -691,11 +732,37 @@ function MemberDashboard({
   };
 
   const markAllNotifsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+    if (!token || token === 'mock-preview-token') {
+      setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+      return;
+    }
+    fetch('/api/notifications/read-all', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => {
+        if (res.ok) {
+          setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+        }
+      })
+      .catch(err => console.error('Error marking all notifications read:', err));
   };
 
   const clearNotification = (id) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+    if (!token || token === 'mock-preview-token') {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+      return;
+    }
+    fetch(`/api/notifications/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => {
+        if (res.ok) {
+          setNotifications(prev => prev.filter(n => n.id !== id));
+        }
+      })
+      .catch(err => console.error('Error deleting notification:', err));
   };
 
   const doChangePw = async (e) => {

@@ -1,4 +1,4 @@
-const { models, sequelize } = require('./src/config/db');
+const { models, sequelize } = require('../src/config/db');
 
 async function updateDB() {
     try {

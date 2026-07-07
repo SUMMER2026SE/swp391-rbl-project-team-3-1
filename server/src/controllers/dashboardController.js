@@ -997,6 +997,93 @@ exports.confirmTrainerAppointment = async (req, res) => {
       );
     }
 
+    // Create notification for Member
+    try {
+      const member = await models.Members.findByPk(appointment.member_id);
+      if (member) {
+        const memberUserId = member.user_id;
+        
+        // Find PT info
+        const trainerUser = await models.Users.findByPk(req.user.userId);
+        const ptName = trainerUser?.full_name || 'HLV';
+
+        // Retrieve schedule details
+        const schedule = await models.TrainerSchedules.findByPk(appointment.schedule_id);
+        const dateFormatted = schedule?.working_date ? toDateStr(schedule.working_date) : 'N/A';
+        const startTimeFormatted = schedule?.start_time ? toTimeStr(schedule.start_time, '07:00') : 'N/A';
+
+        // Auto mark the PT's "appointment_booked" notification as read
+        try {
+          const trainerRecord = await models.Trainers.findByPk(schedule.trainer_id);
+          if (trainerRecord) {
+            const trainerUserId = trainerRecord.user_id;
+            const ptNotification = await models.Notifications.findOne({
+              where: {
+                user_id: trainerUserId,
+                notification_type: 'appointment_booked',
+                is_read: false,
+                content: {
+                  [require('sequelize').Op.like]: `%ngày ${dateFormatted} lúc ${startTimeFormatted}%`
+                }
+              }
+            });
+
+            if (ptNotification) {
+              await ptNotification.update({ is_read: true });
+              
+              // Emit notification update to the trainer to clear their badge count in real-time
+              const notificationEmitter = require('../utils/notificationEmitter');
+              notificationEmitter.emit('notification_created', {
+                user_id: trainerUserId,
+                notification: {
+                  notification_id: ptNotification.notification_id,
+                  user_id: trainerUserId,
+                  title: ptNotification.title,
+                  content: ptNotification.content,
+                  notification_type: ptNotification.notification_type,
+                  is_read: true,
+                  created_at: ptNotification.created_at || new Date()
+                }
+              });
+            }
+          }
+        } catch (ptNotifErr) {
+          console.error('⚠️ Lỗi tự động đọc thông báo cho PT:', ptNotifErr.message);
+        }
+
+        const typeStr = action === 'confirm' ? 'appointment_confirmed' : 'appointment_rejected';
+        const titleStr = action === 'confirm' ? 'Lịch hẹn được xác nhận' : 'Lịch hẹn bị từ chối';
+        const contentStr = action === 'confirm'
+          ? `Lịch hẹn tập của bạn với HLV ${ptName} vào ngày ${dateFormatted} lúc ${startTimeFormatted} đã được xác nhận.`
+          : `Lịch hẹn tập của bạn với HLV ${ptName} vào ngày ${dateFormatted} lúc ${startTimeFormatted} đã bị từ chối.`;
+
+        const notification = await models.Notifications.create({
+          user_id: memberUserId,
+          title: titleStr,
+          content: contentStr,
+          notification_type: typeStr,
+          is_read: false
+        });
+
+        // Emit via notificationEmitter
+        const notificationEmitter = require('../utils/notificationEmitter');
+        notificationEmitter.emit('notification_created', {
+          user_id: memberUserId,
+          notification: {
+            notification_id: notification.notification_id,
+            user_id: memberUserId,
+            title: notification.title,
+            content: notification.content,
+            notification_type: notification.notification_type,
+            is_read: notification.is_read,
+            created_at: new Date()
+          }
+        });
+      }
+    } catch (notifErr) {
+      console.error('⚠️ Lỗi tạo thông báo phản hồi lịch hẹn:', notifErr.message);
+    }
+
     return res.status(200).json({ message: `Đã ${action === 'confirm' ? 'xác nhận' : 'từ chối'} lịch hẹn tập thành công!` });
   } catch (error) {
     console.error('❌ Error confirming appointment:', error);
@@ -1236,6 +1323,41 @@ exports.createMemberAppointment = async (req, res) => {
       note: note || type || 'Đăng ký tập luyện cá nhân'
       // Omitted created_at so SQL Server default getdate() is used
     });
+
+    // Create real-time notification for Trainer
+    try {
+      const memberUser = await models.Users.findByPk(member.user_id);
+      const memberName = memberUser?.full_name || 'Hội viên';
+      
+      const trainerRecord = await models.Trainers.findByPk(trainerId);
+      if (trainerRecord) {
+        const trainerUserId = trainerRecord.user_id;
+        const notification = await models.Notifications.create({
+          user_id: trainerUserId,
+          title: 'Yêu cầu đặt lịch mới',
+          content: `Hội viên ${memberName} đã gửi yêu cầu đặt lịch tập mới vào ngày ${toDateStr(date)} lúc ${time}.`,
+          notification_type: 'appointment_booked',
+          is_read: false
+        });
+
+        // Emit via notificationEmitter
+        const notificationEmitter = require('../utils/notificationEmitter');
+        notificationEmitter.emit('notification_created', {
+          user_id: trainerUserId,
+          notification: {
+            notification_id: notification.notification_id,
+            user_id: trainerUserId,
+            title: notification.title,
+            content: notification.content,
+            notification_type: notification.notification_type,
+            is_read: notification.is_read,
+            created_at: new Date()
+          }
+        });
+      }
+    } catch (notifErr) {
+      console.error('⚠️ Lỗi tạo thông báo đặt lịch:', notifErr.message);
+    }
 
     // Fetch the target trainer details to return in response
     const targetTrainer = await models.Trainers.findByPk(trainerId, {

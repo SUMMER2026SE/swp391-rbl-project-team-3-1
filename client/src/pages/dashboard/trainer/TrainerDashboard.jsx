@@ -81,6 +81,103 @@ function TrainerDashboard({
   // Booking requests pending PT confirmation
   const [bookingRequests, setBookingRequests] = useState([]);
 
+  // Notifications state
+  const [notifications, setNotifications] = useState([]);
+
+  const reloadNotifications = () => {
+    if (!token) return;
+    fetch('/api/notifications', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.notifications) {
+          const mapped = data.notifications.map(n => ({
+            id: n.notification_id,
+            message: n.content,
+            title: n.title,
+            type: n.notification_type,
+            unread: !n.is_read,
+            time: n.created_at ? new Date(n.created_at).toLocaleString('vi-VN') : 'Vừa xong'
+          }));
+          setNotifications(mapped);
+        }
+      })
+      .catch(err => console.error('Error fetching notifications:', err));
+  };
+
+  const markAllNotifsRead = () => {
+    if (!token) return;
+    fetch('/api/notifications/read-all', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => {
+        if (res.ok) {
+          setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+        }
+      })
+      .catch(err => console.error('Error marking all notifications read:', err));
+  };
+
+  const clearNotification = (id) => {
+    if (!token) return;
+    fetch(`/api/notifications/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => {
+        if (res.ok) {
+          setNotifications(prev => prev.filter(n => n.id !== id));
+        }
+      })
+      .catch(err => console.error('Error deleting notification:', err));
+  };
+
+  // Set up real-time notification stream via SSE
+  useEffect(() => {
+    if (!token) return;
+    
+    const streamUrl = `/api/notifications/stream?token=${encodeURIComponent(token)}`;
+    const eventSource = new EventSource(streamUrl);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.connected) {
+          console.log('[SSE PT] Connected to notification stream.');
+          return;
+        }
+
+        const newNotif = {
+          id: data.notification_id,
+          message: data.content,
+          title: data.title,
+          type: data.notification_type,
+          unread: !data.is_read,
+          time: data.created_at ? new Date(data.created_at).toLocaleString('vi-VN') : 'Vừa xong'
+        };
+
+        setNotifications(prev => {
+          if (prev.some(n => n.id === newNotif.id)) return prev;
+          return [newNotif, ...prev];
+        });
+
+      } catch (err) {
+        console.error('[SSE PT] Error processing stream message:', err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('[SSE PT] Stream connection error:', err);
+    };
+
+    return () => {
+      eventSource.close();
+      console.log('[SSE PT] Closed stream connection.');
+    };
+  }, [token]);
+
   // Chat conversations (keep static mockup as fallback, but support member ID mapping)
   const [activeChatMemberId, setActiveChatMemberId] = useState(1);
   const [chatInput, setChatInput] = useState('');
@@ -268,6 +365,7 @@ function TrainerDashboard({
 
   useEffect(() => {
     reloadTrainerDashboardData();
+    reloadNotifications();
   }, [token]);
 
   useEffect(() => {
@@ -1734,10 +1832,43 @@ function TrainerDashboard({
           </div>
         );
 
+      case 'thongbao':
+        return (
+          <div className="trainer-card-panel" style={{ background: '#fff', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
+            <div className="trainer-card-header" style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 className="trainer-card-title" style={{ margin: 0, textTransform: 'none', fontSize: '1.25rem', fontWeight: 'bold' }}>Thông báo của bạn</h3>
+              {unreadNotifsCount > 0 && (
+                <span className="trainer-link-action" style={{ color: 'var(--orange)', cursor: 'pointer', fontWeight: '500', fontSize: '0.9rem' }} onClick={markAllNotifsRead}>Đánh dấu tất cả đã đọc</span>
+              )}
+            </div>
+            <div className="trainer-notif-list" style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {notifications.map((n) => (
+                <div className={`trainer-notif-item ${n.unread ? 'unread' : ''}`} key={n.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', backgroundColor: n.unread ? '#fff8f1' : '#f8fafc', borderRadius: '8px', border: n.unread ? '1px solid #ffedd5' : '1px solid #e2e8f0', transition: 'all 0.2s' }}>
+                  <div className="trainer-notif-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', borderRadius: '50%', backgroundColor: n.unread ? '#ffedd5' : '#cbd5e1', color: n.unread ? 'var(--orange)' : '#64748b', fontSize: '1.1rem' }}>
+                    <i className={`fa-solid ${n.unread ? 'fa-envelope-open-text' : 'fa-envelope'}`}></i>
+                  </div>
+                  <div className="trainer-notif-body" style={{ flex: 1, marginLeft: '16px' }}>
+                    <div className="trainer-notif-message" style={{ fontSize: '0.95rem', fontWeight: n.unread ? 'bold' : 'normal', color: 'var(--text)' }}>{n.message}</div>
+                    <div className="trainer-notif-time" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '4px' }}>{n.time}</div>
+                  </div>
+                  <button className="trainer-notif-btn-clear" style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.1rem', padding: '8px' }} onClick={() => clearNotification(n.id)}>
+                    <i className="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+              ))}
+              {notifications.length === 0 && (
+                <div className="trainer-no-data" style={{ padding: '40px 20px', textAlign: 'center', color: '#94a3b8', fontSize: '0.95rem' }}>Hộp thư thông báo trống</div>
+              )}
+            </div>
+          </div>
+        );
+
       default:
         return <div>Vui lòng chọn tab hợp lệ.</div>;
     }
   };
+
+  const unreadNotifsCount = notifications.filter(n => n.unread).length;
 
   return (
     <div className="trainer-dashboard-container">
@@ -1841,6 +1972,19 @@ function TrainerDashboard({
             </li>
             <li>
               <button
+                className={`trainer-menu-item ${activeTab === 'thongbao' ? 'active' : ''}`}
+                onClick={() => setActiveTab('thongbao')}
+              >
+                <i className="fa-solid fa-bell"></i> Thông báo
+                {unreadNotifsCount > 0 && (
+                  <span className="trainer-menu-badge" style={{ backgroundColor: 'var(--orange)', color: '#fff', fontSize: '0.75rem', padding: '2px 6px', borderRadius: '10px', marginLeft: 'auto', fontWeight: 'bold' }}>
+                    {unreadNotifsCount}
+                  </span>
+                )}
+              </button>
+            </li>
+            <li>
+              <button
                 className={`trainer-menu-item ${activeTab === 'hoso' ? 'active' : ''}`}
                 onClick={() => setActiveTab('hoso')}
               >
@@ -1873,8 +2017,13 @@ function TrainerDashboard({
               <input type="text" className="trainer-search-input" placeholder="Tìm kiếm..." />
             </div>
 
-            <button className="trainer-icon-btn" onClick={() => { setActiveTab('chat'); alert('Mở tin nhắn học viên...'); }}>
+            <button className="trainer-icon-btn" style={{ position: 'relative' }} onClick={() => setActiveTab('thongbao')}>
               <i className="fa-regular fa-bell"></i>
+              {unreadNotifsCount > 0 && (
+                <span className="trainer-bell-badge" style={{ position: 'absolute', top: '-4px', right: '-4px', backgroundColor: 'var(--orange)', color: '#fff', fontSize: '0.65rem', minWidth: '16px', height: '16px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                  {unreadNotifsCount}
+                </span>
+              )}
             </button>
 
             <button className="trainer-icon-btn" onClick={() => setActiveTab('hoso')}>

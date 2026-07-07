@@ -1,4 +1,4 @@
-const { models } = require('./src/config/db');
+const { models } = require('../src/config/db');
 
 async function run() {
     const plans = await models.MembershipPlans.findAll();

@@ -1,4 +1,4 @@
-const { sequelize } = require('./src/config/db');
+const { sequelize } = require('../src/config/db');
 
 async function createTable() {
     try {

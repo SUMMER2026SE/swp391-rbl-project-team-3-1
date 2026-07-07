@@ -230,3 +230,8 @@ app.use('/api/progress', progressRoutes);
 // Mount AI routes
 const aiRoutes = require('./routes/aiRoutes');
 app.use('/api/ai', aiRoutes);
+
+// Mount notification routes
+const notificationRoutes = require('./routes/notificationRoutes');
+app.use('/api/notifications', notificationRoutes);
+

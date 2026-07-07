@@ -6,7 +6,7 @@ const http = require('http');
 
 console.log('⏳ Khởi động server để kiểm thử API...');
 // We require index.js which starts the server
-const serverEntry = require('./index.js');
+const serverEntry = require('../index.js');
 
 // Helper to delay execution
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
