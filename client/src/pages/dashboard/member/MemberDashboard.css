@@ -393,6 +393,12 @@
   color: #92400e;
 }
 
+.member-badge-status.cancelpending {
+  background-color: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
 .member-badge-status.cancelled {
   background-color: #fee2e2;
   color: #991b1b;

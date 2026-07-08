@@ -80,6 +80,13 @@ function TrainerDashboard({
 
   // Booking requests pending PT confirmation
   const [bookingRequests, setBookingRequests] = useState([]);
+  const [cancelRequests, setCancelRequests] = useState([]);
+  const [selectedCancelRequest, setSelectedCancelRequest] = useState(null);
+  const [isCancelRespondLoading, setIsCancelRespondLoading] = useState(false);
+  const [trainerCancelModalOpen, setTrainerCancelModalOpen] = useState(false);
+  const [trainerCancelAppointmentId, setTrainerCancelAppointmentId] = useState(null);
+  const [trainerCancelReason, setTrainerCancelReason] = useState('');
+  const [isTrainerCancelSubmitting, setIsTrainerCancelSubmitting] = useState(false);
 
   // Notifications state
   const [notifications, setNotifications] = useState([]);
@@ -315,8 +322,16 @@ function TrainerDashboard({
               if (dateA !== dateB) return dateA.localeCompare(dateB);
               return (a.startTime || '').localeCompare(b.startTime || '');
             });
+          const cancelPending = data.appointments
+            .filter(a => a.status === 'CancelPending' && a.cancelRequestedBy === 'MEMBER')
+            .sort((a, b) => {
+              const dateA = a.date || '';
+              const dateB = b.date || '';
+              if (dateA !== dateB) return dateA.localeCompare(dateB);
+              return (a.startTime || '').localeCompare(b.startTime || '');
+            });
           const scheduled = data.appointments
-            .filter(a => a.status === 'Scheduled' || a.status === 'Completed')
+            .filter(a => a.status === 'Scheduled' || a.status === 'Completed' || (a.status === 'CancelPending' && a.cancelRequestedBy === 'TRAINER'))
             .sort((a, b) => {
               const dateA = a.date || '';
               const dateB = b.date || '';
@@ -324,6 +339,7 @@ function TrainerDashboard({
               return (a.startTime || '').localeCompare(b.startTime || '');
             });
           setBookingRequests(pending);
+          setCancelRequests(cancelPending);
           setScheduleList(scheduled);
         }
       })
@@ -675,6 +691,71 @@ function TrainerDashboard({
         })
         .catch(err => console.error('Error rejecting appointment:', err));
     }
+  };
+
+  const handleRespondCancelRequest = (reqId, action) => {
+    setIsCancelRespondLoading(true);
+    fetch(`/api/dashboard/trainer/appointments/${reqId}/cancel-respond`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ action })
+    })
+      .then(res => res.json())
+      .then(data => {
+        alert(data.message || 'Đã xử lý yêu cầu thành công!');
+        setSelectedCancelRequest(null);
+        reloadTrainerDashboardData();
+      })
+      .catch(err => {
+        console.error('Error responding to cancel request:', err);
+        alert('Có lỗi xảy ra khi phản hồi yêu cầu hủy lịch!');
+      })
+      .finally(() => {
+        setIsCancelRespondLoading(false);
+      });
+  };
+
+  const handleTrainerCancelClick = (id) => {
+    setTrainerCancelAppointmentId(id);
+    setTrainerCancelReason('');
+    setTrainerCancelModalOpen(true);
+  };
+
+  const submitTrainerCancellationRequest = () => {
+    if (!trainerCancelAppointmentId || !trainerCancelReason.trim()) return;
+
+    setIsTrainerCancelSubmitting(true);
+    fetch(`/api/dashboard/trainer/appointments/${trainerCancelAppointmentId}/cancel`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ reason: trainerCancelReason })
+    })
+      .then(res => {
+        if (!res.ok) {
+          return res.json().then(err => { throw new Error(err.message || 'Lỗi server'); });
+        }
+        return res.json();
+      })
+      .then(data => {
+        alert(data.message || 'Đã gửi yêu cầu hủy lịch dạy thành công!');
+        setTrainerCancelModalOpen(false);
+        setTrainerCancelReason('');
+        setTrainerCancelAppointmentId(null);
+        reloadTrainerDashboardData();
+      })
+      .catch(err => {
+        console.error(err);
+        alert(err.message || 'Có lỗi xảy ra khi gửi yêu cầu hủy lịch!');
+      })
+      .finally(() => {
+        setIsTrainerCancelSubmitting(false);
+      });
   };
 
   const handleSendMessage = (e) => {
@@ -1253,6 +1334,43 @@ function TrainerDashboard({
               </div>
             )}
 
+            {cancelRequests.length > 0 && (
+              <div className="trainer-appointment-requests" style={{ marginTop: '20px', borderLeft: '4px solid #ef4444' }}>
+                <h3 className="trainer-card-title" style={{ color: '#ef4444' }}>Yêu cầu hủy lịch hẹn chờ duyệt</h3>
+                {cancelRequests.map((req) => {
+                  let reqTimeStr = 'Hôm nay';
+                  if (req.cancelRequestedAt) {
+                    reqTimeStr = new Date(req.cancelRequestedAt).toLocaleDateString('vi-VN');
+                  }
+                  const dateStr = req.date && req.date.includes('-') ? req.date.split('-').reverse().join('/') : req.date;
+
+                  return (
+                    <div className="trainer-request-row" key={req.id}>
+                      <div className="trainer-request-member-info">
+                        <div className="trainer-request-avatar" style={{ backgroundColor: '#fee2e2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <i className="fa-solid fa-calendar-times"></i>
+                        </div>
+                        <div className="trainer-request-text">
+                          Học viên <span className="name" style={{ fontWeight: 'bold' }}>{req.name}</span> gửi yêu cầu hủy lịch hẹn ngày <span style={{ color: '#ef4444', fontWeight: 'bold' }}>{reqTimeStr}</span>. <br />
+                          <span style={{ fontSize: '0.85rem' }}>Lịch dạy ngày <span style={{ fontWeight: 'bold' }}>{dateStr}</span>, ca <span style={{ fontWeight: 'bold' }}>{req.time}</span>.</span>
+                        </div>
+                      </div>
+                      <div className="trainer-request-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span 
+                          onClick={() => setSelectedCancelRequest(req)} 
+                          style={{ color: 'var(--orange)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}
+                        >
+                          Xem chi tiết
+                        </span>
+                        <button className="trainer-btn-confirm" onClick={() => handleRespondCancelRequest(req.id, 'accept')}>Chấp nhận</button>
+                        <button className="trainer-btn-reject" onClick={() => handleRespondCancelRequest(req.id, 'reject')}>Từ chối</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="trainer-card-panel">
               <h3 className="trainer-card-title" style={{ marginBottom: '20px' }}>Lịch dạy tuần chi tiết</h3>
 
@@ -1313,6 +1431,7 @@ function TrainerDashboard({
                         <th>Học viên đăng ký</th>
                         <th>Hình thức lớp học</th>
                         <th>Trạng thái lớp</th>
+                        <th>Thao tác</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1322,7 +1441,23 @@ function TrainerDashboard({
                           <td className="trainer-table-name">{item.member}</td>
                           <td>{item.type}</td>
                           <td>
-                            <span className="member-badge-status confirmed">Đã lên lịch</span>
+                            {item.status === 'CancelPending' ? (
+                              <span className="member-badge-status pending" style={{ backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>Chờ duyệt hủy</span>
+                            ) : (
+                              <span className="member-badge-status confirmed">Đã lên lịch</span>
+                            )}
+                          </td>
+                          <td>
+                            {item.status === 'CancelPending' ? (
+                              <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
+                            ) : item.status === 'Completed' ? null : (
+                              <button 
+                                onClick={() => handleTrainerCancelClick(item.id)}
+                                style={{ background: 'none', border: 'none', color: '#ef4444', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.88rem' }}
+                              >
+                                Yêu cầu hủy
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -2185,6 +2320,243 @@ function TrainerDashboard({
           </div>
         );
       })()}
+      {/* Cancellation Request Details Modal */}
+      {selectedCancelRequest && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '500px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            padding: '24px',
+            position: 'relative'
+          }}>
+            <h3 style={{
+              margin: '0 0 12px 0',
+              fontSize: '1.25rem',
+              fontWeight: '700',
+              color: '#ef4444',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <i className="fa-solid fa-circle-exclamation"></i> Chi tiết yêu cầu hủy lịch hẹn
+            </h3>
+            
+            <div style={{
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '14px',
+              marginBottom: '16px',
+              fontSize: '0.9rem',
+              color: '#334155',
+              lineHeight: '1.6'
+            }}>
+              <div><strong>Học viên:</strong> {selectedCancelRequest.name}</div>
+              <div><strong>Thời gian học:</strong> Ngày {selectedCancelRequest.date && selectedCancelRequest.date.includes('-') ? selectedCancelRequest.date.split('-').reverse().join('/') : selectedCancelRequest.date}, ca {selectedCancelRequest.time}</div>
+              <div style={{ marginTop: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
+                <strong>Lý do hủy:</strong>
+                <div style={{
+                  backgroundColor: '#ffffff',
+                  border: '1.5px solid #cbd5e1',
+                  borderRadius: '6px',
+                  padding: '10px 12px',
+                  marginTop: '6px',
+                  fontStyle: 'italic',
+                  color: '#475569',
+                  minHeight: '80px',
+                  whiteSpace: 'pre-wrap'
+                }}>
+                  {selectedCancelRequest.cancelReason || 'Không có lý do chi tiết.'}
+                </div>
+              </div>
+              <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#94a3b8', textAlign: 'right' }}>
+                Yêu cầu lúc: {selectedCancelRequest.cancelRequestedAt ? new Date(selectedCancelRequest.cancelRequestedAt).toLocaleDateString('vi-VN') : 'N/A'}
+              </div>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end',
+              marginTop: '20px'
+            }}>
+              <button
+                type="button"
+                onClick={() => setSelectedCancelRequest(null)}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  color: '#475569',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRespondCancelRequest(selectedCancelRequest.id, 'reject')}
+                disabled={isCancelRespondLoading}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                Từ chối hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRespondCancelRequest(selectedCancelRequest.id, 'accept')}
+                disabled={isCancelRespondLoading}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#10b981',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                Chấp nhận hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* PT Cancellation Request Modal */}
+      {trainerCancelModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '500px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            padding: '24px',
+            position: 'relative'
+          }}>
+            <h3 style={{
+              margin: '0 0 8px 0',
+              fontSize: '1.25rem',
+              fontWeight: '700',
+              color: '#0f172a'
+            }}>
+              Lý do hủy lịch dạy
+            </h3>
+            <p style={{
+              margin: '0 0 16px 0',
+              fontSize: '0.88rem',
+              color: '#64748b',
+              lineHeight: '1.5'
+            }}>
+              Vui lòng nhập lý do hủy lịch dạy. Yêu cầu hủy sẽ được gửi đến Học viên của bạn để xét duyệt.
+            </p>
+            <textarea
+              placeholder="Nhập lý do hủy lịch dạy..."
+              value={trainerCancelReason}
+              onChange={(e) => setTrainerCancelReason(e.target.value)}
+              style={{
+                width: '100%',
+                minHeight: '120px',
+                padding: '12px 14px',
+                borderRadius: '8px',
+                border: '1.5px solid #e2e8f0',
+                fontFamily: 'inherit',
+                fontSize: '0.95rem',
+                outline: 'none',
+                resize: 'none',
+                transition: 'border-color 0.2s ease'
+              }}
+              onFocus={(e) => e.target.style.borderColor = 'var(--orange)'}
+              onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+            />
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end',
+              marginTop: '20px'
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setTrainerCancelModalOpen(false);
+                  setTrainerCancelReason('');
+                  setTrainerCancelAppointmentId(null);
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  color: '#475569',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={submitTrainerCancellationRequest}
+                disabled={isTrainerCancelSubmitting || !trainerCancelReason.trim()}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: !trainerCancelReason.trim() ? '#cbd5e1' : 'var(--orange)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: !trainerCancelReason.trim() ? 'not-allowed' : 'pointer',
+                  fontWeight: '600',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                {isTrainerCancelSubmitting ? 'Đang gửi...' : 'Gửi yêu cầu'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

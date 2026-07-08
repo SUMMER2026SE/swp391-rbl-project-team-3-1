@@ -637,52 +637,72 @@
 
 .admin-filter-search {
   position: relative;
-  max-width: 320px;
+  max-width: 420px;
   width: 100%;
 }
 
 .admin-filter-search i {
   position: absolute;
-  left: 14px;
+  left: 18px;
   top: 50%;
   transform: translateY(-50%);
   color: #94a3b8;
-  font-size: 0.88rem;
+  font-size: 1.15rem;
 }
 
 .admin-filter-search-input {
   width: 100%;
-  padding: 10px 14px 10px 38px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  padding: 14px 18px 14px 48px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
   font-family: inherit;
-  font-size: 0.85rem;
+  font-size: 1.05rem;
   outline: none;
+  transition: all 0.2s ease;
+}
+
+.admin-filter-search-input:hover {
+  border-color: #cbd5e1;
+}
+
+.admin-filter-search-input:focus {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.12);
 }
 
 .admin-filter-select {
-  padding: 10px 14px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  padding: 14px 18px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
   background-color: #ffffff;
   font-family: inherit;
-  font-size: 0.85rem;
+  font-size: 1.05rem;
   color: #475569;
   outline: none;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-filter-select:hover {
+  border-color: #cbd5e1;
+}
+
+.admin-filter-select:focus {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.12);
 }
 
 .admin-btn-add {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 20px;
+  padding: 14px 24px;
   background-color: var(--orange);
   color: #ffffff;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   font-family: inherit;
-  font-size: 0.88rem;
+  font-size: 1.05rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -690,6 +710,12 @@
 
 .admin-btn-add:hover {
   background-color: #ea580c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2);
+}
+
+.admin-btn-add:active {
+  transform: translateY(1px);
 }
 
 /* Tables styling */

@@ -49,6 +49,11 @@ function MemberDashboard({
 
   // Interactive local states for Appointments, Workouts, Meals, Notifications
   const [appointmentsList, setAppointmentsList] = useState([]);
+  const [cancellationModalOpen, setCancellationModalOpen] = useState(false);
+  const [cancellationAppointmentId, setCancellationAppointmentId] = useState(null);
+  const [cancellationReason, setCancellationReason] = useState('');
+  const [isCancellationSubmitting, setIsCancellationSubmitting] = useState(false);
+  const [selectedPTCancelRequest, setSelectedPTCancelRequest] = useState(null);
   const [dbWorkoutPlans, setDbWorkoutPlans] = useState([]);
   const [dbMealPlans, setDbMealPlans] = useState([]);
   const [workoutSubTab, setWorkoutSubTab] = useState('today');
@@ -645,32 +650,71 @@ function MemberDashboard({
     const ap = appointmentsList.find(a => a.id === id);
     if (!ap) return;
 
-    const confirmCancel = window.confirm(`Bạn có chắc chắn muốn hủy lịch hẹn tập này?`);
-    if (confirmCancel) {
-      fetch(`/api/dashboard/member/appointments/${id}/cancel`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      })
-        .then(res => res.json())
-        .then(data => {
-          alert(data.message || 'Đã hủy lịch hẹn thành công!');
-          reloadMemberAppointments();
+    setCancellationAppointmentId(id);
+    setCancellationReason('');
+    setCancellationModalOpen(true);
+  };
 
-          const newNotif = {
-            id: Date.now(),
-            message: `Bạn đã hủy lịch hẹn tập thành công.`,
-            time: 'Vừa xong',
-            unread: true
-          };
-          setNotifications(prev => [newNotif, ...prev]);
-        })
-        .catch(err => {
-          console.error(err);
-          alert('Lỗi kết nối khi hủy lịch tập!');
-        });
-    }
+  const submitCancellationRequest = () => {
+    if (!cancellationAppointmentId || !cancellationReason.trim()) return;
+
+    setIsCancellationSubmitting(true);
+    fetch(`/api/dashboard/member/appointments/${cancellationAppointmentId}/cancel`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ reason: cancellationReason })
+    })
+      .then(res => {
+        if (!res.ok) {
+          return res.json().then(err => { throw new Error(err.message || 'Lỗi server'); });
+        }
+        return res.json();
+      })
+      .then(data => {
+        alert(data.message || 'Đã gửi yêu cầu hủy lịch hẹn thành công!');
+        setCancellationModalOpen(false);
+        setCancellationReason('');
+        setCancellationAppointmentId(null);
+        reloadMemberAppointments();
+
+        const newNotif = {
+          id: Date.now(),
+          message: `Bạn đã gửi yêu cầu hủy lịch hẹn tập. Đang chờ HLV phản hồi.`,
+          time: 'Vừa xong',
+          unread: true
+        };
+        setNotifications(prev => [newNotif, ...prev]);
+      })
+      .catch(err => {
+        console.error(err);
+        alert(err.message || 'Có lỗi xảy ra khi gửi yêu cầu hủy lịch!');
+      })
+      .finally(() => {
+        setIsCancellationSubmitting(false);
+      });
+  };
+
+  const handleRespondPTCancel = (id, action) => {
+    fetch(`/api/dashboard/member/appointments/${id}/cancel-respond`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ action })
+    })
+      .then(res => res.json())
+      .then(data => {
+        alert(data.message || 'Đã phản hồi yêu cầu thành công!');
+        reloadMemberAppointments();
+      })
+      .catch(err => {
+        console.error('Error responding to PT cancel request:', err);
+        alert('Có lỗi xảy ra khi phản hồi yêu cầu hủy!');
+      });
   };
 
   const toggleExercise = (exId) => {
@@ -892,16 +936,14 @@ function MemberDashboard({
 
   const targetKcal = todayMealPlans.length > 0
     ? Number(todayMealPlans[0].calories_per_day) || 2000
-    : 1620;
+    : 0;
 
   const eatenKcal = todayMealPlans.length > 0
     ? todayMealPlans.reduce((sum, plan) => {
       const key = `db-meal-${plan.meal_plan_id}`;
       return sum + (completedMeals[key] ? plan.calories_per_day : 0);
     }, 0)
-    : mealsData.reduce((sum, meal) => {
-      return sum + (completedMeals[meal.key] ? meal.kcal : 0);
-    }, 0);
+    : 0;
 
   const unreadNotifsCount = notifications.filter(n => n.unread).length;
 
@@ -1068,11 +1110,41 @@ function MemberDashboard({
                           <td>{ap.type}</td>
                           <td>
                             <span className={`member-badge-status ${ap.status}`}>
-                              {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : ap.status === 'rejected' ? 'Bị từ chối' : 'Đã hủy'}
+                              {ap.status === 'confirmed' ? 'Xác nhận' : 
+                               ap.status === 'pending' ? 'Chờ duyệt' : 
+                               ap.status === 'rejected' ? 'Bị từ chối' : 
+                               ap.status === 'cancelpending' ? (ap.cancelRequestedBy === 'TRAINER' ? 'HLV xin hủy' : 'Chờ duyệt hủy') : 'Đã hủy'}
                             </span>
                           </td>
                           <td>
-                            <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
+                            {ap.status === 'cancelpending' ? (
+                              ap.cancelRequestedBy === 'TRAINER' ? (
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                  <span 
+                                    onClick={() => setSelectedPTCancelRequest(ap)}
+                                    style={{ color: 'var(--orange)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', marginRight: '6px' }}
+                                  >
+                                    Xem lý do
+                                  </span>
+                                  <button 
+                                    onClick={() => handleRespondPTCancel(ap.id, 'accept')}
+                                    style={{ padding: '4px 8px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                  >
+                                    Đồng ý
+                                  </button>
+                                  <button 
+                                    onClick={() => handleRespondPTCancel(ap.id, 'reject')}
+                                    style={{ padding: '4px 8px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                  >
+                                    Từ chối
+                                  </button>
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
+                              )
+                            ) : ap.status === 'cancelled' || ap.status === 'rejected' ? null : (
+                              <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1104,15 +1176,10 @@ function MemberDashboard({
                       </div>
                     ))
                   ) : (
-                    mealsData.map((meal) => (
-                      <div className="member-menu-meal-item" key={meal.key}>
-                        <div>
-                          <div className="member-meal-time">{meal.name}</div>
-                          <div className="member-meal-desc">{meal.desc}</div>
-                        </div>
-                        <div className="member-meal-kcal">{meal.kcal} kcal</div>
-                      </div>
-                    ))
+                    <div style={{ padding: '24px 10px', textAlign: 'center', color: '#94a3b8', fontWeight: '600', fontSize: '0.9rem' }}>
+                      <i className="fa-solid fa-utensils" style={{ display: 'block', fontSize: '1.8rem', color: '#cbd5e1', marginBottom: '10px' }}></i>
+                      Chưa có plan cho hôm nay
+                    </div>
                   )}
                 </div>
                 <div className="member-menu-total-row">
@@ -1316,11 +1383,18 @@ function MemberDashboard({
                         <td>{ap.type}</td>
                         <td>
                           <span className={`member-badge-status ${ap.status}`}>
-                            {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : ap.status === 'rejected' ? 'Bị từ chối' : 'Đã hủy'}
+                            {ap.status === 'confirmed' ? 'Xác nhận' : 
+                             ap.status === 'pending' ? 'Chờ duyệt' : 
+                             ap.status === 'rejected' ? 'Bị từ chối' : 
+                             ap.status === 'cancelpending' ? (ap.cancelRequestedBy === 'TRAINER' ? 'HLV xin hủy' : 'Chờ duyệt hủy') : 'Đã hủy'}
                           </span>
                         </td>
                         <td>
-                          <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
+                          {ap.status === 'cancelpending' ? (
+                            <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
+                          ) : ap.status === 'cancelled' || ap.status === 'rejected' ? null : (
+                            <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -2246,6 +2320,246 @@ function MemberDashboard({
         {/* Render Tab Contents */}
         {renderTabContent()}
       </main>
+      {cancellationModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '500px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            padding: '24px',
+            position: 'relative'
+          }}>
+            <h3 style={{
+              margin: '0 0 8px 0',
+              fontSize: '1.25rem',
+              fontWeight: '700',
+              color: '#0f172a'
+            }}>
+              Lý do hủy lịch hẹn tập
+            </h3>
+            <p style={{
+              margin: '0 0 16px 0',
+              fontSize: '0.88rem',
+              color: '#64748b',
+              lineHeight: '1.5'
+            }}>
+              Vui lòng nhập lý do hủy lịch hẹn tập. Yêu cầu hủy sẽ được gửi đến Huấn luyện viên của bạn để xét duyệt.
+            </p>
+            <textarea
+              placeholder="Nhập lý do hủy lịch hẹn..."
+              value={cancellationReason}
+              onChange={(e) => setCancellationReason(e.target.value)}
+              style={{
+                width: '100%',
+                minHeight: '120px',
+                padding: '12px 14px',
+                borderRadius: '8px',
+                border: '1.5px solid #e2e8f0',
+                fontFamily: 'inherit',
+                fontSize: '0.95rem',
+                outline: 'none',
+                resize: 'none',
+                transition: 'border-color 0.2s ease'
+              }}
+              onFocus={(e) => e.target.style.borderColor = 'var(--orange)'}
+              onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+            />
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end',
+              marginTop: '20px'
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setCancellationModalOpen(false);
+                  setCancellationReason('');
+                  setCancellationAppointmentId(null);
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  color: '#475569',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={submitCancellationRequest}
+                disabled={isCancellationSubmitting || !cancellationReason.trim()}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: !cancellationReason.trim() ? '#cbd5e1' : 'var(--orange)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: !cancellationReason.trim() ? 'not-allowed' : 'pointer',
+                  fontWeight: '600',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                {isCancellationSubmitting ? 'Đang gửi...' : 'Gửi yêu cầu'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* PT Cancellation Request Details Modal (for Member) */}
+      {selectedPTCancelRequest && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '500px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            padding: '24px',
+            position: 'relative'
+          }}>
+            <h3 style={{
+              margin: '0 0 12px 0',
+              fontSize: '1.25rem',
+              fontWeight: '700',
+              color: '#ef4444',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <i className="fa-solid fa-circle-exclamation"></i> HLV yêu cầu hủy lịch dạy
+            </h3>
+            
+            <div style={{
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '14px',
+              marginBottom: '16px',
+              fontSize: '0.9rem',
+              color: '#334155',
+              lineHeight: '1.6'
+            }}>
+              <div><strong>Huấn luyện viên:</strong> {selectedPTCancelRequest.trainer}</div>
+              <div><strong>Thời gian học:</strong> {selectedPTCancelRequest.time}</div>
+              <div style={{ marginTop: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
+                <strong>Lý do xin hủy của HLV:</strong>
+                <div style={{
+                  backgroundColor: '#ffffff',
+                  border: '1.5px solid #cbd5e1',
+                  borderRadius: '6px',
+                  padding: '10px 12px',
+                  marginTop: '6px',
+                  fontStyle: 'italic',
+                  color: '#475569',
+                  minHeight: '80px',
+                  whiteSpace: 'pre-wrap'
+                }}>
+                  {selectedPTCancelRequest.cancelReason || 'Không có lý do chi tiết.'}
+                </div>
+              </div>
+              <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#94a3b8', textAlign: 'right' }}>
+                Yêu cầu lúc: {selectedPTCancelRequest.cancelRequestedAt ? new Date(selectedPTCancelRequest.cancelRequestedAt).toLocaleDateString('vi-VN') : 'N/A'}
+              </div>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end',
+              marginTop: '20px'
+            }}>
+              <button
+                type="button"
+                onClick={() => setSelectedPTCancelRequest(null)}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  color: '#475569',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleRespondPTCancel(selectedPTCancelRequest.id, 'reject');
+                  setSelectedPTCancelRequest(null);
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                Từ chối hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleRespondPTCancel(selectedPTCancelRequest.id, 'accept');
+                  setSelectedPTCancelRequest(null);
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#10b981',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                Đồng ý hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -39,10 +39,15 @@ router.get('/trainer/schedule', dashboardController.getTrainerScheduleForDashboa
 router.post('/trainer/schedule/toggle', dashboardController.toggleTrainerSchedule);
 router.post('/trainer/schedule/bulk-save', dashboardController.bulkSaveTrainerSchedule);
 
+// --- TRAINER CANCEL ROUTES ---
+router.put('/trainer/appointments/:id/cancel', dashboardController.requestTrainerAppointmentCancel);
+router.put('/trainer/appointments/:id/cancel-respond', dashboardController.respondTrainerAppointmentCancel);
+
 // --- MEMBER DASHBOARD ROUTES ---
 router.get('/member/appointments', dashboardController.getMemberAppointments);
 router.post('/member/appointments', dashboardController.createMemberAppointment);
-router.put('/member/appointments/:id/cancel', dashboardController.cancelAdminAppointment);
+router.put('/member/appointments/:id/cancel', dashboardController.requestMemberAppointmentCancel);
+router.put('/member/appointments/:id/cancel-respond', dashboardController.respondMemberAppointmentCancel);
 router.get('/member/my-trainers', dashboardController.getMemberTrainers);
 
 module.exports = router;
