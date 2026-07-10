@@ -64,6 +64,18 @@ module.exports = function(sequelize, DataTypes) {
     admin_note: {
       type: DataTypes.TEXT,
       allowNull: true
+    },
+    admin_reply: {
+      type: DataTypes.TEXT,
+      allowNull: true
+    },
+    user_rating: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    user_rating_note: {
+      type: DataTypes.TEXT,
+      allowNull: true
     }
   }, {
     sequelize,

@@ -372,7 +372,13 @@ exports.createTrainer = async (req, res) => {
 exports.getAdminPlans = async (req, res) => {
   try {
     const plans = await models.MembershipPlans.findAll({
-      order: [['price', 'ASC']]
+      order: [['price', 'ASC']],
+      include: [{
+        model: models.Services,
+        as: 'IncludedServices',
+        attributes: ['service_id', 'service_name'],
+        through: { attributes: ['session_count'] }
+      }]
     });
 
     const mappedPlans = plans.map(p => ({
@@ -380,8 +386,14 @@ exports.getAdminPlans = async (req, res) => {
       title: p.plan_name,
       price: Number(p.price),
       durationMonths: p.duration_months,
+        sportType: p.sport_type,
       features: p.description || 'Truy cập đầy đủ tiện ích phòng tập',
-      status: p.status
+      status: p.status,
+      attachedServices: p.IncludedServices ? p.IncludedServices.map(s => ({
+        serviceId: s.service_id,
+        serviceName: s.service_name,
+        sessionCount: s.MembershipPlanServices ? s.MembershipPlanServices.session_count : null
+      })) : []
     }));
 
     return res.status(200).json({ plans: mappedPlans });
@@ -394,7 +406,7 @@ exports.getAdminPlans = async (req, res) => {
 // POST /api/dashboard/admin/plans
 exports.createAdminPlan = async (req, res) => {
   try {
-    const { title, price, durationMonths, features, sportType } = req.body;
+    const { title, price, durationMonths, features, sportType, attachedServices } = req.body;
     if (!title || !price) {
       return res.status(400).json({ message: 'Vui lòng nhập tên và giá gói tập!' });
     }
@@ -407,6 +419,16 @@ exports.createAdminPlan = async (req, res) => {
       sport_type: sportType || 'Gym',
       status: 'Active'
     });
+
+    if (attachedServices && Array.isArray(attachedServices)) {
+      for (const svc of attachedServices) {
+        await models.MembershipPlanServices.create({
+          membership_plan_id: newPlan.membership_plan_id,
+          service_id: svc.serviceId,
+          session_count: svc.sessionCount !== undefined ? svc.sessionCount : null
+        });
+      }
+    }
 
     return res.status(201).json({
       message: 'Tạo gói tập mới thành công!',
@@ -427,7 +449,7 @@ exports.createAdminPlan = async (req, res) => {
 exports.updateAdminPlan = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, price, durationMonths, features, status, sportType } = req.body;
+    const { title, price, durationMonths, features, status, sportType, attachedServices } = req.body;
 
     const plan = await models.MembershipPlans.findByPk(id);
     if (!plan) {
@@ -442,6 +464,19 @@ exports.updateAdminPlan = async (req, res) => {
       status: status !== undefined ? status : plan.status,
       sport_type: sportType !== undefined ? sportType : plan.sport_type
     });
+
+    if (attachedServices && Array.isArray(attachedServices)) {
+      await models.MembershipPlanServices.destroy({
+        where: { membership_plan_id: plan.membership_plan_id }
+      });
+      for (const svc of attachedServices) {
+        await models.MembershipPlanServices.create({
+          membership_plan_id: plan.membership_plan_id,
+          service_id: svc.serviceId,
+          session_count: svc.sessionCount !== undefined && svc.sessionCount !== null ? svc.sessionCount : null
+        });
+      }
+    }
 
     return res.status(200).json({
       message: 'Cập nhật thông tin gói tập thành công!',

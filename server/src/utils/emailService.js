@@ -213,9 +213,67 @@ const sendTrainerAccountEmail = async (email, fullName, tempPassword) => {
     return sendEmail(email, subject, html);
 };
 
+const sendAccountGrantedEmail = async (email, fullName, roleName, tempPassword) => {
+    const subject = '🔑 FX Fitness Center – Cấp tài khoản truy cập hệ thống';
+    const html = `
+    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%); border-radius: 16px; overflow: hidden; border: 1px solid #333;">
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #f97316 0%, #ef4444 100%); padding: 40px 30px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 800; letter-spacing: 2px;">FX FITNESS</h1>
+            <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 14px; text-transform: uppercase;">🔑 CẤP TÀI KHOẢN HỆ THỐNG</p>
+        </div>
+        
+        <!-- Body -->
+        <div style="padding: 40px 30px; color: #e0e0e0;">
+            <h2 style="color: #f97316; margin: 0 0 20px; font-size: 22px;">Chào bạn, ${fullName}! 🎉</h2>
+            <p style="line-height: 1.8; font-size: 15px; margin: 0 0 20px;">
+                Quản trị viên đã cấp cho bạn một tài khoản truy cập hệ thống với vai trò <strong style="color: #f97316;">${roleName}</strong> tại FX Fitness Center.
+                Dưới đây là thông tin đăng nhập tạm thời của bạn:
+            </p>
+            
+            <!-- Account Info Card -->
+            <div style="background: rgba(249,115,22,0.1); border: 1px solid rgba(249,115,22,0.3); border-radius: 12px; padding: 25px; margin: 25px 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 10px 0; color: #999; font-size: 14px;">Vai trò:</td>
+                        <td style="padding: 10px 0; color: #fff; font-size: 14px; text-align: right; font-weight: 600;">${roleName}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; color: #999; font-size: 14px; border-top: 1px solid #333;">📧 Email đăng nhập:</td>
+                        <td style="padding: 10px 0; color: #fff; font-size: 14px; text-align: right; font-weight: 600;">${email}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; color: #999; font-size: 14px; border-top: 1px solid #333;">🔑 Mật khẩu tạm:</td>
+                        <td style="padding: 10px 0; color: #f97316; font-size: 16px; text-align: right; font-weight: 700; font-family: monospace; border-top: 1px solid #333;">${tempPassword}</td>
+                    </tr>
+                </table>
+            </div>
+            
+            <div style="background: rgba(239,68,68,0.1); border-left: 4px solid #ef4444; padding: 15px 20px; margin: 25px 0; border-radius: 0 8px 8px 0;">
+                <p style="margin: 0; font-size: 13px; color: #f87171;">
+                    ⚠️ <strong>Quan trọng:</strong> Đây là mật khẩu tạm thời. Bạn cần đăng nhập và thực hiện <strong>ĐỔI MẬT KHẨU LẦN ĐẦU</strong> để kích hoạt tài khoản hoạt động bình thường!
+                </p>
+            </div>
+            
+            <p style="line-height: 1.8; font-size: 15px; margin: 20px 0;">
+                Hân hạnh được đồng hành cùng bạn tại FX Fitness Center! 💪
+            </p>
+        </div>
+        
+        <!-- Footer -->
+        <div style="background: #0a0a0a; padding: 25px 30px; text-align: center; border-top: 1px solid #222;">
+            <p style="margin: 0; font-size: 12px; color: #666;">© 2026 FX Fitness Center. All rights reserved.</p>
+            <p style="margin: 8px 0 0; font-size: 11px; color: #555;">Email này được gửi tự động, vui lòng không trả lời.</p>
+        </div>
+    </div>`;
+
+    return sendEmail(email, subject, html);
+};
+
 module.exports = {
     sendEmail,
     sendVerificationEmail,
     sendWelcomeEmail,
-    sendTrainerAccountEmail
+    sendTrainerAccountEmail,
+    sendAccountGrantedEmail
 };
