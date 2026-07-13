@@ -105,7 +105,11 @@ function HomePage() {
     fetch('/api/checkout/homepage-config')
       .then(res => res.json())
       .then(data => {
-        if (data.coreSports && data.coreSports.length > 0) setCoreSports(data.coreSports);
+        if (data) {
+          if (data.coreSports && data.coreSports.length > 0) setCoreSports(data.coreSports);
+          if (data.heroTitle) setHeroTitle(data.heroTitle);
+          if (data.heroSubtitle) setHeroSubtitle(data.heroSubtitle);
+        }
       })
       .catch(err => console.error('Error fetching homepage config:', err));
   }, []);
@@ -472,35 +476,71 @@ function HomePage() {
           <p style={{textAlign: 'center', marginTop: '10px', color: '#64748b'}}>Khám phá các lựa chọn phù hợp nhất cho mục tiêu của bạn.</p>
         </div>
 
-        {(coreSports.length > 0 ? coreSports.map(s => s.name) : ['Gym', 'Yoga', 'Boxing']).map((sport) => {
-          const sportPlans = plans.filter(p => p.sportType === sport).sort((a,b) => a.durationMonths - b.durationMonths);
+        {['VIP', 'Combo', 'Gym', 'Yoga', 'Boxing'].map((sport) => {
+          const sportPlans = plans
+            .filter(p => p.sportType === sport)
+            .sort((a, b) => b.durationMonths - a.durationMonths); // Higher durations / Premium to the top
           if (sportPlans.length === 0) return null;
+          
+          const displayTitles = {
+            Gym: 'Gói Tập Gym',
+            Yoga: 'Gói Tập Yoga',
+            Boxing: 'Gói Tập Boxing',
+            Combo: 'Gói Tập Combo',
+            VIP: 'Gói Tập VIP'
+          };
+          
           return (
             <div key={sport} style={{ marginBottom: '60px' }}>
-              <h3 style={{ textAlign: 'center', marginBottom: '30px', fontFamily: 'Barlow Condensed', fontSize: '2rem', color: 'var(--orange)' }}>{sport}</h3>
-              <div className="pricing-grid">
-                {sportPlans.map((plan, index) => (
-                  <div key={plan.planId} className={`pricing-card reveal reveal-delay-${(index % 3) + 1} ${plan.durationMonths === 6 ? 'featured' : ''}`}>
-                    {plan.durationMonths === 6 && <div className="popular-badge">Phổ biến nhất</div>}
-                    <p className={`plan-name ${plan.durationMonths === 6 ? 'featured-name' : ''}`}>{plan.planName}</p>
-                    <div className="plan-price">
-                      <div className="price-amount">
-                        {plan.price.toLocaleString('vi-VN')}đ<span className="price-period">/{plan.durationMonths} tháng</span>
+              <h3 style={{ textAlign: 'center', marginBottom: '30px', fontFamily: 'Barlow Condensed', fontSize: '2rem', color: 'var(--orange)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                {displayTitles[sport] || sport}
+              </h3>
+              <div className={`pricing-grid grid-${sportPlans.length}`}>
+                {sportPlans.map((plan, index) => {
+                  const isFeatured = plan.durationMonths === 12 || plan.durationMonths === 6;
+                  return (
+                    <div key={plan.planId} className={`pricing-card reveal reveal-delay-${(index % 3) + 1} ${isFeatured ? 'featured' : ''}`} style={{ display: 'flex', flexDirection: 'column' }}>
+                      {isFeatured && <div className="popular-badge">Khuyên Dùng</div>}
+                      <p className={`plan-name ${isFeatured ? 'featured-name' : ''}`}>{plan.planName}</p>
+                      <div className="plan-price">
+                        <div className="price-amount" style={{ fontSize: '2rem' }}>
+                          {plan.price.toLocaleString('vi-VN')}đ
+                          <span className="price-period" style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                            /{plan.durationMonths} tháng
+                          </span>
+                        </div>
+                        {plan.durationMonths > 1 && (
+                          <div style={{ fontSize: '0.78rem', color: 'var(--orange)', marginTop: '4px', fontWeight: 'bold' }}>
+                            (~{Math.round(plan.price / plan.durationMonths).toLocaleString('vi-VN')}đ/tháng)
+                          </div>
+                        )}
                       </div>
+                      <div className="plan-divider"></div>
+                      <ul className="plan-features" style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
+                        <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                          <i className="fas fa-check-circle" style={{ color: 'var(--orange)', marginTop: '4px' }}></i>
+                          <span>Bộ môn: <strong>{plan.sportType === 'VIP' || plan.sportType === 'Combo' ? 'Gym, Yoga, Boxing' : plan.sportType}</strong></span>
+                        </li>
+                        {plan.description && plan.description.split('\n').map((line, lIdx) => {
+                          if (!line.trim()) return null;
+                          return (
+                            <li key={lIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                              <i className="fas fa-check-circle" style={{ color: 'var(--orange)', marginTop: '4px' }}></i>
+                              <span>{line}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <button
+                        onClick={() => goToCheckout(plan.planId)}
+                        className={`btn-plan ${isFeatured ? 'btn-featured' : ''}`}
+                        style={{ marginTop: '20px' }}
+                      >
+                        Mua Ngay
+                      </button>
                     </div>
-                    <div className="plan-divider"></div>
-                    <ul className="plan-features">
-                      <li><i className="fas fa-check-circle"></i> Truy cập bộ môn: <strong>{plan.sportType}</strong></li>
-                      <li><i className="fas fa-check-circle"></i> {plan.description}</li>
-                    </ul>
-                    <button
-                      onClick={() => goToCheckout(plan.planId)}
-                      className={`btn-plan ${plan.durationMonths === 6 ? 'btn-featured' : ''}`}
-                    >
-                      Mua Ngay
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );
@@ -518,7 +558,7 @@ function HomePage() {
         </div>
 
         <div className="pricing-grid">
-          {services.sort((a,b) => {
+          {services.filter(s => s.serviceName !== "Dịch vụ PT (Huấn luyện viên cá nhân)").sort((a,b) => {
             const isAPT = a.serviceName.includes('PT') ? -1 : 1;
             const isBPT = b.serviceName.includes('PT') ? -1 : 1;
             if (isAPT !== isBPT) return isAPT - isBPT;
@@ -532,9 +572,20 @@ function HomePage() {
                 </div>
               </div>
               <div className="plan-divider" style={{ margin: '15px 0' }}></div>
-              <ul className="plan-features" style={{ flexGrow: 1 }}>
-                <li><i className="fas fa-check-circle" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6' }}></i> Phân loại: <strong>{srv.sportType || 'Tiện ích'}</strong></li>
-                <li><i className="fas fa-check-circle" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6' }}></i> {srv.description}</li>
+              <ul className="plan-features" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}>
+                <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <i className="fas fa-check-circle" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6', marginTop: '4px' }}></i> 
+                  <span>Phân loại: <strong>{srv.serviceName.includes('PT') ? 'Huấn Luyện Viên' : 'Tiện Ích'}</strong></span>
+                </li>
+                {srv.description && srv.description.split('\n').map((line, lIdx) => {
+                  if (!line.trim()) return null;
+                  return (
+                    <li key={lIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <i className="fas fa-check-circle" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6', marginTop: '4px' }}></i>
+                      <span>{line}</span>
+                    </li>
+                  );
+                })}
               </ul>
               {srv.serviceName.includes('PT') && (
                 <button

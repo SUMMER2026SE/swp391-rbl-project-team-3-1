@@ -374,10 +374,13 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
   }, 0);
   const totalPrice = planPrice + servicesPrice;
 
-  const hasPTService = selectedServices.some(svcId => {
-    const svc = services.find(s => s.serviceId === svcId);
-    return svc?.sportType === 'Huấn Luyện';
-  });
+  const hasPTService = (selectedPlan?.includedServices || []).some(s => s.sportType === 'Huấn Luyện') || 
+    selectedServices.some(svcId => {
+      const svc = services.find(s => s.serviceId === svcId);
+      return svc?.sportType === 'Huấn Luyện';
+    });
+  
+  const includedServiceIds = selectedPlan?.includedServices?.map(s => s.serviceId) || [];
 
   const qrCodeUrl = payosPayment?.qrCode
     ? `https://quickchart.io/qr?size=240&text=${encodeURIComponent(payosPayment.qrCode)}`
@@ -681,37 +684,44 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
                   </div>
                   <div className="co-section-body">
                     <div className="trainers-grid">
-                      {services.map(svc => (
-                        <div
-                          key={svc.serviceId}
-                          className={`trainer-card${selectedServices.includes(svc.serviceId) ? ' selected' : ''}`}
-                          onClick={() => {
-                            setSelectedServices(prev =>
-                              prev.includes(svc.serviceId)
-                                ? prev.filter(id => id !== svc.serviceId)
-                                : [...prev, svc.serviceId]
-                            );
-                          }}
-                        >
-                          <div className="trainer-avatar" style={{ background: 'linear-gradient(135deg, #10b981, #059669)', fontSize: '1.2rem' }}>
-                            <i className={`fa-solid ${svc.sportType === 'Swimming' ? 'fa-person-swimming' : svc.sportType === 'Sauna' ? 'fa-hot-tub-person' : svc.sportType === 'Locker' ? 'fa-lock' : 'fa-mug-hot'}`}></i>
-                          </div>
-                          <div className="trainer-info">
-                            <div className="trainer-name">{svc.serviceName}</div>
-                            <div className="trainer-spec">{svc.description}</div>
-                            <div className="trainer-rating" style={{ color: '#10b981' }}>
-                              <i className="fa-solid fa-tag"></i>
-                              {fmt(svc.price)}
+                      {services.map(svc => {
+                        const isIncluded = includedServiceIds.includes(svc.serviceId);
+                        const isSelected = selectedServices.includes(svc.serviceId) || isIncluded;
+
+                        return (
+                          <div
+                            key={svc.serviceId}
+                            className={`trainer-card${isSelected ? ' selected' : ''}`}
+                            style={isIncluded ? { opacity: 0.7, cursor: 'default' } : {}}
+                            onClick={() => {
+                              if (isIncluded) return;
+                              setSelectedServices(prev =>
+                                prev.includes(svc.serviceId)
+                                  ? prev.filter(id => id !== svc.serviceId)
+                                  : [...prev, svc.serviceId]
+                              );
+                            }}
+                          >
+                            <div className="trainer-avatar" style={{ background: 'linear-gradient(135deg, #10b981, #059669)', fontSize: '1.2rem' }}>
+                              <i className={`fa-solid ${svc.sportType === 'Swimming' ? 'fa-person-swimming' : svc.sportType === 'Sauna' ? 'fa-hot-tub-person' : svc.sportType === 'Locker' ? 'fa-lock' : 'fa-mug-hot'}`}></i>
+                            </div>
+                            <div className="trainer-info">
+                              <div className="trainer-name">{svc.serviceName}</div>
+                              <div className="trainer-spec">{svc.description}</div>
+                              <div className="trainer-rating" style={{ color: '#10b981' }}>
+                                <i className="fa-solid fa-tag"></i>
+                                {isIncluded ? 'Đã bao gồm trong gói' : fmt(svc.price)}
+                              </div>
+                            </div>
+                            <div className="trainer-select-btn">
+                              {isSelected
+                                ? <i className="fa-solid fa-check"></i>
+                                : <i className="fa-solid fa-plus"></i>
+                              }
                             </div>
                           </div>
-                          <div className="trainer-select-btn">
-                            {selectedServices.includes(svc.serviceId)
-                              ? <i className="fa-solid fa-check"></i>
-                              : <i className="fa-solid fa-plus"></i>
-                            }
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 </div>

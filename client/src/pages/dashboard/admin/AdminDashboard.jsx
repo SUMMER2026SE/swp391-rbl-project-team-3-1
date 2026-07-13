@@ -23,7 +23,10 @@ function AdminDashboard({ token, userInfo, logout }) {
   const [servicesList, setServicesList] = useState([]);
   const [complaintsList, setComplaintsList] = useState([]);
   const [coreSports, setCoreSports] = useState([]);
-  const [analyticsData, setAnalyticsData] = useState(null);
+  const [heroTitle, setHeroTitle] = useState('Bứt Phá Giới Hạn');
+  const [heroSubtitle, setHeroSubtitle] = useState('Hệ thống quản lý phòng gym thông minh, tối ưu hóa quy trình tập luyện và trải nghiệm khách hàng đẳng cấp.');
+  const [paymentsList, setPaymentsList] = useState([]);
+  const [offRequestsList, setOffRequestsList] = useState([]);
 
   const isAppointmentPast = (ap) => {
     if (!ap) return false;
@@ -96,15 +99,31 @@ function AdminDashboard({ token, userInfo, logout }) {
   const [toastMessage, setToastMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
-
-  // Add PT Modal State
+  const [paymentFilterType, setPaymentFilterType] = useState('ALL'); // ALL, DAY, MONTH, YEAR
+  const [paymentFilterValue, setPaymentFilterValue] = useState(''); // Value for the filter (e.g. '2026-06-17')
+  const [trainerSpecialtyFilter, setTrainerSpecialtyFilter] = useState('ALL'); // ALL, Yoga, Gym, Boxing
+  const [trainerSortKey, setTrainerSortKey] = useState(null); // 'expYears', 'activeMembers', 'rating'
+  const [trainerSortOrder, setTrainerSortOrder] = useState('desc'); // 'asc' or 'desc'
+  
+  // Add Account Modal State
   const [showAddPT, setShowAddPT] = useState(false);
+  const [newPtRoleId, setNewPtRoleId] = useState('2'); // Default to Trainer (2)
   const [newPtName, setNewPtName] = useState('');
   const [newPtEmail, setNewPtEmail] = useState('');
-  const [newPtSpecialty, setNewPtSpecialty] = useState('');
-  const [newPtExpYears, setNewPtExpYears] = useState(1);
+  const [emailExistsError, setEmailExistsError] = useState('');
+  const [newPtSpecialty, setNewPtSpecialty] = useState('Gym');
+  const [newPtExpYears, setNewPtExpYears] = useState('');
   const [newPtBio, setNewPtBio] = useState('');
+  const [newPtCertifications, setNewPtCertifications] = useState('');
   const [createdPTDetails, setCreatedPTDetails] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // HLV Profile Modal State
+  const [showTrainerProfileModal, setShowTrainerProfileModal] = useState(false);
+  const [selectedTrainerProfile, setSelectedTrainerProfile] = useState(null);
+  const [selectedTrainerSchedules, setSelectedTrainerSchedules] = useState([]);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [scheduleFilter, setScheduleFilter] = useState('ALL'); // ALL, AVAILABLE, BOOKED, OFF
 
   // Edit Package Modal State
   const [showEditPackage, setShowEditPackage] = useState(null);
@@ -114,6 +133,9 @@ function AdminDashboard({ token, userInfo, logout }) {
   const [editPkgMonths, setEditPkgMonths] = useState(1);
   const [editPkgFeatures, setEditPkgFeatures] = useState('');
   const [editPkgSportType, setEditPkgSportType] = useState('Gym');
+  const [editPkgAttachedServices, setEditPkgAttachedServices] = useState([]);
+  const [allServices, setAllServices] = useState([]);
+  const [packageFilter, setPackageFilter] = useState('ALL');
 
   // Toast notification helper
   const showToast = (message) => {
@@ -174,17 +196,36 @@ function AdminDashboard({ token, userInfo, logout }) {
       .then(data => { if (data && data.complaints) setComplaintsList(data.complaints); })
       .catch(err => console.error('Error fetching complaints:', err));
 
-    fetch('/api/checkout/homepage-config')
+    
+      fetch('/api/checkout/services')
+        .then(res => res.json())
+        .then(data => { if (data && data.services) setAllServices(data.services); })
+        .catch(err => console.error('Error fetching all services:', err));
+    
+      fetch('/api/checkout/homepage-config')
       .then(res => res.json())
-      .then(data => { if (data && data.coreSports) setCoreSports(data.coreSports); })
+      .then(data => { 
+        if (data) {
+          if (data.coreSports) setCoreSports(data.coreSports);
+          if (data.heroTitle) setHeroTitle(data.heroTitle);
+          if (data.heroSubtitle) setHeroSubtitle(data.heroSubtitle);
+        }
+      })
       .catch(err => console.error('Error fetching homepage config:', err));
 
-    fetch('/api/dashboard/admin/analytics', {
+    /* fetch('/api/dashboard/admin/payments', {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => res.json())
-      .then(data => { if (data) setAnalyticsData(data); })
-      .catch(err => console.error('Error fetching admin analytics:', err));
+      .then(data => { if (data && data.payments) setPaymentsList(data.payments); })
+      .catch(err => console.error('Error fetching payments:', err)); */
+
+    /* fetch('/api/dashboard/admin/off-requests', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => { if (data && data.requests) setOffRequestsList(data.requests); })
+      .catch(err => console.error('Error fetching off requests:', err)); */
   };
 
   useEffect(() => {
@@ -205,22 +246,104 @@ function AdminDashboard({ token, userInfo, logout }) {
       .catch(err => console.error('Error toggling status:', err));
   };
 
-  const handleCreatePT = (e) => {
-    e.preventDefault();
-    if (!newPtName || !newPtEmail) return;
+  const handleApproveOffRequest = (id) => {
+    fetch(`/api/dashboard/admin/off-requests/${id}/approve`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        showToast(data.message || 'Đã duyệt!');
+        reloadAllAdminData();
+      })
+      .catch(err => console.error('Error approving off request:', err));
+  };
 
-    fetch('/api/dashboard/admin/trainers', {
+  const handleRejectOffRequest = (id) => {
+    if (!window.confirm('Bạn có chắc chắn muốn từ chối yêu cầu nghỉ này?')) return;
+    fetch(`/api/dashboard/admin/off-requests/${id}/reject`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        showToast(data.message || 'Đã từ chối!');
+        reloadAllAdminData();
+      })
+      .catch(err => console.error('Error rejecting off request:', err));
+  };
+
+  const handleViewTrainerProfile = (trainerId) => {
+    setLoadingProfile(true);
+    fetch(`/api/dashboard/admin/trainers/${trainerId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('Không thể tải thông tin hồ sơ HLV!');
+        return res.json();
+      })
+      .then(data => {
+        setSelectedTrainerProfile(data.trainer);
+        setSelectedTrainerSchedules(data.schedules);
+        setScheduleFilter('ALL');
+        setShowTrainerProfileModal(true);
+        setLoadingProfile(false);
+      })
+      .catch(err => {
+        setLoadingProfile(false);
+        alert(err.message || 'Lỗi khi tải hồ sơ HLV!');
+      });
+  };
+
+  const handleSortTrainers = (key) => {
+    if (trainerSortKey === key) {
+      setTrainerSortOrder(trainerSortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setTrainerSortKey(key);
+      setTrainerSortOrder('desc'); // Default to descending when selecting new sort key
+    }
+  };
+
+  const handleCheckEmailExists = (emailVal) => {
+    if (!emailVal || !emailVal.includes('@')) return;
+    fetch(`/api/dashboard/admin/check-email?email=${encodeURIComponent(emailVal)}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.exists) {
+          setEmailExistsError('Email này đã tồn tại trên hệ thống!');
+        } else {
+          setEmailExistsError('');
+        }
+      })
+      .catch(err => console.error('Error checking email:', err));
+  };
+
+  const handleCreateAccount = (e) => {
+    e.preventDefault();
+    if (!newPtName || !newPtEmail || !newPtRoleId) return;
+    if (emailExistsError) {
+      alert('Email đã tồn tại! Vui lòng sử dụng email khác.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    fetch('/api/dashboard/admin/users', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({
+        roleId: newPtRoleId,
         name: newPtName,
         email: newPtEmail,
-        specialty: newPtSpecialty,
-        expYears: newPtExpYears,
-        bio: newPtBio
+        specialty: (newPtRoleId === '2') ? newPtSpecialty : undefined,
+        expYears: (newPtRoleId === '2' && newPtExpYears) ? Number(newPtExpYears) : undefined,
+        bio: (newPtRoleId === '2') ? newPtBio : undefined,
+        certifications: (newPtRoleId === '2') ? newPtCertifications : undefined
       })
     })
       .then(res => {
@@ -232,16 +355,22 @@ function AdminDashboard({ token, userInfo, logout }) {
           name: newPtName,
           email: newPtEmail,
           password: data.temporaryPassword,
-          emailSent: data.emailSent
+          emailSent: data.emailSent,
+          roleId: newPtRoleId
         });
         setNewPtName('');
         setNewPtEmail('');
-        setNewPtSpecialty('');
-        setNewPtExpYears(1);
+        setNewPtRoleId('2');
+        setEmailExistsError('');
+        setNewPtSpecialty('Gym');
+        setNewPtExpYears('');
         setNewPtBio('');
+        setNewPtCertifications('');
+        setIsSubmitting(false);
       })
       .catch(err => {
-        showToast(err.message || 'Lỗi khi tạo mới tài khoản PT!');
+        setIsSubmitting(false);
+        alert(err.message || 'Lỗi khi cấp tài khoản!');
       });
   };
 
@@ -259,7 +388,8 @@ function AdminDashboard({ token, userInfo, logout }) {
           price: editPkgPrice,
           durationMonths: editPkgMonths,
           features: editPkgFeatures,
-          sportType: editPkgSportType
+          sportType: editPkgSportType,
+          attachedServices: editPkgAttachedServices
         })
       })
         .then(res => res.json())
@@ -281,7 +411,8 @@ function AdminDashboard({ token, userInfo, logout }) {
           price: editPkgPrice,
           durationMonths: editPkgMonths,
           features: editPkgFeatures,
-          sportType: editPkgSportType
+          sportType: editPkgSportType,
+          attachedServices: editPkgAttachedServices
         })
       })
         .then(res => res.json())
@@ -362,6 +493,7 @@ function AdminDashboard({ token, userInfo, logout }) {
     setEditPkgPrice(pkg.price);
     setEditPkgMonths(pkg.durationMonths);
     setEditPkgFeatures(pkg.features);
+      setEditPkgAttachedServices(pkg.attachedServices || []);
     setEditPkgSportType(pkg.sportType || 'Gym');
   };
 
@@ -373,6 +505,7 @@ function AdminDashboard({ token, userInfo, logout }) {
     setEditPkgMonths(1);
     setEditPkgFeatures('');
     setEditPkgSportType('Gym');
+      setEditPkgAttachedServices([]);
   };
 
   const saveHomepageSport = (index, name, description, file) => {
@@ -383,6 +516,8 @@ function AdminDashboard({ token, userInfo, logout }) {
 
     formData.append('coreSports', JSON.stringify(updatedSports));
     formData.append('updateIndex', index);
+    formData.append('heroTitle', heroTitle);
+    formData.append('heroSubtitle', heroSubtitle);
     if (file) {
       formData.append('image', file);
     }
@@ -400,6 +535,25 @@ function AdminDashboard({ token, userInfo, logout }) {
       .catch(err => console.error('Error saving homepage config:', err));
   };
 
+  const saveHomepageHero = (title, subtitle) => {
+    const formData = new FormData();
+    formData.append('coreSports', JSON.stringify(coreSports));
+    formData.append('heroTitle', title);
+    formData.append('heroSubtitle', subtitle);
+
+    fetch(`/api/dashboard/admin/homepage-config`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData
+    })
+      .then(res => res.json())
+      .then(data => {
+        showToast(data.message || 'Cập nhật Banner thành công!');
+        reloadAllAdminData();
+      })
+      .catch(err => console.error('Error saving homepage hero config:', err));
+  };
+
   // Formatting date string Vietnamese
   const getCurrentDateString = () => {
     const d = new Date();
@@ -413,6 +567,46 @@ function AdminDashboard({ token, userInfo, logout }) {
                           u.email.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesRole = roleFilter === 'ALL' || u.role === roleFilter;
     return matchesSearch && matchesRole;
+  });
+
+  const filteredTrainers = trainersList
+    .filter(t => {
+      if (trainerSpecialtyFilter === 'ALL') return true;
+      const spec = (t.specialty || '').toLowerCase();
+      if (trainerSpecialtyFilter.toLowerCase() === 'gym' || trainerSpecialtyFilter.toLowerCase() === 'fitness & bodybuilding') {
+        return spec.includes('gym') || spec.includes('fitness & bodybuilding');
+      }
+      return spec.includes(trainerSpecialtyFilter.toLowerCase());
+    })
+    .sort((a, b) => {
+      if (!trainerSortKey) return 0;
+      let valA = a[trainerSortKey];
+      let valB = b[trainerSortKey];
+      if (trainerSortKey === 'expYears' || trainerSortKey === 'activeMembers' || trainerSortKey === 'rating') {
+        valA = Number(valA) || 0;
+        valB = Number(valB) || 0;
+      }
+      if (valA < valB) return trainerSortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return trainerSortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+  const filteredPayments = paymentsList.filter(p => {
+    if (paymentFilterType === 'ALL') return true;
+    const paymentDate = new Date(p.paymentDate);
+    
+    if (paymentFilterType === 'DAY' && paymentFilterValue) {
+      const filterDate = new Date(paymentFilterValue);
+      return paymentDate.toDateString() === filterDate.toDateString();
+    }
+    if (paymentFilterType === 'MONTH' && paymentFilterValue) {
+      const [year, month] = paymentFilterValue.split('-');
+      return paymentDate.getFullYear() === parseInt(year) && (paymentDate.getMonth() + 1) === parseInt(month);
+    }
+    if (paymentFilterType === 'YEAR' && paymentFilterValue) {
+      return paymentDate.getFullYear() === parseInt(paymentFilterValue);
+    }
+    return true;
   });
 
   // Chart data for 2025 & 2024
@@ -431,6 +625,18 @@ function AdminDashboard({ token, userInfo, logout }) {
     ]
   };
 
+  const sortedAndFilteredPackages = packagesList
+    .filter(pkg => packageFilter === 'ALL' || pkg.sportType === packageFilter)
+    .sort((a, b) => {
+      const order = { 'Gym': 1, 'Yoga': 2, 'Boxing': 3, 'Combo': 4, 'VIP': 5 };
+      const rankA = order[a.sportType] || 99;
+      const rankB = order[b.sportType] || 99;
+      
+      if (rankA !== rankB) return rankA - rankB;
+      // If same sport type, sort by price (or duration)
+      return a.price - b.price;
+    });
+
   // Render tab contents
   const renderTabContent = () => {
     switch (activeTab) {
@@ -439,7 +645,11 @@ function AdminDashboard({ token, userInfo, logout }) {
           <>
             {/* Stat Cards Row */}
             <div className="admin-stats-grid">
-              <div className="admin-stat-card orange">
+              <div 
+                className="admin-stat-card orange" 
+                onClick={() => setActiveTab('nguoidung')} 
+                style={{ cursor: 'pointer' }}
+              >
                 <div className="admin-stat-label">Tổng học viên</div>
                 <div className="admin-stat-value">{stats.totalMembers?.toLocaleString('vi-VN')}</div>
                 <div className="admin-stat-subtext">
@@ -450,7 +660,11 @@ function AdminDashboard({ token, userInfo, logout }) {
                 </div>
               </div>
 
-              <div className="admin-stat-card green">
+              <div 
+                className="admin-stat-card green" 
+                onClick={() => setActiveTab('baocao')} 
+                style={{ cursor: 'pointer' }}
+              >
                 <div className="admin-stat-label">Doanh thu tháng</div>
                 <div className="admin-stat-value">{stats.totalRevenue?.toLocaleString('vi-VN')}đ</div>
                 <div className="admin-stat-subtext">
@@ -461,8 +675,12 @@ function AdminDashboard({ token, userInfo, logout }) {
                 </div>
               </div>
 
-              <div className="admin-stat-card purple">
-                <div className="admin-stat-label">PT đang hoạt động</div>
+              <div 
+                className="admin-stat-card purple" 
+                onClick={() => setActiveTab('hlv')} 
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="admin-stat-label">Huấn luyện viên đang hoạt động</div>
                 <div className="admin-stat-value">{stats.activeTrainers?.toLocaleString('vi-VN')}</div>
                 <div className="admin-stat-subtext">
                   <span className="trend-neutral">Ổn định</span> nhân lực
@@ -472,7 +690,11 @@ function AdminDashboard({ token, userInfo, logout }) {
                 </div>
               </div>
 
-              <div className="admin-stat-card rose">
+              <div 
+                className="admin-stat-card rose" 
+                onClick={() => setActiveTab('lichhen')} 
+                style={{ cursor: 'pointer' }}
+              >
                 <div className="admin-stat-label">Lịch hẹn hôm nay</div>
                 <div className="admin-stat-value">{stats.appointmentsToday?.toLocaleString('vi-VN')}</div>
                 <div className="admin-stat-subtext">
@@ -637,8 +859,18 @@ function AdminDashboard({ token, userInfo, logout }) {
                 </select>
               </div>
 
-              <button className="admin-btn-add" onClick={() => setShowAddPT(true)}>
-                <i className="fa-solid fa-plus"></i> Thêm PT Mới
+              <button className="admin-btn-add" onClick={() => {
+                setNewPtRoleId('2');
+                setNewPtName('');
+                setNewPtEmail('');
+                setEmailExistsError('');
+                setNewPtSpecialty('Gym');
+                setNewPtExpYears('');
+                setNewPtBio('');
+                setNewPtCertifications('');
+                setShowAddPT(true);
+              }}>
+                <i className="fa-solid fa-plus"></i> Cấp Tài Khoản
               </button>
             </div>
 
@@ -723,29 +955,86 @@ function AdminDashboard({ token, userInfo, logout }) {
       case 'hlv':
         return (
           <div className="admin-card-panel">
-            <h3 className="admin-card-title" style={{ marginBottom: '20px' }}>Danh sách Huấn Luyện Viên (PT)</h3>
-            <div className="admin-table-container">
+            <div className="admin-card-header" style={{ marginBottom: '20px' }}>
+              <div>
+                <h3 className="admin-card-title">Danh sách Huấn Luyện Viên</h3>
+                <p className="admin-card-desc">Quản lý đội ngũ Huấn Luyện Viên (HLV) và duyệt lịch nghỉ.</p>
+              </div>
+              <div className="admin-filters-area">
+                <select 
+                  className="admin-filter-select" 
+                  value={trainerSpecialtyFilter} 
+                  onChange={(e) => setTrainerSpecialtyFilter(e.target.value)}
+                >
+                  <option value="ALL">Tất cả bộ môn</option>
+                  <option value="Yoga">Yoga</option>
+                  <option value="Gym">Gym</option>
+                  <option value="Boxing">Boxing</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="admin-table-container" style={{ marginBottom: '40px' }}>
               <table className="admin-table">
                 <thead>
                   <tr>
                     <th>Huấn luyện viên</th>
                     <th>Chuyên môn</th>
-                    <th>Kinh nghiệm</th>
-                    <th>Số học viên</th>
-                    <th>Đánh giá</th>
+                    <th 
+                      onClick={() => handleSortTrainers('expYears')} 
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      Kinh nghiệm 
+                      <i 
+                        className={`fa-solid ${trainerSortKey === 'expYears' ? (trainerSortOrder === 'asc' ? 'fa-arrow-up-short-wide' : 'fa-arrow-down-wide-short') : 'fa-sort'}`} 
+                        style={{ marginLeft: '6px', color: trainerSortKey === 'expYears' ? 'var(--orange)' : '#94a3b8' }}
+                      ></i>
+                    </th>
+                    <th 
+                      onClick={() => handleSortTrainers('activeMembers')} 
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      Số học viên đang nhận 
+                      <i 
+                        className={`fa-solid ${trainerSortKey === 'activeMembers' ? (trainerSortOrder === 'asc' ? 'fa-arrow-up-short-wide' : 'fa-arrow-down-wide-short') : 'fa-sort'}`} 
+                        style={{ marginLeft: '6px', color: trainerSortKey === 'activeMembers' ? 'var(--orange)' : '#94a3b8' }}
+                      ></i>
+                    </th>
+                    <th 
+                      onClick={() => handleSortTrainers('rating')} 
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      Đánh giá 
+                      <i 
+                        className={`fa-solid ${trainerSortKey === 'rating' ? (trainerSortOrder === 'asc' ? 'fa-arrow-up-short-wide' : 'fa-arrow-down-wide-short') : 'fa-sort'}`} 
+                        style={{ marginLeft: '6px', color: trainerSortKey === 'rating' ? 'var(--orange)' : '#94a3b8' }}
+                      ></i>
+                    </th>
                     <th>Thao tác</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {trainersList.map((pt) => (
+                  {filteredTrainers.map((pt) => (
                     <tr key={pt.id}>
                       <td>
-                        <div className="admin-table-user-cell">
+                        <div 
+                          className="admin-table-user-cell"
+                          onClick={() => handleViewTrainerProfile(pt.id)}
+                          style={{ cursor: 'pointer' }}
+                          title="Xem chi tiết hồ sơ & lịch làm việc"
+                        >
                           <div className="admin-table-avatar trainer">
                             {pt.name.charAt(0)}
                           </div>
                           <div>
-                            <span className="admin-table-name">{pt.name}</span>
+                            <span 
+                              className="admin-table-name"
+                              style={{ transition: 'color 0.2s' }}
+                              onMouseEnter={(e) => e.target.style.color = 'var(--orange)'}
+                              onMouseLeave={(e) => e.target.style.color = ''}
+                            >
+                              {pt.name}
+                            </span>
                             <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{pt.email}</div>
                           </div>
                         </div>
@@ -765,6 +1054,69 @@ function AdminDashboard({ token, userInfo, logout }) {
                       </td>
                     </tr>
                   ))}
+                  {filteredTrainers.length === 0 && (
+                    <tr>
+                      <td colSpan="6" style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>
+                        Không có huấn luyện viên nào phù hợp.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* OFF REQUESTS SECTION */}
+            <h3 className="admin-card-title" style={{ marginBottom: '20px', color: '#ef4444' }}>Yêu cầu Nghỉ Phép (Off Request)</h3>
+            <div className="admin-table-container">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Huấn luyện viên</th>
+                    <th>Chuyên môn</th>
+                    <th>Ngày xin nghỉ</th>
+                    <th>Trạng thái</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {offRequestsList.map((req) => (
+                    <tr key={req.scheduleId}>
+                      <td>
+                        <span className="admin-table-name">{req.trainerName}</span>
+                      </td>
+                      <td style={{ color: 'var(--orange)' }}>{req.specialization}</td>
+                      <td>{new Date(req.date).toLocaleDateString('vi-VN')}</td>
+                      <td>
+                        <span className="admin-status-dot-wrap inactive">
+                          <span className="admin-status-dot inactive"></span>
+                          Chờ duyệt
+                        </span>
+                      </td>
+                      <td>
+                        <button 
+                          className="admin-btn-submit" 
+                          style={{ padding: '6px 12px', fontSize: '0.8rem', marginRight: '8px' }}
+                          onClick={() => handleApproveOffRequest(req.scheduleId)}
+                        >
+                          Duyệt
+                        </button>
+                        <button 
+                          className="admin-btn-cancel" 
+                          style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                          onClick={() => handleRejectOffRequest(req.scheduleId)}
+                        >
+                          Từ chối
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {offRequestsList.length === 0 && (
+                    <tr>
+                      <td colSpan="5" style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>
+                        Không có yêu cầu nghỉ phép nào.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -781,8 +1133,31 @@ function AdminDashboard({ token, userInfo, logout }) {
               </button>
             </div>
             
-            <div className="admin-packages-grid">
-              {packagesList.map((pkg) => (
+            
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                {['ALL', 'Gym', 'Yoga', 'Boxing', 'Combo', 'VIP'].map(filter => (
+                  <button
+                    key={filter}
+                    onClick={() => setPackageFilter(filter)}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      border: '1px solid',
+                      cursor: 'pointer',
+                      fontWeight: '600',
+                      transition: 'all 0.2s ease',
+                      backgroundColor: packageFilter === filter ? 'var(--orange)' : '#ffffff',
+                      color: packageFilter === filter ? '#ffffff' : '#475569',
+                      borderColor: packageFilter === filter ? 'var(--orange)' : '#cbd5e1',
+                    }}
+                  >
+                    {filter === 'ALL' ? 'Tất Cả' : filter}
+                  </button>
+                ))}
+              </div>
+              <div className="admin-packages-grid">
+
+              {sortedAndFilteredPackages.map((pkg) => (
                 <div key={pkg.id} className="admin-package-card">
                   <div>
                     <h4 className="admin-package-title">{pkg.title}</h4>
@@ -1000,232 +1375,116 @@ function AdminDashboard({ token, userInfo, logout }) {
         );
 
       case 'baocao':
-        const rev = analyticsData?.revenue || { total: 48500000, membership: 35000000, service: 13500000 };
-        const pkgs = analyticsData?.packages || [];
-        const srvs = analyticsData?.services || [];
-        const tns = analyticsData?.trainers || [];
-
-        // Calculate split percentages
-        const membershipPct = rev.total > 0 ? Math.round((rev.membership / rev.total) * 100) : 0;
-        const servicePct = rev.total > 0 ? Math.round((rev.service / rev.total) * 100) : 0;
-
         return (
-          <div className="admin-analytics-container">
-            {/* Header Description */}
-            <div className="admin-card-panel analytics-header-panel">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
-                <div>
-                  <h3 className="admin-card-title">Báo cáo hiệu quả kinh doanh</h3>
-                  <p className="admin-card-desc">Dữ liệu doanh thu thực tế từ cổng thanh toán PayOS và thống kê hoạt động hệ thống.</p>
-                </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button className="admin-btn-submit" onClick={() => alert('Đang xuất toàn bộ dữ liệu báo cáo phân tích ra file Excel...')}>
-                    <i className="fa-solid fa-file-excel" style={{ marginRight: '8px' }}></i> Xuất Báo Cáo Tổng Hợp
-                  </button>
-                </div>
+          <div className="admin-card-panel">
+            <div className="admin-card-header" style={{ marginBottom: '20px' }}>
+              <div>
+                <h3 className="admin-card-title">Báo cáo Thanh toán Hệ thống</h3>
+                <p className="admin-card-desc">Lịch sử giao dịch hội viên và doanh thu thực tế.</p>
+              </div>
+              <div className="admin-filters-area" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <select 
+                  className="admin-filter-select" 
+                  value={paymentFilterType} 
+                  onChange={(e) => {
+                    setPaymentFilterType(e.target.value);
+                    setPaymentFilterValue(''); 
+                  }}
+                >
+                  <option value="ALL">Tất cả thời gian</option>
+                  <option value="DAY">Theo ngày</option>
+                  <option value="MONTH">Theo tháng</option>
+                  <option value="YEAR">Theo năm</option>
+                </select>
+
+                {paymentFilterType === 'DAY' && (
+                  <input 
+                    type="date" 
+                    className="admin-form-input" 
+                    style={{ width: 'auto', padding: '6px 12px', minHeight: '38px' }}
+                    value={paymentFilterValue}
+                    onChange={(e) => setPaymentFilterValue(e.target.value)}
+                  />
+                )}
+                {paymentFilterType === 'MONTH' && (
+                  <input 
+                    type="month" 
+                    className="admin-form-input" 
+                    style={{ width: 'auto', padding: '6px 12px', minHeight: '38px' }}
+                    value={paymentFilterValue}
+                    onChange={(e) => setPaymentFilterValue(e.target.value)}
+                  />
+                )}
+                {paymentFilterType === 'YEAR' && (
+                  <select 
+                    className="admin-filter-select" 
+                    value={paymentFilterValue}
+                    onChange={(e) => setPaymentFilterValue(e.target.value)}
+                  >
+                    <option value="">Chọn năm</option>
+                    <option value="2026">2026</option>
+                    <option value="2025">2025</option>
+                    <option value="2024">2024</option>
+                  </select>
+                )}
               </div>
             </div>
 
-            {/* Financial Overview Row */}
-            <div className="admin-stats-grid analytics-stats-grid">
-              <div className="admin-stat-card orange">
-                <div className="admin-stat-label">Tổng doanh thu hệ thống</div>
-                <div className="admin-stat-value">{rev.total?.toLocaleString('vi-VN')} đ</div>
-                <div className="admin-stat-subtext">
-                  Tổng tiền thực thu từ giao dịch <span style={{ fontWeight: 'bold' }}>Thành công</span>
-                </div>
-                <div className="admin-stat-icon-wrap">
-                  <i className="fa-solid fa-sack-dollar"></i>
-                </div>
-              </div>
-
-              <div className="admin-stat-card green">
-                <div className="admin-stat-label">Doanh thu Gói tập thành viên</div>
-                <div className="admin-stat-value">{rev.membership?.toLocaleString('vi-VN')} đ</div>
-                <div className="admin-stat-subtext">
-                  Chiếm <span style={{ fontWeight: 'bold' }}>{membershipPct}%</span> tổng cơ cấu doanh số
-                </div>
-                <div className="admin-stat-icon-wrap">
-                  <i className="fa-solid fa-id-card"></i>
-                </div>
-              </div>
-
-              <div className="admin-stat-card purple">
-                <div className="admin-stat-label">Doanh thu Dịch vụ & Tiện ích</div>
-                <div className="admin-stat-value">{rev.service?.toLocaleString('vi-VN')} đ</div>
-                <div className="admin-stat-subtext">
-                  Chiếm <span style={{ fontWeight: 'bold' }}>{servicePct}%</span> tổng cơ cấu doanh số
-                </div>
-                <div className="admin-stat-icon-wrap">
-                  <i className="fa-solid fa-bell-concierge"></i>
-                </div>
-              </div>
-            </div>
-
-            {/* Revenue Split Chart */}
-            <div className="admin-card-panel split-chart-panel">
-              <h4 className="analytics-section-title">Cơ cấu nguồn doanh thu</h4>
-              <div className="split-progress-wrapper">
-                <div className="split-progress-bar">
-                  <div className="split-bar-membership" style={{ width: `${membershipPct}%` }}></div>
-                  <div className="split-bar-service" style={{ width: `${servicePct}%` }}></div>
-                </div>
-                <div className="split-legends">
-                  <div className="split-legend-item">
-                    <span className="legend-dot membership"></span>
-                    <span className="legend-label">Gói tập hội viên:</span>
-                    <span className="legend-value">{rev.membership?.toLocaleString('vi-VN')}đ ({membershipPct}%)</span>
-                  </div>
-                  <div className="split-legend-item">
-                    <span className="legend-dot service"></span>
-                    <span className="legend-label">Dịch vụ bổ sung:</span>
-                    <span className="legend-value">{rev.service?.toLocaleString('vi-VN')}đ ({servicePct}%)</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Two-Column Analytics Layout */}
-            <div className="analytics-details-grid">
-              {/* Left Column: Popular Packages and Services */}
-              <div className="analytics-left-col">
-                {/* Popular Packages Card */}
-                <div className="admin-card-panel analytics-table-panel">
-                  <h4 className="analytics-section-title"><i className="fa-solid fa-tags" style={{ color: 'var(--orange)', marginRight: '8px' }}></i> Gói tập bán chạy nhất</h4>
-                  <div className="admin-table-container">
-                    <table className="admin-table">
-                      <thead>
-                        <tr>
-                          <th>Tên gói tập</th>
-                          <th style={{ textAlign: 'right' }}>Đơn giá</th>
-                          <th style={{ textAlign: 'center' }}>Số lượt mua</th>
-                          <th style={{ textAlign: 'right' }}>Doanh số</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pkgs.map((pkg, idx) => (
-                          <tr key={pkg.id}>
-                            <td className="admin-table-name">
-                              <span className="analytics-table-index">{idx + 1}</span> {pkg.name}
-                            </td>
-                            <td style={{ textAlign: 'right' }}>{pkg.price?.toLocaleString('vi-VN')}đ</td>
-                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{pkg.count}</td>
-                            <td style={{ textAlign: 'right', color: '#10b981', fontWeight: 'bold' }}>{pkg.totalRevenue?.toLocaleString('vi-VN')}đ</td>
-                          </tr>
-                        ))}
-                        {pkgs.length === 0 && (
-                          <tr>
-                            <td colSpan="4" style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>Chưa có dữ liệu giao dịch gói tập.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Popular Services Card */}
-                <div className="admin-card-panel analytics-table-panel" style={{ marginTop: '30px' }}>
-                  <h4 className="analytics-section-title"><i className="fa-solid fa-gem" style={{ color: '#10b981', marginRight: '8px' }}></i> Dịch vụ đi kèm bán chạy nhất</h4>
-                  <div className="admin-table-container">
-                    <table className="admin-table">
-                      <thead>
-                        <tr>
-                          <th>Tên dịch vụ</th>
-                          <th style={{ textAlign: 'right' }}>Đơn giá</th>
-                          <th style={{ textAlign: 'center' }}>Số lượt mua</th>
-                          <th style={{ textAlign: 'right' }}>Doanh số</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {srvs.map((srv, idx) => (
-                          <tr key={srv.id}>
-                            <td className="admin-table-name">
-                              <span className="analytics-table-index service-idx">{idx + 1}</span> {srv.name}
-                            </td>
-                            <td style={{ textAlign: 'right' }}>{srv.price?.toLocaleString('vi-VN')}đ</td>
-                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{srv.count}</td>
-                            <td style={{ textAlign: 'right', color: '#10b981', fontWeight: 'bold' }}>{srv.totalRevenue?.toLocaleString('vi-VN')}đ</td>
-                          </tr>
-                        ))}
-                        {srvs.length === 0 && (
-                          <tr>
-                            <td colSpan="4" style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>Chưa có dữ liệu giao dịch dịch vụ.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Column: Trainers Leaderboard */}
-              <div className="analytics-right-col">
-                <div className="admin-card-panel trainer-leaderboard-panel">
-                  <h4 className="analytics-section-title"><i className="fa-solid fa-crown" style={{ color: '#f59e0b', marginRight: '8px' }}></i> Xếp hạng HLV (PT) được thuê nhiều nhất</h4>
-                  <p className="admin-card-desc" style={{ marginBottom: '20px' }}>Xếp hạng dựa trên tổng số lượng học viên trực thuộc lộ trình luyện tập.</p>
-
-                  <div className="leaderboard-list">
-                    {tns.map((trainer, idx) => {
-                      let medalClass = "";
-                      let medalIcon = null;
-                      if (idx === 0) {
-                        medalClass = "gold";
-                        medalIcon = <i className="fa-solid fa-medal gold-medal"></i>;
-                      } else if (idx === 1) {
-                        medalClass = "silver";
-                        medalIcon = <i className="fa-solid fa-medal silver-medal"></i>;
-                      } else if (idx === 2) {
-                        medalClass = "bronze";
-                        medalIcon = <i className="fa-solid fa-medal bronze-medal"></i>;
-                      }
-
-                      return (
-                        <div key={trainer.id} className={`leaderboard-item ${medalClass}`}>
-                          <div className="leaderboard-left">
-                            <div className="leaderboard-position">
-                              {medalIcon || <span className="leaderboard-num">{idx + 1}</span>}
-                            </div>
-                            <div className="leaderboard-avatar-circle">
-                              {trainer.name?.charAt(0)}
-                            </div>
-                            <div className="leaderboard-info">
-                              <span className="leaderboard-name">{trainer.name}</span>
-                              <span className="leaderboard-specialty">{trainer.specialty} • Kinh nghiệm: {trainer.experienceYears} năm</span>
-                            </div>
-                          </div>
-                          <div className="leaderboard-right">
-                            <div className="leaderboard-stat">
-                              <span className="stat-num">{trainer.hiredCount}</span>
-                              <span className="stat-label">Học viên</span>
-                            </div>
-                            <div className="leaderboard-divider"></div>
-                            <div className="leaderboard-stat">
-                              <span className="stat-num">{trainer.sessionCount}</span>
-                              <span className="stat-label">Buổi dạy</span>
-                            </div>
+            <div className="admin-table-container">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Người dùng</th>
+                    <th>Ngày giao dịch</th>
+                    <th>Nội dung thanh toán</th>
+                    <th>Mã giao dịch</th>
+                    <th>Trạng thái</th>
+                    <th>Số tiền</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPayments.length > 0 ? filteredPayments.map((p) => (
+                    <tr key={p.paymentId}>
+                      <td>
+                        <div className="admin-table-user-cell">
+                          <div>
+                            <span className="admin-table-name">{p.memberName}</span>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{p.memberEmail}</div>
                           </div>
                         </div>
-                      );
-                    })}
-                    {tns.length === 0 && (
-                      <div style={{ textAlign: 'center', color: '#64748b', padding: '30px' }}>
-                        Chưa ghi nhận hoạt động HLV.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Quick actions panel */}
-                <div className="admin-card-panel" style={{ marginTop: '30px', backgroundColor: '#f8fafc', border: '1px dashed #cbd5e1' }}>
-                  <h4 className="analytics-section-title" style={{ fontSize: '0.95rem', marginBottom: '8px' }}>Chỉ số sức khỏe hệ thống</h4>
-                  <p style={{ fontSize: '0.82rem', color: '#64748b', lineHeight: '1.5', margin: '0 0 16px 0' }}>
-                    Tỷ lệ hài lòng của học viên đối với chất lượng HLV đạt <strong>★ {tns.length > 0 ? (tns.reduce((acc, t) => acc + Number(t.rating), 0) / tns.length).toFixed(1) : "5.0"} / 5.0</strong>. Số lượng phản hồi chưa giải quyết: <strong>{complaintsList.filter(c => c.status === 'Pending').length} khiếu nại</strong>.
-                  </p>
-                  <button className="admin-btn-submit" style={{ width: '100%', backgroundColor: '#0f172a' }} onClick={() => setActiveTab('khieunai')}>
-                    Xử lý khiếu nại ngay
-                  </button>
-                </div>
-              </div>
+                      </td>
+                      <td>{new Date(p.paymentDate).toLocaleString('vi-VN')}</td>
+                      <td style={{ maxWidth: '250px', whiteSpace: 'normal' }}>
+                        {p.paymentDescription || p.paymentType || 'Membership'}
+                      </td>
+                      <td><span style={{ fontFamily: 'monospace' }}>{p.transactionCode}</span></td>
+                      <td>
+                        <span className={`admin-status-dot-wrap ${p.paymentStatus === 'Paid' ? 'active' : 'inactive'}`}>
+                          <span className={`admin-status-dot ${p.paymentStatus === 'Paid' ? 'active' : 'inactive'}`}></span>
+                          {p.paymentStatus}
+                        </span>
+                      </td>
+                      <td style={{ fontWeight: 'bold', color: 'var(--orange)' }}>
+                        {p.amount.toLocaleString('vi-VN')}đ
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan="6" style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>
+                        Không có dữ liệu giao dịch nào.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            <div style={{ marginTop: '20px', textAlign: 'right' }}>
+               <h4 style={{ color: '#1e293b' }}>
+                 Tổng cộng: <span style={{ color: 'var(--orange)', fontSize: '1.25rem' }}>
+                   {filteredPayments.reduce((sum, p) => sum + p.amount, 0).toLocaleString('vi-VN')}đ
+                 </span>
+               </h4>
             </div>
           </div>
         );
@@ -1234,7 +1493,45 @@ function AdminDashboard({ token, userInfo, logout }) {
         return (
           <div className="admin-card-panel">
             <h3 className="admin-card-title" style={{ marginBottom: '20px' }}>Cấu hình nội dung Trang Chủ</h3>
-            <p className="admin-card-desc" style={{ marginBottom: '30px' }}>Thay đổi các thẻ dịch vụ cốt lõi hiển thị ở trang chủ (Gym, Yoga, Boxing).</p>
+            <p className="admin-card-desc" style={{ marginBottom: '30px' }}>Thay đổi các tiêu đề chính và các thẻ dịch vụ cốt lõi hiển thị ở trang chủ (Gym, Yoga, Boxing).</p>
+
+            {/* HERO SECTION CONFIG */}
+            <div className="admin-card-panel" style={{ backgroundColor: '#fff7ed', border: '1px solid #ffedd5', marginBottom: '30px', padding: '24px' }}>
+              <h4 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', color: 'var(--orange)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+                <i className="fa-solid fa-heading"></i> Cấu hình Banner Trang Chủ (Hero Banner)
+              </h4>
+              <div className="admin-form-group">
+                <label className="admin-form-label">Slogan Banner (Tiêu đề chính)</label>
+                <input 
+                  type="text" 
+                  className="admin-form-input" 
+                  value={heroTitle}
+                  onChange={(e) => setHeroTitle(e.target.value)}
+                  style={{ fontWeight: '500' }}
+                />
+              </div>
+              <div className="admin-form-group" style={{ marginTop: '16px' }}>
+                <label className="admin-form-label">Mô tả Banner (Tiêu đề phụ)</label>
+                <textarea 
+                  className="admin-form-input" 
+                  rows="3" 
+                  value={heroSubtitle}
+                  onChange={(e) => setHeroSubtitle(e.target.value)}
+                  style={{ lineHeight: '1.5' }}
+                ></textarea>
+              </div>
+              <button 
+                className="admin-btn-submit" 
+                onClick={() => saveHomepageHero(heroTitle, heroSubtitle)}
+                style={{ marginTop: '16px', padding: '10px 24px', fontWeight: 'bold' }}
+              >
+                Lưu Banner Trang Chủ
+              </button>
+            </div>
+
+            <h4 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', color: '#1e293b', fontWeight: 'bold' }}>
+              <i className="fa-solid fa-cube"></i> Cấu hình thẻ Bộ môn cốt lõi
+            </h4>
 
             <div className="admin-form-grid" style={{ gridTemplateColumns: '1fr', gap: '30px' }}>
               {coreSports.map((sport, index) => (
@@ -1470,75 +1767,119 @@ function AdminDashboard({ token, userInfo, logout }) {
         {renderTabContent()}
       </main>
 
-      {/* MODAL 1: ADD NEW PT */}
+      {/* MODAL 1: PROVISION NEW ACCOUNT */}
       {showAddPT && (
         <div className="admin-modal-overlay">
           <div className="admin-modal-box">
-            <h3 className="admin-modal-title">Thêm mới Huấn Luyện Viên (PT)</h3>
-            <form onSubmit={handleCreatePT}>
+            <h3 className="admin-modal-title">Cấp Tài Khoản Hệ Thống</h3>
+            <form onSubmit={handleCreateAccount}>
+              <div className="admin-form-group">
+                <label className="admin-form-label">Vai Trò / Chức Vụ</label>
+                <select
+                  className="admin-form-input"
+                  value={newPtRoleId}
+                  onChange={(e) => setNewPtRoleId(e.target.value)}
+                  style={{ width: '100%', height: '42px', padding: '0 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.9rem' }}
+                  required
+                >
+                  <option value="2">Huấn luyện viên (Trainer/PT)</option>
+                  <option value="3">Quản trị viên (Admin)</option>
+                </select>
+              </div>
+
               <div className="admin-form-group">
                 <label className="admin-form-label">Họ và Tên</label>
-                <input 
-                  type="text" 
-                  className="admin-form-input" 
-                  placeholder="Nhập họ và tên PT"
+                <input
+                  type="text"
+                  className="admin-form-input"
+                  placeholder="Nhập họ và tên người dùng"
                   value={newPtName}
                   onChange={(e) => setNewPtName(e.target.value)}
-                  required 
+                  required
                 />
               </div>
 
               <div className="admin-form-group">
                 <label className="admin-form-label">Email tài khoản</label>
-                <input 
-                  type="email" 
-                  className="admin-form-input" 
+                <input
+                  type="email"
+                  className="admin-form-input"
                   placeholder="nhap.email@fx.com"
                   value={newPtEmail}
-                  onChange={(e) => setNewPtEmail(e.target.value)}
-                  required 
+                  onChange={(e) => {
+                    setNewPtEmail(e.target.value);
+                    if (emailExistsError) setEmailExistsError('');
+                  }}
+                  onBlur={(e) => handleCheckEmailExists(e.target.value)}
+                  required
                 />
+                {emailExistsError && (
+                  <span style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '4px', display: 'block', fontWeight: '500' }}>
+                    ⚠️ {emailExistsError}
+                  </span>
+                )}
               </div>
 
-              <div className="admin-form-grid">
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Chuyên môn chính</label>
-                  <input 
-                    type="text" 
-                    className="admin-form-input" 
-                    placeholder="Bodybuilding, Yoga, Cardio..."
-                    value={newPtSpecialty}
-                    onChange={(e) => setNewPtSpecialty(e.target.value)}
-                  />
-                </div>
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Số năm kinh nghiệm</label>
-                  <input 
-                    type="number" 
-                    className="admin-form-input" 
-                    min="1"
-                    value={newPtExpYears}
-                    onChange={(e) => setNewPtExpYears(e.target.value)}
-                  />
-                </div>
-              </div>
+              {/* Trainer-specific fields */}
+              {newPtRoleId === '2' && (
+                <>
+                  <div className="admin-form-grid">
+                    <div className="admin-form-group">
+                      <label className="admin-form-label">Chuyên môn</label>
+                      <select
+                        className="admin-form-input"
+                        value={newPtSpecialty}
+                        onChange={(e) => setNewPtSpecialty(e.target.value)}
+                        style={{ width: '100%', height: '42px', padding: '0 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.9rem' }}
+                        required
+                      >
+                        <option value="Gym">HLV Gym (PT)</option>
+                        <option value="Yoga">HLV Yoga</option>
+                        <option value="Boxing">HLV Boxing</option>
+                      </select>
+                    </div>
+                    <div className="admin-form-group">
+                      <label className="admin-form-label">Số năm kinh nghiệm (Không bắt buộc)</label>
+                      <input
+                        type="number"
+                        className="admin-form-input"
+                        min="0"
+                        placeholder="Ví dụ: 3"
+                        value={newPtExpYears}
+                        onChange={(e) => setNewPtExpYears(e.target.value)}
+                      />
+                    </div>
+                  </div>
 
-              <div className="admin-form-group">
-                <label className="admin-form-label">Giới thiệu ngắn (Bio)</label>
-                <textarea 
-                  className="admin-form-textarea" 
-                  placeholder="Kinh nghiệm, bằng cấp và triết lý..."
-                  value={newPtBio}
-                  onChange={(e) => setNewPtBio(e.target.value)}
-                />
-              </div>
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Bằng cấp / Chứng chỉ (Không bắt buộc)</label>
+                    <input
+                      type="text"
+                      className="admin-form-input"
+                      placeholder="Ví dụ: NASM-CPT, Liên đoàn Boxing..."
+                      value={newPtCertifications}
+                      onChange={(e) => setNewPtCertifications(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Giới thiệu ngắn / Bio (Không bắt buộc)</label>
+                    <textarea
+                      className="admin-form-textarea"
+                      placeholder="Kinh nghiệm, triết lý giảng dạy..."
+                      value={newPtBio}
+                      onChange={(e) => setNewPtBio(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
 
               <div className="admin-form-actions">
                 <button type="button" className="admin-btn-cancel" onClick={() => setShowAddPT(false)}>
                   Hủy Bỏ
                 </button>
-                <button type="submit" className="admin-btn-submit">
-                  Tạo Tài Khoản
+                <button type="submit" className="admin-btn-submit" disabled={!!emailExistsError || isSubmitting}>
+                  {isSubmitting ? 'Đang xử lý...' : 'Cấp Tài Khoản'}
                 </button>
               </div>
             </form>
@@ -1546,22 +1887,28 @@ function AdminDashboard({ token, userInfo, logout }) {
         </div>
       )}
 
-      {/* SUCCESS MODAL FOR PT CREATION */}
+      {/* SUCCESS MODAL FOR ACCOUNT CREATION */}
       {createdPTDetails && (
         <div className="admin-modal-overlay">
           <div className="admin-modal-box" style={{ maxWidth: '450px', textAlign: 'center' }}>
             <div style={{ color: '#10b981', fontSize: '3.5rem', marginBottom: '16px' }}>
-              <i className="fa-solid fa-circle-check"></i>
+               <i className="fa-solid fa-circle-check"></i>
             </div>
-            <h3 className="admin-modal-title" style={{ border: 'none', padding: 0, marginBottom: '8px' }}>Tạo Tài Khoản PT Thành Công!</h3>
+            <h3 className="admin-modal-title" style={{ border: 'none', padding: 0, marginBottom: '8px' }}>Cấp Tài Khoản Thành Công!</h3>
             <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '24px' }}>
-              Tài khoản huấn luyện viên đã được khởi tạo thành công trên hệ thống.
+              Tài khoản mới đã được khởi tạo ở trạng thái Inactive (chờ đổi mật khẩu lần đầu).
             </p>
-            
+
             <div style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'left', marginBottom: '24px' }}>
               <div style={{ marginBottom: '14px' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Họ tên PT</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Họ tên</span>
                 <div style={{ fontSize: '0.95rem', fontWeight: 'bold', color: '#1e293b', marginTop: '2px' }}>{createdPTDetails.name}</div>
+              </div>
+              <div style={{ marginBottom: '14px' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Vai trò tài khoản</span>
+                <div style={{ fontSize: '0.95rem', fontWeight: 'bold', color: '#1e293b', marginTop: '2px' }}>
+                  {createdPTDetails.roleId === '1' ? 'Hội viên (Member)' : createdPTDetails.roleId === '2' ? 'Huấn luyện viên (Trainer/PT)' : 'Quản trị viên (Admin)'}
+                </div>
               </div>
               <div style={{ marginBottom: '14px' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Email đăng nhập</span>
@@ -1573,7 +1920,7 @@ function AdminDashboard({ token, userInfo, logout }) {
                   <span style={{ fontSize: '1.25rem', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--orange)', letterSpacing: '1px' }}>
                     {createdPTDetails.password}
                   </span>
-                  <button 
+                  <button
                     type="button"
                     onClick={() => {
                       navigator.clipboard.writeText(createdPTDetails.password);
@@ -1600,16 +1947,16 @@ function AdminDashboard({ token, userInfo, logout }) {
                 </div>
               </div>
             </div>
-            
+
             <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 24px 0', lineHeight: '1.4' }}>
-              {createdPTDetails.emailSent 
-                ? '✓ Mật khẩu này đã được gửi đến email thực của PT.' 
-                : '⚠ Không gửi được email (chưa cấu hình hoặc lỗi SMTP). Mật khẩu chỉ hiển thị một lần ở đây.'}
+              {createdPTDetails.emailSent
+                ? '✓ Thông tin tài khoản đã được gửi đến email.'
+                : '⚠ Không gửi được email (chưa cấu hình SMTP). Mật khẩu chỉ hiển thị một lần ở đây.'}
             </p>
 
-            <button 
+            <button
               type="button"
-              className="admin-btn-submit" 
+              className="admin-btn-submit"
               style={{ width: '100%', padding: '12px' }}
               onClick={() => {
                 setCreatedPTDetails(null);
@@ -1644,14 +1991,18 @@ function AdminDashboard({ token, userInfo, logout }) {
               </div>
               <div className="admin-form-group">
                 <label className="admin-form-label">Bộ môn (Sport Type)</label>
-                <input 
-                  type="text" 
+                <select 
                   className="admin-form-input" 
                   value={editPkgSportType}
                   onChange={(e) => setEditPkgSportType(e.target.value)}
                   required
-                  placeholder="VD: Gym, Yoga, Boxing"
-                />
+                >
+                  <option value="Gym">Gym</option>
+                  <option value="Yoga">Yoga</option>
+                  <option value="Boxing">Boxing</option>
+                  <option value="Combo">Combo</option>
+                  <option value="VIP">VIP</option>
+                </select>
               </div>
               <div className="admin-form-grid">
                 <div className="admin-form-group">
@@ -1677,6 +2028,55 @@ function AdminDashboard({ token, userInfo, logout }) {
               </div>
 
               <div className="admin-form-group">
+                <label className="admin-form-label">Dịch Vụ Đi Kèm</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', backgroundColor: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  {allServices.filter(svc => !svc.serviceName.toUpperCase().includes('GÓI PT')).map(svc => {
+                    const isChecked = editPkgAttachedServices.some(s => s.serviceId === svc.serviceId);
+                    const attachedSvc = editPkgAttachedServices.find(s => s.serviceId === svc.serviceId);
+                    const isPT = svc.serviceName.toLowerCase().includes('pt') || svc.serviceName.toLowerCase().includes('huấn luyện');
+                    
+                    return (
+                      <div key={svc.serviceId} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <input 
+                          type="checkbox" 
+                          id={`svc-${svc.serviceId}`}
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEditPkgAttachedServices([...editPkgAttachedServices, { serviceId: svc.serviceId, serviceName: svc.serviceName, sessionCount: isPT ? 1 : null }]);
+                            } else {
+                              setEditPkgAttachedServices(editPkgAttachedServices.filter(s => s.serviceId !== svc.serviceId));
+                            }
+                          }}
+                          style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: 'var(--orange)' }}
+                        />
+                        <label htmlFor={`svc-${svc.serviceId}`} style={{ cursor: 'pointer', fontSize: '0.95rem', color: '#334155' }}>
+                          {svc.serviceName} (+{svc.price.toLocaleString('vi-VN')}đ)
+                        </label>
+                        {isChecked && isPT && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
+                            <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Số buổi:</span>
+                            <input 
+                              type="number" 
+                              min="1"
+                              value={attachedSvc?.sessionCount || 1}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || 1;
+                                setEditPkgAttachedServices(editPkgAttachedServices.map(s => 
+                                  s.serviceId === svc.serviceId ? { ...s, sessionCount: val } : s
+                                ));
+                              }}
+                              style={{ width: '60px', padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', textAlign: 'center' }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="admin-form-group">
                 <label className="admin-form-label">Mô tả đặc quyền và tính năng</label>
                 <textarea 
                   className="admin-form-textarea" 
@@ -1695,6 +2095,275 @@ function AdminDashboard({ token, userInfo, logout }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* LOADING PROFILE OVERLAY */}
+      {loadingProfile && (
+        <div className="admin-modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="admin-modal-box" style={{ maxWidth: '250px', textAlign: 'center', padding: '24px' }}>
+            <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: '2.5rem', color: 'var(--orange)', marginBottom: '12px' }}></i>
+            <div style={{ fontSize: '0.9rem', color: '#475569', fontWeight: '500' }}>Đang tải hồ sơ...</div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TRAINER PROFILE & SCHEDULE */}
+      {showTrainerProfileModal && selectedTrainerProfile && (
+        <div className="admin-modal-overlay">
+          <div className="admin-modal-box" style={{ maxWidth: '950px', width: '90%', padding: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden', maxHeight: '90vh' }}>
+            {/* Modal Header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold', color: '#1e293b' }}>Hồ Sơ Chi Tiết & Lịch Trực HLV</h3>
+              <button 
+                type="button" 
+                onClick={() => { setShowTrainerProfileModal(false); setSelectedTrainerProfile(null); }}
+                style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: '#64748b' }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ display: 'flex', flex: '1', overflow: 'hidden', minHeight: '400px' }}>
+              {/* Left Column: Profile Card (35% width) */}
+              <div style={{ width: '35%', borderRight: '1px solid #e2e8f0', padding: '24px', overflowY: 'auto', backgroundColor: '#ffffff' }}>
+                <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                  <div style={{ 
+                    width: '90px', 
+                    height: '90px', 
+                    borderRadius: '50%', 
+                    backgroundColor: 'var(--orange)', 
+                    color: '#ffffff', 
+                    fontSize: '2.2rem', 
+                    fontWeight: 'bold', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    margin: '0 auto 16px auto',
+                    boxShadow: '0 4px 12px rgba(249, 115, 22, 0.2)'
+                  }}>
+                    {selectedTrainerProfile.name.charAt(0)}
+                  </div>
+                  <h4 style={{ margin: '0 0 6px 0', fontSize: '1.2rem', fontWeight: 'bold', color: '#1e293b' }}>{selectedTrainerProfile.name}</h4>
+                  <span style={{ 
+                    padding: '4px 12px', 
+                    borderRadius: '20px', 
+                    fontSize: '0.8rem', 
+                    fontWeight: 'bold', 
+                    backgroundColor: '#fff7ed', 
+                    color: 'var(--orange)',
+                    border: '1px solid #ffedd5'
+                  }}>
+                    {selectedTrainerProfile.specialty}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '0.9rem', color: '#475569', borderBottom: '1px solid #f1f5f9', paddingBottom: '20px', marginBottom: '20px' }}>
+                  <div>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>Email</span>
+                    <span style={{ fontWeight: '500', color: '#1e293b' }}>{selectedTrainerProfile.email}</span>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>Số điện thoại</span>
+                    <span style={{ fontWeight: '500', color: '#1e293b' }}>{selectedTrainerProfile.phone}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <div>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>Kinh nghiệm</span>
+                      <span style={{ fontWeight: 'bold', color: 'var(--orange)' }}>{selectedTrainerProfile.expYears} năm</span>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>Đánh giá</span>
+                      <span style={{ fontWeight: 'bold', color: '#eab308' }}>★ {selectedTrainerProfile.rating}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>Thời gian làm việc</span>
+                    <span style={{ fontWeight: '600', color: '#0f172a' }}>{selectedTrainerProfile.employmentDuration}</span>
+                    <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                      (Ngày gia nhập: {selectedTrainerProfile.joinDate ? new Date(selectedTrainerProfile.joinDate).toLocaleDateString('vi-VN') : '—'})
+                    </span>
+                  </div>
+                </div>
+
+                {selectedTrainerProfile.bio && (
+                  <div style={{ marginBottom: '24px' }}>
+                    <h5 style={{ margin: '0 0 8px 0', fontSize: '0.82rem', fontWeight: 'bold', color: '#1e293b', textTransform: 'uppercase' }}>Giới thiệu (Bio)</h5>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b', lineHeight: '1.5', fontStyle: 'italic' }}>"{selectedTrainerProfile.bio}"</p>
+                  </div>
+                )}
+
+                <div>
+                  <h5 style={{ margin: '0 0 10px 0', fontSize: '0.82rem', fontWeight: 'bold', color: '#1e293b', textTransform: 'uppercase' }}>Bằng cấp & Chứng chỉ</h5>
+                  {selectedTrainerProfile.certifications && selectedTrainerProfile.certifications.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {selectedTrainerProfile.certifications.map((c, i) => (
+                        <div key={i} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1e293b' }}>{c.certification_name}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>Cấp bởi: {c.issued_by}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '2px' }}>Ngày cấp: {c.issued_date ? new Date(c.issued_date).toLocaleDateString('vi-VN') : '—'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ padding: '16px', textAlign: 'center', backgroundColor: '#f8fafc', borderRadius: '8px', color: '#94a3b8', fontSize: '0.8rem', border: '1px dashed #cbd5e1' }}>
+                      Chưa cập nhật bằng cấp
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Timetable Schedule Visualizer (65% width) */}
+              <div style={{ width: '65%', padding: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden', backgroundColor: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <h5 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', textTransform: 'uppercase' }}>Thời khóa biểu (2 tháng tới)</h5>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {['ALL', 'AVAILABLE', 'BOOKED', 'OFF'].map(filterType => {
+                      const labels = { ALL: 'Tất cả', AVAILABLE: 'Trống', BOOKED: 'Đã đặt', OFF: 'Lịch nghỉ' };
+                      return (
+                        <button
+                          key={filterType}
+                          type="button"
+                          onClick={() => setScheduleFilter(filterType)}
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            borderRadius: '6px',
+                            border: '1px solid',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            borderColor: scheduleFilter === filterType ? 'var(--orange)' : '#cbd5e1',
+                            backgroundColor: scheduleFilter === filterType ? 'var(--orange)' : '#ffffff',
+                            color: scheduleFilter === filterType ? '#ffffff' : '#64748b'
+                          }}
+                        >
+                          {labels[filterType]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Schedules List */}
+                <div style={{ flex: '1', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px' }}>
+                  {selectedTrainerSchedules
+                    .filter(s => {
+                      if (scheduleFilter === 'ALL') return true;
+                      if (scheduleFilter === 'AVAILABLE') return s.status === 'Available';
+                      if (scheduleFilter === 'BOOKED') return s.status === 'Booked' || s.status === 'Busy';
+                      if (scheduleFilter === 'OFF') return s.status === 'Off';
+                      return true;
+                    })
+                    .map((s, idx) => {
+                      const slotDate = new Date(`${s.date}T${s.startTime}`);
+                      const isPast = slotDate < new Date();
+                      
+                      // Status styling
+                      let statusText = 'Lịch Trống';
+                      let badgeBg = '#e0f2fe';
+                      let badgeColor = '#0369a1';
+                      
+                      if (isPast) {
+                        statusText = 'Đã hoàn thành';
+                        badgeBg = '#d1fae5'; // Muted Green
+                        badgeColor = '#065f46';
+                      } else if (s.status === 'Off') {
+                        statusText = 'Lịch nghỉ (Off)';
+                        badgeBg = '#f1f5f9'; // Grey
+                        badgeColor = '#64748b';
+                      } else if (s.status === 'Booked' || s.status === 'Busy') {
+                        statusText = 'Đã đặt lịch';
+                        badgeBg = '#ffedd5'; // Orange/Red
+                        badgeColor = '#c2410c';
+                      }
+
+                      return (
+                        <div 
+                          key={idx} 
+                          style={{ 
+                            padding: '16px', 
+                            backgroundColor: '#ffffff', 
+                            borderRadius: '10px', 
+                            border: '1px solid #e2e8f0', 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'flex-start',
+                            opacity: isPast ? 0.8 : 1,
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                              <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b' }}>
+                                {new Date(s.date).toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric' })}
+                              </span>
+                              <span style={{ 
+                                fontSize: '0.72rem', 
+                                fontWeight: 'bold', 
+                                padding: '2px 8px', 
+                                borderRadius: '4px', 
+                                backgroundColor: badgeBg, 
+                                color: badgeColor 
+                              }}>
+                                {statusText}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <i className="fa-regular fa-clock"></i>
+                              <span>{s.startTime.slice(0, 5)} - {s.endTime.slice(0, 5)}</span>
+                            </div>
+
+                            {/* Booking member details */}
+                            {s.appointment && (
+                              <div style={{ marginTop: '12px', padding: '10px 14px', backgroundColor: '#f8fafc', borderRadius: '6px', borderLeft: '3px solid var(--orange)', fontSize: '0.82rem' }}>
+                                <div style={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>
+                                  Học viên: {s.appointment.member?.name || 'N/A'}
+                                </div>
+                                {s.appointment.member?.phone && (
+                                  <div style={{ color: '#64748b', marginBottom: '2px' }}>
+                                    SĐT: {s.appointment.member.phone}
+                                  </div>
+                                )}
+                                <div style={{ color: '#64748b', fontStyle: s.appointment.note ? 'normal' : 'italic' }}>
+                                  Ghi chú: {s.appointment.note || 'Không có ghi chú.'}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                  {selectedTrainerSchedules.filter(s => {
+                    if (scheduleFilter === 'ALL') return true;
+                    if (scheduleFilter === 'AVAILABLE') return s.status === 'Available';
+                    if (scheduleFilter === 'BOOKED') return s.status === 'Booked' || s.status === 'Busy';
+                    if (scheduleFilter === 'OFF') return s.status === 'Off';
+                    return true;
+                  }).length === 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', color: '#94a3b8', flex: '1' }}>
+                      <i className="fa-regular fa-calendar-times" style={{ fontSize: '2.5rem', marginBottom: '12px', color: '#cbd5e1' }}></i>
+                      <div style={{ fontSize: '0.85rem' }}>Không tìm thấy lịch trực làm việc nào.</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', backgroundColor: '#f8fafc' }}>
+              <button 
+                type="button" 
+                className="admin-btn-submit"
+                onClick={() => { setShowTrainerProfileModal(false); setSelectedTrainerProfile(null); }}
+                style={{ padding: '8px 24px' }}
+              >
+                Đóng hồ sơ
+              </button>
+            </div>
           </div>
         </div>
       )}

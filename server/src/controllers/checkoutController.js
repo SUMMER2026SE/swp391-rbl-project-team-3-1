@@ -195,11 +195,21 @@ exports.getTrainerSchedule = async (req, res) => {
 // 2. LẤY DANH SÁCH GÓI TẬP (PUBLIC)
 // GET /api/checkout/plans
 // =====================================================
+// =====================================================
+// 2. LẤY DANH SÁCH GÓI TẬP (PUBLIC)
+// GET /api/checkout/plans
+// =====================================================
 exports.getPlans = async (req, res) => {
     try {
         const plans = await models.MembershipPlans.findAll({
             where: { status: 'Active' },
-            order: [['price', 'ASC']]
+            order: [['price', 'ASC']],
+            include: [{
+                model: models.Services,
+                as: 'IncludedServices',
+                attributes: ['service_id', 'service_name', 'service_type', 'price'],
+                through: { attributes: ['session_count'] }
+            }]
         });
 
         const result = plans.map(p => ({
@@ -209,6 +219,13 @@ exports.getPlans = async (req, res) => {
             durationMonths: p.duration_months,
             price: p.price,
             description: p.description,
+            includedServices: p.IncludedServices ? p.IncludedServices.map(s => ({
+                serviceId: s.service_id,
+                serviceName: s.service_name,
+                sportType: s.service_type, // Map service_type to sportType to keep frontend compatibility
+                price: s.price,
+                sessionCount: s.MembershipPlanServices ? s.MembershipPlanServices.session_count : null
+            })) : []
         }));
 
         return res.status(200).json({ plans: result });
@@ -220,6 +237,7 @@ exports.getPlans = async (req, res) => {
 
 // =====================================================
 // 2b. LẤY DANH SÁCH DỊCH VỤ (PUBLIC)
+
 // 2.1 LẤY DANH SÁCH DỊCH VỤ BỔ SUNG (PUBLIC)
 // GET /api/checkout/services
 // =====================================================

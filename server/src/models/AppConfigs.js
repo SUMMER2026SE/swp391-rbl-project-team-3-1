@@ -14,10 +14,6 @@ module.exports = (sequelize) => {
         description: {
             type: DataTypes.STRING(255),
             allowNull: true
-        },
-        updated_at: {
-            type: DataTypes.DATE,
-            defaultValue: DataTypes.NOW
         }
     }, {
         tableName: 'AppConfigs',
