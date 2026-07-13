@@ -121,6 +121,13 @@ function HomePage() {
     window.dispatchEvent(new Event('popstate'));
   };
 
+  // Navigate to checkout with selected service
+  const goToServiceCheckout = (serviceId) => {
+    localStorage.removeItem('checkoutPlan');
+    window.history.pushState({}, '', `/checkout?service=${serviceId}`);
+    window.dispatchEvent(new Event('popstate'));
+  };
+
   // Smooth scroll handler for anchor links
   const handleAnchorClick = (e, targetId) => {
     e.preventDefault();
@@ -587,7 +594,7 @@ function HomePage() {
                   );
                 })}
               </ul>
-              {srv.serviceName.includes('PT') && (
+              {srv.serviceName.includes('PT') ? (
                 <button
                   onClick={() => {
                     window.history.pushState({}, '', '/pt-details');
@@ -599,6 +606,16 @@ function HomePage() {
                   onMouseLeave={(e) => { e.target.style.backgroundColor = 'transparent'; e.target.style.color = '#f59e0b'; }}
                 >
                   Xem Chi Tiết PT
+                </button>
+              ) : (
+                <button
+                  onClick={() => goToServiceCheckout(srv.serviceId)}
+                  className="btn-plan"
+                  style={{ marginTop: '20px', borderColor: '#3b82f6', color: '#3b82f6' }}
+                  onMouseEnter={(e) => { e.target.style.backgroundColor = '#3b82f6'; e.target.style.color = 'white'; }}
+                  onMouseLeave={(e) => { e.target.style.backgroundColor = 'transparent'; e.target.style.color = '#3b82f6'; }}
+                >
+                  Mua Ngay
                 </button>
               )}
             </div>

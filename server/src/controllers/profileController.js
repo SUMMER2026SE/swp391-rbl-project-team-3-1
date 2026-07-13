@@ -33,6 +33,37 @@ const getRoleName = (roleId) => {
     return 'Unknown';
 };
 
+const findTrainerForSportType = (workoutPlans, sportType) => {
+    if (!workoutPlans || workoutPlans.length === 0 || !sportType) return 'Chưa đăng ký';
+    
+    const sType = sportType.toLowerCase().trim();
+    
+    let matchedPlan = workoutPlans.find(wp => {
+        const spec = wp.trainer?.specialization?.toLowerCase() || '';
+        return spec.includes(sType) || sType.includes(spec);
+    });
+
+    if (!matchedPlan && sType === 'gym') {
+        matchedPlan = workoutPlans.find(wp => {
+            const spec = wp.trainer?.specialization?.toLowerCase() || '';
+            return spec.includes('fitness') || spec.includes('bodybuilding') || spec.includes('gym') || spec.includes('pt');
+        });
+    }
+
+    if (!matchedPlan && sType === 'yoga') {
+        matchedPlan = workoutPlans.find(wp => {
+            const spec = wp.trainer?.specialization?.toLowerCase() || '';
+            return spec.includes('yoga');
+        });
+    }
+
+    if (matchedPlan && matchedPlan.trainer?.user?.full_name) {
+        return matchedPlan.trainer.user.full_name;
+    }
+    
+    return 'Chưa đăng ký';
+};
+
 // =====================================================
 // 1. XEM PROFILE
 // GET /api/profile
@@ -88,6 +119,18 @@ exports.getMyProfile = async (req, res) => {
                                     ]
                                 }
                             ]
+                        },
+                        {
+                            model: models.MemberServices,
+                            as: 'MemberServices',
+                            required: false,
+                            include: [
+                                {
+                                    model: models.Services,
+                                    as: 'service',
+                                    required: false
+                                }
+                            ]
                         }
                     ]
                 },
@@ -137,7 +180,8 @@ exports.getMyProfile = async (req, res) => {
                     remainingDays: daysLeft,
                     price: m.membership_plan?.price ? Number(m.membership_plan.price) : 0,
                     durationMonths: m.membership_plan?.duration_months || 1,
-                    description: m.membership_plan?.description || ''
+                    description: m.membership_plan?.description || '',
+                    trainerName: findTrainerForSportType(user.Member.WorkoutPlans || [], m.membership_plan?.sport_type)
                 };
             });
 
@@ -172,6 +216,31 @@ exports.getMyProfile = async (req, res) => {
             if (workoutPlanWithPt) {
                 activePtName = workoutPlanWithPt.trainer.user.full_name;
             }
+
+            // Lấy danh sách dịch vụ đã đăng ký
+            var servicesList = (user.Member.MemberServices || []).map(ms => {
+                const endDate = new Date(ms.end_date);
+                const diffTime = endDate - new Date();
+                let daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                if (daysLeft < 0) daysLeft = 0;
+
+                let status = ms.service_status;
+                if (status === 'Active' && daysLeft === 0) {
+                    status = 'Expired';
+                }
+
+                return {
+                    memberServiceId: ms.member_service_id,
+                    serviceId: ms.service_id,
+                    serviceName: ms.service?.service_name || 'Dịch vụ',
+                    description: ms.service?.description || '',
+                    price: ms.service?.price ? Number(ms.service.price) : 0,
+                    startDate: ms.start_date,
+                    endDate: ms.end_date,
+                    status: status,
+                    remainingDays: daysLeft
+                };
+            });
         }
 
         return res.status(200).json({
@@ -200,7 +269,8 @@ exports.getMyProfile = async (req, res) => {
                     remainingDays,
                     activePtName,
                     planName,
-                    memberships: membershipsList
+                    memberships: membershipsList,
+                    services: servicesList || []
                 } : null,
                 trainerInfo: user.Trainer || null
             }

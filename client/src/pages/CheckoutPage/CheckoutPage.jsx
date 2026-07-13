@@ -90,6 +90,7 @@ function CheckoutPage() {
   const [selectedPlan, setSelectedPlan] = useState(null);   // plan object
   const [selectedTrainer, setSelectedTrainer] = useState(null);   // trainer object | null
   const [showPlanPicker, setShowPlanPicker] = useState(false);
+  const [isServiceOnly, setIsServiceOnly] = useState(false);
 
   // ── Form & Loading states ──────────────────────────────────────────
   const [regFullName, setRegFullName] = useState('');
@@ -109,11 +110,16 @@ function CheckoutPage() {
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
   const [regSuccess, setRegSuccess] = useState(false);
 
-  // ── Init: read plan from URL / localStorage ─────────────────────────
+  // ── Init: read plan and service from URL / localStorage ─────────────────────────
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const planKey = params.get('plan');   // e.g. 'monthly', 'quarterly', 'annual'
+    const serviceKey = params.get('service');
     const storedPlan = localStorage.getItem('checkoutPlan');
+
+    // Determine service-only flow: must have service parameter and user must be logged in
+    const serviceOnlyFlow = isLoggedIn && !!serviceKey;
+    setIsServiceOnly(serviceOnlyFlow);
 
     // 1. Try to load plans from API
     fetch('/api/checkout/plans')
@@ -126,24 +132,35 @@ function CheckoutPage() {
           }));
           setPlans(apiPlans);
 
-          // Match plan from URL param or localStorage
-          const matchId = planKey || storedPlan;
-          const matched = apiPlans.find(p =>
-            String(p.planId) === matchId ||
-            p.planName.toLowerCase().includes(matchId?.toLowerCase() || '')
-          );
-          setSelectedPlan(matched || apiPlans[0]);
+          if (serviceOnlyFlow) {
+            setSelectedPlan(null);
+          } else {
+            // Match plan from URL param or localStorage
+            const matchId = planKey || storedPlan;
+            const matched = apiPlans.find(p =>
+              String(p.planId) === matchId ||
+              p.planName.toLowerCase().includes(matchId?.toLowerCase() || '')
+            );
+            setSelectedPlan(matched || apiPlans[0]);
+          }
         } else {
-          // fallback
-          const matchIdx = FALLBACK_PLANS.find(p => String(p.planId) === planKey);
-setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
+          if (serviceOnlyFlow) {
+            setSelectedPlan(null);
+          } else {
+            // fallback
+            const matchIdx = FALLBACK_PLANS.find(p => String(p.planId) === planKey);
+            setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
+          }
         }
       })
-
-  .catch(() => {
-    const matched = FALLBACK_PLANS.find(p => String(p.planId) === planKey);
-    setSelectedPlan(matched || FALLBACK_PLANS[0]);
-});
+      .catch(() => {
+        if (serviceOnlyFlow) {
+          setSelectedPlan(null);
+        } else {
+          const matched = FALLBACK_PLANS.find(p => String(p.planId) === planKey);
+          setSelectedPlan(matched || FALLBACK_PLANS[0]);
+        }
+      });
 
     // 2. Load trainers
     fetch('/api/checkout/trainers')
@@ -158,16 +175,23 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
       .catch(() => setTrainers(FALLBACK_TRAINERS))
       .finally(() => setIsLoadingTrainers(false));
 
-    // 3. Load services
+    // 3. Load services and pre-select service from URL param if present
     fetch('/api/checkout/services')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.services?.length) {
           setServices(data.services);
+          const serviceKey = new URLSearchParams(window.location.search).get('service');
+          if (serviceKey) {
+            const matchedSvc = data.services.find(s => String(s.serviceId) === serviceKey);
+            if (matchedSvc) {
+              setSelectedServices([matchedSvc.serviceId]);
+            }
+          }
         }
       })
       .catch(() => {});
-  }, []);
+  }, [isLoggedIn]);
 
   // Listen to auth changes
   useEffect(() => {
@@ -197,7 +221,7 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             planId: selectedPlan?.planId || null,
-            services: selectedServices.map(s => s.serviceId)
+            services: selectedServices
           })
         });
         const data = await res.json();
@@ -215,7 +239,7 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
     };
 
     createPayosPayment();
-  }, [step, selectedPlan]);
+  }, [step, selectedPlan, selectedServices]);
 
   // ── Navigation helpers ─────────────────────────────────────────────
   const goHome = () => {
@@ -240,7 +264,7 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
         body: JSON.stringify({
           planId: selectedPlan?.planId || null,
           trainerId: selectedTrainer?.userId || null,
-          services: selectedServices.map(s => s.serviceId),
+          services: selectedServices,
           payosOrderCode: payosPayment?.orderCode
         })
       });
@@ -336,9 +360,10 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
           fullName: regFullName.trim() || undefined,
           phoneNumber: regPhone.trim(),
           password: regPw,
-          planId: selectedPlan.planId,
+          planId: selectedPlan?.planId || null,
           trainerId: selectedTrainer?.userId || null,
-          serviceIds: selectedServices.length > 0 ? selectedServices : undefined,
+          services: selectedServices,
+          serviceIds: selectedServices,
           payosOrderCode: payosPayment?.orderCode
         })
       });
@@ -530,148 +555,152 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
           {step === 1 && (
             <>
               {/* Selected plan details */}
-              <div className="co-section">
-                <div className="co-section-header">
-                  <div className="co-section-title">
-                    <i className="fa-solid fa-tag"></i> Gói Tập Đã Chọn
-                  </div>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button className="btn-change-plan" onClick={() => setShowPlanPicker(v => !v)}>
-                      <i className="fa-solid fa-pen"></i>
-                      {showPlanPicker ? 'Ẩn bớt' : 'Thay đổi gói'}
-                    </button>
-                    {selectedPlan && (
-                      <button className="btn-change-plan" style={{ background: '#ef4444', color: '#fff', border: 'none' }} onClick={() => { setSelectedPlan(null); setSelectedTrainer(null); }}>
-                        <i className="fa-solid fa-trash"></i> Bỏ chọn gói
+              {!isServiceOnly && (
+                <div className="co-section">
+                  <div className="co-section-header">
+                    <div className="co-section-title">
+                      <i className="fa-solid fa-tag"></i> Gói Tập Đã Chọn
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button className="btn-change-plan" onClick={() => setShowPlanPicker(v => !v)}>
+                        <i className="fa-solid fa-pen"></i>
+                        {showPlanPicker ? 'Ẩn bớt' : 'Thay đổi gói'}
                       </button>
+                      {selectedPlan && (
+                        <button className="btn-change-plan" style={{ background: '#ef4444', color: '#fff', border: 'none' }} onClick={() => { setSelectedPlan(null); setSelectedTrainer(null); }}>
+                          <i className="fa-solid fa-trash"></i> Bỏ chọn gói
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="co-section-body">
+                    {!selectedPlan && (
+                      <div className="selected-plan-card" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        <p style={{ margin: 0 }}>Bạn chưa chọn gói tập. Hệ thống sẽ thanh toán cho các Dịch vụ bổ sung bên dưới.</p>
+                      </div>
+                    )}
+                    {selectedPlan && (
+                      <div className="selected-plan-card">
+                        <div className="plan-info-left">
+                          <p className="plan-name">{selectedPlan.planName}</p>
+                          <p className="plan-price-tag">
+                            {fmt(selectedPlan.price)}
+                            <span className="period">{getPeriodLabel(selectedPlan.durationMonths)}</span>
+                          </p>
+                          <ul className="plan-features">
+                            {(selectedPlan.features || []).slice(0, 4).map((f, i) => (
+                              <li key={i}><i className="fa-solid fa-circle-check"></i>{f}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Plan picker grid */}
+                    {showPlanPicker && (
+                      <div className="plan-picker-grid" style={{ marginTop: 16 }}>
+                        {plans.map(p => (
+                          <div
+                            key={p.planId}
+                            className={`plan-picker-card${p.featured ? ' featured-pick' : ''}${selectedPlan?.planId === p.planId ? ' selected' : ''}`}
+                            onClick={() => { setSelectedPlan(p); setShowPlanPicker(false); }}
+                          >
+                            {p.featured && <span className="pick-badge">Phổ biến nhất</span>}
+                            <div className="pick-check"><i className="fa-solid fa-check"></i></div>
+                            <p className="pick-name">{p.planName}</p>
+                            <p className="pick-price">
+                              {fmt(p.price)}
+                              <span className="pick-period">{getPeriodLabel(p.durationMonths)}</span>
+                            </p>
+                            <p className="pick-duration">{p.durationMonths} tháng</p>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
-
-                <div className="co-section-body">
-                  {!selectedPlan && (
-                    <div className="selected-plan-card" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                      <p style={{ margin: 0 }}>Bạn chưa chọn gói tập. Hệ thống sẽ thanh toán cho các Dịch vụ bổ sung bên dưới.</p>
-                    </div>
-                  )}
-                  {selectedPlan && (
-                    <div className="selected-plan-card">
-                      <div className="plan-info-left">
-                        <p className="plan-name">{selectedPlan.planName}</p>
-                        <p className="plan-price-tag">
-                          {fmt(selectedPlan.price)}
-                          <span className="period">{getPeriodLabel(selectedPlan.durationMonths)}</span>
-                        </p>
-                        <ul className="plan-features">
-                          {(selectedPlan.features || []).slice(0, 4).map((f, i) => (
-                            <li key={i}><i className="fa-solid fa-circle-check"></i>{f}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Plan picker grid */}
-                  {showPlanPicker && (
-                    <div className="plan-picker-grid" style={{ marginTop: 16 }}>
-                      {plans.map(p => (
-                        <div
-                          key={p.planId}
-                          className={`plan-picker-card${p.featured ? ' featured-pick' : ''}${selectedPlan?.planId === p.planId ? ' selected' : ''}`}
-                          onClick={() => { setSelectedPlan(p); setShowPlanPicker(false); }}
-                        >
-                          {p.featured && <span className="pick-badge">Phổ biến nhất</span>}
-                          <div className="pick-check"><i className="fa-solid fa-check"></i></div>
-                          <p className="pick-name">{p.planName}</p>
-                          <p className="pick-price">
-                            {fmt(p.price)}
-                            <span className="pick-period">{getPeriodLabel(p.durationMonths)}</span>
-                          </p>
-                          <p className="pick-duration">{p.durationMonths} tháng</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+              )}
 
               {/* Trainer list details */}
-              <div className="co-section">
-                <div className="co-section-header">
-                  <div className="co-section-title">
-                    <i className="fa-solid fa-user-tie"></i> Chọn Huấn Luyện Viên
+              {!isServiceOnly && (
+                <div className="co-section">
+                  <div className="co-section-header">
+                    <div className="co-section-title">
+                      <i className="fa-solid fa-user-tie"></i> Chọn Huấn Luyện Viên
+                    </div>
+                    <span className="trainer-optional-label">Tùy chọn</span>
                   </div>
-                  <span className="trainer-optional-label">Tùy chọn</span>
-                </div>
 
-                <div className="co-section-body">
-                  {!hasPTService ? (
-                    <div className="co-empty" style={{ backgroundColor: '#fdf2f8', color: '#be185d', borderColor: '#fbcfe8' }}>
-                      <i className="fa-solid fa-circle-exclamation" style={{ color: '#be185d' }}></i>
-                      Vui lòng chọn mua một Dịch vụ PT (bên dưới) trước khi được phép chọn Huấn luyện viên!
-                    </div>
-                  ) : isLoadingTrainers ? (
-                    <div className="trainers-grid">
-                      {[1, 2, 3, 4].map(i => (
-                        <div key={i} className="trainer-skeleton">
-                          <div className="sk-circle"></div>
-                          <div className="sk-lines">
-                            <div className="sk-line"></div>
-                            <div className="sk-line short"></div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : trainers.length === 0 ? (
-                    <div className="co-empty">
-                      <i className="fa-solid fa-user-slash"></i>
-                      Hiện chưa có huấn luyện viên.
-                    </div>
-                  ) : (
-                    <>
+                  <div className="co-section-body">
+                    {!hasPTService ? (
+                      <div className="co-empty" style={{ backgroundColor: '#fdf2f8', color: '#be185d', borderColor: '#fbcfe8' }}>
+                        <i className="fa-solid fa-circle-exclamation" style={{ color: '#be185d' }}></i>
+                        Vui lòng chọn mua một Dịch vụ PT (bên dưới) trước khi được phép chọn Huấn luyện viên!
+                      </div>
+                    ) : isLoadingTrainers ? (
                       <div className="trainers-grid">
-                        {trainers.map(t => (
-                          <div
-                            key={t.userId}
-                            className={`trainer-card${selectedTrainer?.userId === t.userId ? ' selected' : ''}`}
-                            onClick={() => setSelectedTrainer(
-                              selectedTrainer?.userId === t.userId ? null : t
-                            )}
-                          >
-                            <div className="trainer-avatar">
-                              {t.avatarUrl
-                                ? <img src={t.avatarUrl} alt={t.fullName} />
-                                : getInitials(t.fullName)
-                              }
-                            </div>
-                            <div className="trainer-info">
-                              <div className="trainer-name">{t.fullName}</div>
-                              <div className="trainer-spec">{t.specialization || 'Gym tổng hợp'}</div>
-                              <div className="trainer-rating">
-                                <i className="fa-solid fa-star"></i>
-                                {(t.rating || 4.5).toFixed(1)}
-                              </div>
-                            </div>
-                            <div className="trainer-select-btn">
-                              {selectedTrainer?.userId === t.userId
-                                ? <i className="fa-solid fa-check"></i>
-                                : <i className="fa-solid fa-plus"></i>
-                              }
+                        {[1, 2, 3, 4].map(i => (
+                          <div key={i} className="trainer-skeleton">
+                            <div className="sk-circle"></div>
+                            <div className="sk-lines">
+                              <div className="sk-line"></div>
+                              <div className="sk-line short"></div>
                             </div>
                           </div>
                         ))}
                       </div>
-                      <div
-                        className={`no-trainer-btn${selectedTrainer === null ? ' selected' : ''}`}
-                        onClick={() => setSelectedTrainer(null)}
-                      >
-                        <i className="fa-solid fa-times" style={{ marginRight: 6 }}></i>
-                        Chưa cần HLV lúc này
+                    ) : trainers.length === 0 ? (
+                      <div className="co-empty">
+                        <i className="fa-solid fa-user-slash"></i>
+                        Hiện chưa có huấn luyện viên.
                       </div>
-                    </>
-                  )}
+                    ) : (
+                      <>
+                        <div className="trainers-grid">
+                          {trainers.map(t => (
+                            <div
+                              key={t.userId}
+                              className={`trainer-card${selectedTrainer?.userId === t.userId ? ' selected' : ''}`}
+                              onClick={() => setSelectedTrainer(
+                                selectedTrainer?.userId === t.userId ? null : t
+                              )}
+                            >
+                              <div className="trainer-avatar">
+                                {t.avatarUrl
+                                  ? <img src={t.avatarUrl} alt={t.fullName} />
+                                  : getInitials(t.fullName)
+                                }
+                              </div>
+                              <div className="trainer-info">
+                                <div className="trainer-name">{t.fullName}</div>
+                                <div className="trainer-spec">{t.specialization || 'Gym tổng hợp'}</div>
+                                <div className="trainer-rating">
+                                  <i className="fa-solid fa-star"></i>
+                                  {(t.rating || 4.5).toFixed(1)}
+                                </div>
+                              </div>
+                              <div className="trainer-select-btn">
+                                {selectedTrainer?.userId === t.userId
+                                  ? <i className="fa-solid fa-check"></i>
+                                  : <i className="fa-solid fa-plus"></i>
+                                }
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div
+                          className={`no-trainer-btn${selectedTrainer === null ? ' selected' : ''}`}
+                          onClick={() => setSelectedTrainer(null)}
+                        >
+                          <i className="fa-solid fa-times" style={{ marginRight: 6 }}></i>
+                          Chưa cần HLV lúc này
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Services selection */}
               {services.length > 0 && (
@@ -967,10 +996,12 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
             </div>
 
             <div className="pay-summary-body">
-              <div className="pay-row">
-                <span className="label">Gói tập:</span>
-                <span className="value">{selectedPlan?.planName || 'Chỉ mua dịch vụ'}</span>
-              </div>
+              {!isServiceOnly && (
+                <div className="pay-row">
+                  <span className="label">Gói tập:</span>
+                  <span className="value">{selectedPlan?.planName || 'Chỉ mua dịch vụ'}</span>
+                </div>
+              )}
 
               {selectedTrainer && (
                 <div className="pay-trainer-row">

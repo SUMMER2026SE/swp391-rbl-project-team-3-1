@@ -1428,6 +1428,94 @@ exports.assignPlanToMember = async (req, res) => {
   }
 };
 
+// POST /api/dashboard/trainer/finish-progress
+exports.finishMemberProgress = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const { memberId } = req.body;
+    if (!memberId) {
+      await transaction.rollback();
+      return res.status(400).json({ message: 'Vui lòng cung cấp mã hội viên!' });
+    }
+
+    const trainerUser = await models.Trainers.findOne({
+      where: { user_id: req.user.userId },
+      include: [{ model: models.Users, as: 'user', attributes: ['full_name'] }]
+    });
+
+    if (!trainerUser) {
+      await transaction.rollback();
+      return res.status(400).json({ message: 'Chỉ huấn luyện viên mới được thực hiện thao tác này!' });
+    }
+
+    const yesterday = sequelize.literal("DATEADD(day, -1, GETDATE())");
+
+    // 1. Move latest active workout plan to history
+    const latestWorkoutPlan = await models.WorkoutPlans.findOne({
+      where: { member_id: memberId, trainer_id: trainerUser.trainer_id },
+      order: [['workout_plan_id', 'DESC']]
+    });
+
+    if (latestWorkoutPlan) {
+      await latestWorkoutPlan.update({
+        created_at: yesterday,
+        updated_at: yesterday
+      }, { transaction });
+    }
+
+    // 2. Move meal plans to history
+    await models.MealPlans.update(
+      { created_at: yesterday },
+      {
+        where: { member_id: memberId, trainer_id: trainerUser.trainer_id },
+        transaction
+      }
+    );
+
+    // 3. Notify member
+    try {
+      const member = await models.Members.findByPk(memberId);
+      if (member) {
+        const notification = await models.Notifications.create({
+          user_id: member.user_id,
+          title: 'Tiến độ tập luyện hoàn thành',
+          content: `HLV ${trainerUser.user?.full_name || 'của bạn'} đã xác nhận hoàn thành & kết thúc tiến độ giáo án hiện tại. Bạn có thể xem lại ở phần Lịch sử.`,
+          notification_type: 'plan_completed',
+          is_read: false
+        }, { transaction });
+
+        // Emit via notificationEmitter
+        const notificationEmitter = require('../utils/notificationEmitter');
+        notificationEmitter.emit('notification_created', {
+          user_id: member.user_id,
+          notification: {
+            notification_id: notification.notification_id,
+            user_id: member.user_id,
+            title: notification.title,
+            content: notification.content,
+            notification_type: notification.notification_type,
+            is_read: notification.is_read,
+            created_at: new Date()
+          }
+        });
+      }
+    } catch (notifErr) {
+      console.error('⚠️ Lỗi tạo thông báo kết thúc tiến độ:', notifErr.message);
+    }
+
+    await transaction.commit();
+    return res.status(200).json({ message: 'Đã hoàn thành và kết thúc tiến độ học viên thành công!' });
+  } catch (error) {
+    console.error('❌ Lỗi kết thúc tiến độ:', error);
+    try {
+      await transaction.rollback();
+    } catch (rollbackError) {
+      console.error('❌ Lỗi khi rollback:', rollbackError.message);
+    }
+    return res.status(500).json({ message: 'Lỗi server khi kết thúc tiến độ!' });
+  }
+};
+
 // =====================================================
 // MEMBER DASHBOARD CONTROLLERS
 // =====================================================

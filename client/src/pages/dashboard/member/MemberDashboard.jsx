@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './MemberDashboard.css';
+import WorkoutPlansAndServices from './components/WorkoutPlansAndServices';
 
 const TIME_SLOTS = [
   { start: '05:00:00', end: '06:30:00', label: '05:00 - 06:30' },
@@ -1042,6 +1043,10 @@ function MemberDashboard({
                                 <span className="member-package-detail-label">Thời hạn gói</span>
                                 <span className="member-package-detail-value">{m.durationMonths} tháng</span>
                               </div>
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Huấn luyện viên</span>
+                                <span className="member-package-detail-value" style={{ fontWeight: '700', color: '#0f172a' }}>{m.trainerName || 'Chưa đăng ký'}</span>
+                              </div>
                             </div>
                             {m.description && (
                               <div className="member-package-detail-col" style={{ marginTop: '4px' }}>
@@ -1190,6 +1195,9 @@ function MemberDashboard({
             </div>
           </>
         );
+
+      case 'goitap_dichvu':
+        return <WorkoutPlansAndServices profileData={profileData} />;
 
       case 'lichhen':
         return (
@@ -2238,6 +2246,14 @@ function MemberDashboard({
                 onClick={() => setActiveTab('tongquan')}
               >
                 <i className="fa-solid fa-chart-pie"></i> Tổng quan
+              </button>
+            </li>
+            <li>
+              <button
+                className={`member-menu-item ${activeTab === 'goitap_dichvu' ? 'active' : ''}`}
+                onClick={() => setActiveTab('goitap_dichvu')}
+              >
+                <i className="fa-solid fa-rectangle-list"></i> Gói tập và dịch vụ
               </button>
             </li>
             <li>

@@ -384,12 +384,20 @@ exports.getPayosStatus = async (req, res) => {
 exports.guestCheckoutAndRegister = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const { email, phoneNumber, password, planId, trainerId, services = [], height, weight, fitnessGoal, payosOrderCode } = req.body;
+        const { email, fullName, phoneNumber, password, planId, trainerId, services = [], serviceIds = [], height, weight, bmi, fitnessGoal, payosOrderCode } = req.body;
 
         // 1. Validate input
-        if (!email || !password || !planId) {
+        if (!email || !password) {
             await t.rollback();
-            return res.status(400).json({ message: 'Vui lòng cung cấp đầy đủ email, mật khẩu và gói tập!' });
+            return res.status(400).json({ message: 'Vui lòng cung cấp đầy đủ email và mật khẩu!' });
+        }
+
+        // Consolidate services
+        const finalServices = services.length > 0 ? services : (serviceIds && serviceIds.length > 0 ? serviceIds : []);
+
+        if (!planId && finalServices.length === 0) {
+            await t.rollback();
+            return res.status(400).json({ message: 'Vui lòng chọn gói tập hoặc dịch vụ!' });
         }
 
         // 2. Check if email exists
@@ -399,23 +407,28 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             return res.status(400).json({ message: 'Email này đã được sử dụng!' });
         }
 
-        // 3. Find plan details
-        const plan = await models.MembershipPlans.findByPk(planId);
-        if (!plan || plan.status !== 'Active') {
-            await t.rollback();
-            return res.status(400).json({ message: 'Gói tập không tồn tại hoặc đã bị khóa!' });
+        // 3. Find plan details (if provided)
+        let plan = null;
+        let planAmount = 0;
+        if (planId) {
+            plan = await models.MembershipPlans.findByPk(planId);
+            if (!plan || plan.status !== 'Active') {
+                await t.rollback();
+                return res.status(400).json({ message: 'Gói tập không tồn tại hoặc đã bị khóa!' });
+            }
+            planAmount = getPlanPrice(plan);
         }
 
         let servicesAmount = 0;
         let selectedServicesRecords = [];
-        if (services && services.length > 0) {
+        if (finalServices && finalServices.length > 0) {
             selectedServicesRecords = await models.Services.findAll({
-                where: { service_id: services }
+                where: { service_id: finalServices }
             });
             servicesAmount = selectedServicesRecords.reduce((sum, s) => sum + parseFloat(s.price), 0);
         }
 
-        const amount = getPlanPrice(plan) + servicesAmount;
+        const amount = planAmount + servicesAmount;
         let payosPayment;
         try {
             payosPayment = await ensurePayosPaid(payosOrderCode, amount);
@@ -485,24 +498,29 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             fitness_goal: fitnessGoal || null
         }, { transaction: t });
 
-        // 8. Calculate membership dates
+        // 8. Calculate membership dates & Create MemberMembership (if plan is selected)
         const startDate = new Date();
-        const durationMonths = parseInt(plan.duration_months) || 1;
-        const endDate = new Date();
-        endDate.setMonth(endDate.getMonth() + durationMonths);
+        let endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + 1); // default 1 month for services
 
-        // 9. Create MemberMembership
-        await models.MemberMemberships.create({
-            member_id: newMember.member_id,
-            membership_plan_id: plan.membership_plan_id,
-            start_date: formatDateToYYYYMMDD(startDate),
-            end_date: formatDateToYYYYMMDD(endDate),
-            membership_status: 'Active'
-        }, { transaction: t });
+        if (plan) {
+            const durationMonths = parseInt(plan.duration_months) || 1;
+            endDate = new Date();
+            endDate.setMonth(endDate.getMonth() + durationMonths);
+
+            // 9. Create MemberMembership
+            await models.MemberMemberships.create({
+                member_id: newMember.member_id,
+                membership_plan_id: plan.membership_plan_id,
+                start_date: formatDateToYYYYMMDD(startDate),
+                end_date: formatDateToYYYYMMDD(endDate),
+                membership_status: 'Active'
+            }, { transaction: t });
+        }
 
         // 8.5 Save services
-        if (services && services.length > 0) {
-            for (const srvId of services) {
+        if (finalServices && finalServices.length > 0) {
+            for (const srvId of finalServices) {
                 await models.MemberServices.create({
                     member_id: newMember.member_id,
                     service_id: srvId,
@@ -518,7 +536,7 @@ exports.guestCheckoutAndRegister = async (req, res) => {
         await models.Payments.create({
             member_id: newMember.member_id,
             amount: amount,
-            payment_type: 'Membership',
+            payment_type: plan ? 'Membership' : 'Service',
             payment_method: 'PayOS',
             payment_status: 'Paid',
             transaction_code: transactionCode
@@ -549,21 +567,6 @@ exports.guestCheckoutAndRegister = async (req, res) => {
                 }
             } catch (emailErr) {
                 console.error('Error sending email to PT:', emailErr);
-            }
-        }
-
-        // 12. Register services if selected
-        if (serviceIds && Array.isArray(serviceIds) && serviceIds.length > 0) {
-            for (const svcId of serviceIds) {
-                const service = await models.Services.findByPk(svcId);
-                if (service && service.status === 'Active') {
-                    await models.MemberServices.create({
-                        member_id: newMember.member_id,
-                        service_id: service.service_id,
-                        start_date: formatDateToYYYYMMDD(new Date()),
-                        service_status: 'Active'
-                    }, { transaction: t });
-                }
             }
         }
 
@@ -682,7 +685,19 @@ exports.loggedInCheckout = async (req, res) => {
         }
 
         const amount = planAmount + servicesAmount;
-        const payosPayment = await ensurePayosPaid(payosOrderCode, amount);
+        let payosPayment;
+        try {
+            payosPayment = await ensurePayosPaid(payosOrderCode, amount);
+        } catch (payosError) {
+            if (process.env.NODE_ENV === 'production') {
+                await t.rollback();
+                return res.status(400).json({
+                    message: `Xác minh thanh toán PayOS thất bại: ${payosError.message}`
+                });
+            }
+            console.warn('⚠️ [DEV] Bỏ qua verify PayOS:', payosError.message);
+            payosPayment = { orderCode: payosOrderCode, status: 'PAID' };
+        }
 
         // 3. Resolve trainer if selected
         let trainerRecord = null;
@@ -702,7 +717,7 @@ exports.loggedInCheckout = async (req, res) => {
         if (!member) {
             member = await models.Members.create({
                 user_id: userId,
-                joined_date: new Date()
+                joined_date: formatDateToYYYYMMDD(new Date())
             }, { transaction: t });
         }
 

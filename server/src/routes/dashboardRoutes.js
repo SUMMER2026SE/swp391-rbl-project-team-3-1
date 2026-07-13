@@ -36,6 +36,7 @@ router.get('/trainer/members', dashboardController.getTrainerMembers);
 router.get('/trainer/appointments', dashboardController.getTrainerAppointments);
 router.put('/trainer/appointments/:id/confirm', dashboardController.confirmTrainerAppointment);
 router.post('/trainer/assign-plan', dashboardController.assignPlanToMember);
+router.post('/trainer/finish-progress', dashboardController.finishMemberProgress);
 router.get('/trainer/schedule', dashboardController.getTrainerScheduleForDashboard);
 router.post('/trainer/schedule/toggle', dashboardController.toggleTrainerSchedule);
 router.post('/trainer/schedule/bulk-save', dashboardController.bulkSaveTrainerSchedule);

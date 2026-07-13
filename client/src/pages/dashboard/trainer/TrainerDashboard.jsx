@@ -861,6 +861,54 @@ function TrainerDashboard({
     setCustomMealName('');
   };
 
+  const handleFinishProgress = (member, progressData) => {
+    if (!member) return;
+
+    const hasActiveWorkout = progressData.hasCurrentWorkout;
+    const hasActiveMeal = progressData.currentMeals && progressData.currentMeals.length > 0;
+
+    if (!hasActiveWorkout && !hasActiveMeal) {
+      alert('Học viên này hiện tại chưa có giáo án hay thực đơn nào đang kích hoạt!');
+      return;
+    }
+
+    const isWorkoutDone = !hasActiveWorkout || progressData.workoutPct === 100;
+    const isMealDone = !hasActiveMeal || progressData.mealPct === 100;
+
+    if (!isWorkoutDone || !isMealDone) {
+      alert('Học viên chưa hoàn thành đủ 100% tiến độ bài tập và thực đơn!');
+      return;
+    }
+
+    if (!window.confirm(`Bạn có chắc chắn muốn kết thúc tiến độ của học viên ${member.name} không?\n\nGiáo án và thực đơn hiện tại sẽ được lưu trữ vào Lịch sử và tiến độ hôm nay của hội viên sẽ được cài lại mặc định.`)) {
+      return;
+    }
+
+    fetch('/api/dashboard/trainer/finish-progress', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ memberId: member.id })
+    })
+      .then(res => {
+        if (!res.ok) {
+          return res.json().then(err => { throw new Error(err.message); });
+        }
+        return res.json();
+      })
+      .then(data => {
+        alert(data.message || 'Đã kết thúc tiến độ học viên thành công!');
+        setSelectedMember(null);
+        reloadTrainerDashboardData();
+      })
+      .catch(err => {
+        console.error('Error finishing progress:', err);
+        alert(err.message || 'Lỗi server khi kết thúc tiến độ!');
+      });
+  };
+
   const handleStartSession = () => {
     setIsSessionActive(true);
     setSessionTimer(900); // 15 mins simulation
@@ -1205,29 +1253,57 @@ function TrainerDashboard({
                           )}
                         </div>
                         <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9' }} />
-                        <button
-                          type="button"
-                          className="trainer-btn-submit"
-                          style={{
-                            marginTop: '8px',
-                            padding: '10px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '8px',
-                            background: 'linear-gradient(135deg, var(--orange) 0%, #f97316 100%)',
-                            border: 'none',
-                            color: '#fff',
-                            borderRadius: '8px',
-                            fontWeight: 'bold',
-                            cursor: 'pointer',
-                            boxShadow: '0 4px 10px rgba(249, 115, 22, 0.2)',
-                            transition: 'transform 0.2s ease'
-                          }}
-                          onClick={() => setShowProgressModal(true)}
-                        >
-                          <i className="fa-solid fa-square-poll-vertical"></i> Theo dõi tiến độ
-                        </button>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+                          <button
+                            type="button"
+                            className="trainer-btn-submit"
+                            style={{
+                              padding: '10px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px',
+                              background: 'linear-gradient(135deg, var(--orange) 0%, #f97316 100%)',
+                              border: 'none',
+                              color: '#fff',
+                              borderRadius: '8px',
+                              fontWeight: 'bold',
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 10px rgba(249, 115, 22, 0.2)',
+                              transition: 'transform 0.2s ease',
+                              width: '100%',
+                              margin: 0
+                            }}
+                            onClick={() => setShowProgressModal(true)}
+                          >
+                            <i className="fa-solid fa-square-poll-vertical"></i> Theo dõi tiến độ
+                          </button>
+                          
+                          <button
+                            type="button"
+                            className="trainer-btn-submit"
+                            style={{
+                              padding: '10px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px',
+                              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                              border: 'none',
+                              color: '#fff',
+                              borderRadius: '8px',
+                              fontWeight: 'bold',
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 10px rgba(16, 185, 129, 0.2)',
+                              transition: 'transform 0.2s ease',
+                              width: '100%',
+                              margin: 0
+                            }}
+                            onClick={() => handleFinishProgress(selectedMember, progress)}
+                          >
+                            <i className="fa-solid fa-circle-check"></i> Kết thúc tiến độ
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
