@@ -478,7 +478,7 @@ function HomePage() {
 
         {['VIP', 'Combo', 'Gym', 'Yoga', 'Boxing'].map((sport) => {
           const sportPlans = plans
-            .filter(p => p.sportType === sport)
+            .filter(p => p.sportType === sport && p.price >= 100000)
             .sort((a, b) => b.durationMonths - a.durationMonths); // Higher durations / Premium to the top
           if (sportPlans.length === 0) return null;
           
@@ -497,7 +497,7 @@ function HomePage() {
               </h3>
               <div className={`pricing-grid grid-${sportPlans.length}`}>
                 {sportPlans.map((plan, index) => {
-                  const isFeatured = plan.durationMonths === 12 || plan.durationMonths === 6;
+                  const isFeatured = plan.durationMonths === 6;
                   return (
                     <div key={plan.planId} className={`pricing-card reveal reveal-delay-${(index % 3) + 1} ${isFeatured ? 'featured' : ''}`} style={{ display: 'flex', flexDirection: 'column' }}>
                       {isFeatured && <div className="popular-badge">Khuyên Dùng</div>}
