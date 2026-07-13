@@ -8,6 +8,7 @@ router.use(authMiddleware);
 
 // --- ADMIN DASHBOARD ROUTES ---
 router.get('/admin/stats', dashboardController.getAdminStats);
+router.get('/admin/analytics', dashboardController.getAdminAnalytics);
 router.get('/admin/users', dashboardController.getAdminUsers);
 router.put('/admin/users/:id/status', dashboardController.toggleUserStatus);
 router.get('/admin/trainers', dashboardController.getAdminTrainers);
