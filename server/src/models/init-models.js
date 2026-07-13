@@ -8,6 +8,7 @@ var _MemberMemberships = require("./MemberMemberships");
 var _MemberServices = require("./MemberServices");
 var _Members = require("./Members");
 var _MembershipPlans = require("./MembershipPlans");
+var _MembershipPlanServices = require("./MembershipPlanServices");
 var _Notifications = require("./Notifications");
 var _Payments = require("./Payments");
 var _ProgressTrackings = require("./ProgressTrackings");
@@ -20,6 +21,7 @@ var _Trainers = require("./Trainers");
 var _Users = require("./Users");
 var _WorkoutExercises = require("./WorkoutExercises");
 var _WorkoutPlans = require("./WorkoutPlans");
+var _AppConfigs = require("./AppConfigs");
 
 function initModels(sequelize) {
   var AIConsultations = _AIConsultations(sequelize, DataTypes);
@@ -31,6 +33,7 @@ function initModels(sequelize) {
   var MemberServices = _MemberServices(sequelize, DataTypes);
   var Members = _Members(sequelize, DataTypes);
   var MembershipPlans = _MembershipPlans(sequelize, DataTypes);
+  var MembershipPlanServices = _MembershipPlanServices(sequelize, DataTypes);
   var Notifications = _Notifications(sequelize, DataTypes);
   var Payments = _Payments(sequelize, DataTypes);
   var ProgressTrackings = _ProgressTrackings(sequelize, DataTypes);
@@ -43,6 +46,7 @@ function initModels(sequelize) {
   var Users = _Users(sequelize, DataTypes);
   var WorkoutExercises = _WorkoutExercises(sequelize, DataTypes);
   var WorkoutPlans = _WorkoutPlans(sequelize, DataTypes);
+  var AppConfigs = _AppConfigs(sequelize, DataTypes);
 
   AIConsultations.belongsTo(Members, { as: "member", foreignKey: "member_id"});
   Members.hasMany(AIConsultations, { as: "AIConsultations", foreignKey: "member_id"});
@@ -64,6 +68,12 @@ function initModels(sequelize) {
   MembershipPlans.hasMany(MemberMemberships, { as: "MemberMemberships", foreignKey: "membership_plan_id"});
   Reports.belongsTo(MembershipPlans, { as: "reported_membership_plan", foreignKey: "reported_membership_plan_id"});
   MembershipPlans.hasMany(Reports, { as: "Reports", foreignKey: "reported_membership_plan_id"});
+  MembershipPlans.belongsToMany(Services, { as: 'IncludedServices', through: MembershipPlanServices, foreignKey: 'membership_plan_id', otherKey: 'service_id' });
+  Services.belongsToMany(MembershipPlans, { as: 'MembershipPlans', through: MembershipPlanServices, foreignKey: 'service_id', otherKey: 'membership_plan_id' });
+  MembershipPlanServices.belongsTo(MembershipPlans, { as: 'membership_plan', foreignKey: 'membership_plan_id'});
+  MembershipPlans.hasMany(MembershipPlanServices, { as: 'MembershipPlanServices', foreignKey: 'membership_plan_id'});
+  MembershipPlanServices.belongsTo(Services, { as: 'service', foreignKey: 'service_id'});
+  Services.hasMany(MembershipPlanServices, { as: 'MembershipPlanServices', foreignKey: 'service_id'});
   Users.belongsTo(Roles, { as: "role", foreignKey: "role_id"});
   Roles.hasMany(Users, { as: "Users", foreignKey: "role_id"});
   MemberServices.belongsTo(Services, { as: "service", foreignKey: "service_id"});
@@ -109,6 +119,7 @@ function initModels(sequelize) {
     MemberServices,
     Members,
     MembershipPlans,
+    MembershipPlanServices,
     Notifications,
     Payments,
     ProgressTrackings,
@@ -121,6 +132,7 @@ function initModels(sequelize) {
     Users,
     WorkoutExercises,
     WorkoutPlans,
+    AppConfigs,
   };
 }
 module.exports = initModels;

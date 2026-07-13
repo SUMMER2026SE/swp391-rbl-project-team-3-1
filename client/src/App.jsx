@@ -5,6 +5,8 @@ import CheckoutPage from './pages/CheckoutPage/CheckoutPage';
 import MemberDashboard from './pages/dashboard/member/MemberDashboard';
 import TrainerDashboard from './pages/dashboard/trainer/TrainerDashboard';
 import AdminDashboard from './pages/dashboard/admin/AdminDashboard';
+import PTDetailPage from './pages/PTDetailPage/PTDetailPage';
+import VerifyEmailPage from './pages/VerifyEmailPage/VerifyEmailPage';
 import GymDetail from './pages/detail/GymDetail';
 import YogaDetail from './pages/detail/YogaDetail';
 import PtDetail from './pages/detail/PtDetail';
@@ -13,9 +15,13 @@ import Chatbot from './components/Chatbot/Chatbot';
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [currentSearch, setCurrentSearch] = useState(window.location.search);
 
   useEffect(() => {
-    const handleLocationChange = () => setCurrentPath(window.location.pathname);
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname);
+      setCurrentSearch(window.location.search);
+    };
     window.addEventListener('popstate', handleLocationChange);
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
@@ -38,8 +44,13 @@ function App() {
   }, []);
 
   const renderPage = () => {
+    const urlParams = new URLSearchParams(currentSearch);
+    const isVerifyEmail = urlParams.get('action') === 'verify-email';
+
+    if (isVerifyEmail) return <VerifyEmailPage />;
     if (currentPath === '/login') return <LoginPage />;
     if (currentPath === '/checkout') return <CheckoutPage />;
+    if (currentPath === '/pt-details') return <PTDetailPage />;
     if (currentPath === '/detail/gym') return <GymDetail />;
     if (currentPath === '/detail/yoga') return <YogaDetail />;
     if (currentPath === '/detail/pt') return <PtDetail />;

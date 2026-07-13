@@ -5,11 +5,15 @@ const authMiddleware = require('../middlewares/authMiddleware');
 
 // Public routes – không cần token
 router.get('/trainers', checkoutController.getTrainers);
+router.get('/trainers/:trainerId/schedule', checkoutController.getTrainerSchedule);
 router.get('/plans', checkoutController.getPlans);
+router.get('/services', checkoutController.getServices);
 router.post('/payos/create-payment', checkoutController.createPayosPayment);
 router.get('/payos/status/:orderCode', checkoutController.getPayosStatus);
 router.post('/check-email', checkoutController.checkEmail);
 router.post('/guest-register-checkout', checkoutController.guestCheckoutAndRegister);
+const dashboardController = require('../controllers/dashboardController');
+router.get('/homepage-config', dashboardController.getHomepageConfig);
 
 // Protected routes – cần token
 router.post('/loggedIn-checkout', authMiddleware, checkoutController.loggedInCheckout);

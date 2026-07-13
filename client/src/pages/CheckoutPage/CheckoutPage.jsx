@@ -82,6 +82,8 @@ function CheckoutPage() {
   // ── Data states ────────────────────────────────────────────────────
   const [plans, setPlans] = useState(FALLBACK_PLANS);
   const [trainers, setTrainers] = useState([]);
+  const [services, setServices] = useState([]);
+  const [selectedServices, setSelectedServices] = useState([]);
   const [isLoadingTrainers, setIsLoadingTrainers] = useState(true);
 
   // ── Selection states ───────────────────────────────────────────────
@@ -90,6 +92,7 @@ function CheckoutPage() {
   const [showPlanPicker, setShowPlanPicker] = useState(false);
 
   // ── Form & Loading states ──────────────────────────────────────────
+  const [regFullName, setRegFullName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPhone, setRegPhone] = useState('');
   const [regPw, setRegPw] = useState('');
@@ -154,6 +157,16 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
       })
       .catch(() => setTrainers(FALLBACK_TRAINERS))
       .finally(() => setIsLoadingTrainers(false));
+
+    // 3. Load services
+    fetch('/api/checkout/services')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.services?.length) {
+          setServices(data.services);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Listen to auth changes
@@ -170,7 +183,7 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
   }, []);
 
   useEffect(() => {
-    if (step !== 2 || !selectedPlan) return;
+    if (step !== 2 || (!selectedPlan && selectedServices.length === 0)) return;
 
     const createPayosPayment = async () => {
       setAlert({ show: false, msg: '', type: 'error' });
@@ -182,7 +195,10 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
         const res = await fetch('/api/checkout/payos/create-payment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId: selectedPlan.planId })
+          body: JSON.stringify({ 
+            planId: selectedPlan?.planId || null,
+            services: selectedServices.map(s => s.serviceId)
+          })
         });
         const data = await res.json();
 
@@ -222,8 +238,9 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          planId: selectedPlan.planId,
+          planId: selectedPlan?.planId || null,
           trainerId: selectedTrainer?.userId || null,
+          services: selectedServices.map(s => s.serviceId),
           payosOrderCode: payosPayment?.orderCode
         })
       });
@@ -316,23 +333,30 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
         },
         body: JSON.stringify({
           email: regEmail.trim(),
+          fullName: regFullName.trim() || undefined,
           phoneNumber: regPhone.trim(),
           password: regPw,
           planId: selectedPlan.planId,
           trainerId: selectedTrainer?.userId || null,
+          serviceIds: selectedServices.length > 0 ? selectedServices : undefined,
           payosOrderCode: payosPayment?.orderCode
         })
       });
       const data = await res.json();
       setIsSubmitting(false);
       if (res.ok) {
-        // Lưu token và thông tin user để tự động đăng nhập luôn
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('userInfo', JSON.stringify(data.user));
-        localStorage.setItem('showProfileSetup', 'true');
-        setToken(data.token);
-        window.dispatchEvent(new Event('authChange'));
-        setRegSuccess(true);
+        if (data.needsVerification) {
+          // Show email verification required screen
+          setRegSuccess(true);
+        } else {
+          // Legacy: auto-login
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('userInfo', JSON.stringify(data.user));
+          localStorage.setItem('showProfileSetup', 'true');
+          setToken(data.token);
+          window.dispatchEvent(new Event('authChange'));
+          setRegSuccess(true);
+        }
       } else {
         setAlert({ show: true, msg: data.message || 'Đăng ký thất bại!', type: 'error' });
       }
@@ -344,7 +368,19 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
 
   // ─── Computed values ───────────────────────────────────────────────
   const planPrice = selectedPlan?.price || 0;
-  const totalPrice = planPrice;
+  const servicesPrice = selectedServices.reduce((sum, svcId) => {
+    const svc = services.find(s => s.serviceId === svcId);
+    return sum + (svc ? svc.price : 0);
+  }, 0);
+  const totalPrice = planPrice + servicesPrice;
+
+  const hasPTService = (selectedPlan?.includedServices || []).some(s => s.sportType === 'Huấn Luyện') || 
+    selectedServices.some(svcId => {
+      const svc = services.find(s => s.serviceId === svcId);
+      return svc?.sportType === 'Huấn Luyện';
+    });
+  
+  const includedServiceIds = selectedPlan?.includedServices?.map(s => s.serviceId) || [];
 
   const qrCodeUrl = payosPayment?.qrCode
     ? `https://quickchart.io/qr?size=240&text=${encodeURIComponent(payosPayment.qrCode)}`
@@ -392,18 +428,29 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
         </nav>
         <div className="checkout-success-container">
           <div className="checkout-success-card">
-            <div className="success-icon-wrap">
-              <i className="fa-solid fa-check"></i>
+            <div className="success-icon-wrap" style={{ background: 'linear-gradient(135deg, #f97316, #ef4444)' }}>
+              <i className="fa-solid fa-envelope"></i>
             </div>
-            <h2>Đăng Ký & Thanh Toán Thành Công!</h2>
-            <p>Tài khoản của bạn đã được đăng ký và kích hoạt gói tập <strong>{selectedPlan?.planName}</strong> thành công.</p>
-            <p>Hãy thiết lập hồ sơ cá nhân để chúng tôi tạo lộ trình tập luyện tốt nhất cho bạn.</p>
-            <button className="btn-success-login" style={{ background: 'var(--orange)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px 24px', fontSize: '1rem' }} onClick={() => {
-              window.history.pushState({}, '', '/');
-              window.dispatchEvent(new Event('popstate'));
-            }}>
-              <i className="fa-solid fa-user-gear"></i> Thiết Lập Hồ Sơ Ngay
-            </button>
+            <h2>Kiểm Tra Email Của Bạn!</h2>
+            <p>Thanh toán gói <strong>{selectedPlan?.planName}</strong> thành công! 🎉</p>
+            <p style={{ color: '#aaa', fontSize: '0.9rem', lineHeight: 1.7 }}>
+              Chúng tôi đã gửi một email xác thực đến <strong style={{ color: '#f97316' }}>{regEmail}</strong>.
+              Vui lòng mở email và nhấn vào nút <strong>"Xác Thực Email"</strong> để kích hoạt tài khoản của bạn.
+            </p>
+            <div style={{ background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: 12, padding: '16px 20px', margin: '20px 0', textAlign: 'left' }}>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: '#ccc' }}>
+                <i className="fa-solid fa-circle-info" style={{ color: '#f97316', marginRight: 8 }}></i>
+                Sau khi xác thực, bạn sẽ nhận được email chào mừng kèm thông tin chi tiết gói tập.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+              <button className="btn-success-home" onClick={goHome} style={{ flex: 1 }}>
+                <i className="fa-solid fa-house"></i> Về Trang Chủ
+              </button>
+              <button className="btn-success-home" onClick={goLogin} style={{ flex: 1, background: 'var(--orange)' }}>
+                <i className="fa-solid fa-right-to-bracket"></i> Đăng Nhập
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -488,13 +535,25 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
                   <div className="co-section-title">
                     <i className="fa-solid fa-tag"></i> Gói Tập Đã Chọn
                   </div>
-                  <button className="btn-change-plan" onClick={() => setShowPlanPicker(v => !v)}>
-                    <i className="fa-solid fa-pen"></i>
-                    {showPlanPicker ? 'Ẩn bớt' : 'Thay đổi gói'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button className="btn-change-plan" onClick={() => setShowPlanPicker(v => !v)}>
+                      <i className="fa-solid fa-pen"></i>
+                      {showPlanPicker ? 'Ẩn bớt' : 'Thay đổi gói'}
+                    </button>
+                    {selectedPlan && (
+                      <button className="btn-change-plan" style={{ background: '#ef4444', color: '#fff', border: 'none' }} onClick={() => { setSelectedPlan(null); setSelectedTrainer(null); }}>
+                        <i className="fa-solid fa-trash"></i> Bỏ chọn gói
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="co-section-body">
+                  {!selectedPlan && (
+                    <div className="selected-plan-card" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      <p style={{ margin: 0 }}>Bạn chưa chọn gói tập. Hệ thống sẽ thanh toán cho các Dịch vụ bổ sung bên dưới.</p>
+                    </div>
+                  )}
                   {selectedPlan && (
                     <div className="selected-plan-card">
                       <div className="plan-info-left">
@@ -546,7 +605,12 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
                 </div>
 
                 <div className="co-section-body">
-                  {isLoadingTrainers ? (
+                  {!hasPTService ? (
+                    <div className="co-empty" style={{ backgroundColor: '#fdf2f8', color: '#be185d', borderColor: '#fbcfe8' }}>
+                      <i className="fa-solid fa-circle-exclamation" style={{ color: '#be185d' }}></i>
+                      Vui lòng chọn mua một Dịch vụ PT (bên dưới) trước khi được phép chọn Huấn luyện viên!
+                    </div>
+                  ) : isLoadingTrainers ? (
                     <div className="trainers-grid">
                       {[1, 2, 3, 4].map(i => (
                         <div key={i} className="trainer-skeleton">
@@ -608,6 +672,60 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
                   )}
                 </div>
               </div>
+
+              {/* Services selection */}
+              {services.length > 0 && (
+                <div className="co-section" style={{ marginTop: 0, border: 'none', padding: 0 }}>
+                  <div className="co-section-header">
+                    <div className="co-section-title">
+                      <i className="fa-solid fa-concierge-bell"></i> Dịch Vụ Bổ Sung
+                    </div>
+                    <span className="trainer-optional-label">Tùy chọn</span>
+                  </div>
+                  <div className="co-section-body">
+                    <div className="trainers-grid">
+                      {services.map(svc => {
+                        const isIncluded = includedServiceIds.includes(svc.serviceId);
+                        const isSelected = selectedServices.includes(svc.serviceId) || isIncluded;
+
+                        return (
+                          <div
+                            key={svc.serviceId}
+                            className={`trainer-card${isSelected ? ' selected' : ''}`}
+                            style={isIncluded ? { opacity: 0.7, cursor: 'default' } : {}}
+                            onClick={() => {
+                              if (isIncluded) return;
+                              setSelectedServices(prev =>
+                                prev.includes(svc.serviceId)
+                                  ? prev.filter(id => id !== svc.serviceId)
+                                  : [...prev, svc.serviceId]
+                              );
+                            }}
+                          >
+                            <div className="trainer-avatar" style={{ background: 'linear-gradient(135deg, #10b981, #059669)', fontSize: '1.2rem' }}>
+                              <i className={`fa-solid ${svc.sportType === 'Swimming' ? 'fa-person-swimming' : svc.sportType === 'Sauna' ? 'fa-hot-tub-person' : svc.sportType === 'Locker' ? 'fa-lock' : 'fa-mug-hot'}`}></i>
+                            </div>
+                            <div className="trainer-info">
+                              <div className="trainer-name">{svc.serviceName}</div>
+                              <div className="trainer-spec">{svc.description}</div>
+                              <div className="trainer-rating" style={{ color: '#10b981' }}>
+                                <i className="fa-solid fa-tag"></i>
+                                {isIncluded ? 'Đã bao gồm trong gói' : fmt(svc.price)}
+                              </div>
+                            </div>
+                            <div className="trainer-select-btn">
+                              {isSelected
+                                ? <i className="fa-solid fa-check"></i>
+                                : <i className="fa-solid fa-plus"></i>
+                              }
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
@@ -733,6 +851,20 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
               <div className="co-section-body">
                 <form id="guestRegisterForm" onSubmit={doGuestRegisterAndCheckout}>
                   <div className="reg-field">
+                    <label>Họ và tên</label>
+                    <div className="reg-inp-wrap">
+                      <i className="fa-solid fa-user inp-icon"></i>
+                      <input
+                        type="text"
+                        placeholder="Nhập họ và tên đầy đủ"
+                        value={regFullName}
+                        onChange={e => setRegFullName(e.target.value)}
+                        disabled={isSubmitting}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="reg-field">
                     <label>Tên đăng nhập (Email)</label>
                     <div className="reg-inp-wrap">
                       <i className="fa-solid fa-envelope inp-icon"></i>
@@ -837,7 +969,7 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
             <div className="pay-summary-body">
               <div className="pay-row">
                 <span className="label">Gói tập:</span>
-                <span className="value">{selectedPlan?.planName || '—'}</span>
+                <span className="value">{selectedPlan?.planName || 'Chỉ mua dịch vụ'}</span>
               </div>
 
               {selectedTrainer && (
@@ -859,6 +991,17 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
               )}
 
               <div className="pay-divider"></div>
+
+              {selectedServices.length > 0 && (
+                <>
+                  <div className="pay-row">
+                    <span className="label">Dịch vụ ({selectedServices.length}):</span>
+                    <span className="value" style={{ color: '#10b981' }}>+{fmt(servicesPrice)}</span>
+                  </div>
+                  <div className="pay-divider"></div>
+                </>
+              )}
+
               <div className="pay-total-row">
                 <span className="total-label">Tổng thanh toán:</span>
                 <span className="total-value">{fmt(totalPrice)}</span>
@@ -867,7 +1010,7 @@ setSelectedPlan(matchIdx || FALLBACK_PLANS[0]);
               {step === 1 && (
                 <button
                   className="btn-confirm-pay"
-                  disabled={!selectedPlan}
+                  disabled={!selectedPlan && selectedServices.length === 0}
                   onClick={() => setStep(2)}
                 >
                   <i className="fa-solid fa-arrow-right"></i>

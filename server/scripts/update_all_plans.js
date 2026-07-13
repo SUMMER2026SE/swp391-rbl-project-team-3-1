@@ -34,6 +34,9 @@ const { poolPromise } = require('../src/config/db');
     // 6. Ensure all active plans are set to Active
     await pool.request().query("UPDATE MembershipPlans SET status = 'Active' WHERE membership_plan_id BETWEEN 6 AND 14");
 
+    // 7. Ensure Zumba plans are set to Inactive
+    await pool.request().query("UPDATE MembershipPlans SET status = 'Inactive' WHERE membership_plan_id IN (15, 16, 17)");
+
     console.log('✅ Plans updated! Verifying active plans in DB:');
 
     const result = await pool.request().query(

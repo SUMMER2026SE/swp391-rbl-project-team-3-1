@@ -1,4 +1,4 @@
-const { sequelize, models } = require('./src/config/db');
+const { sequelize, models } = require('../src/config/db');
 const bcrypt = require('bcryptjs');
 
 async function runSeeder() {

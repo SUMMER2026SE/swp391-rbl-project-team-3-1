@@ -1,4 +1,4 @@
-const { sequelize } = require('./src/config/db');
+const { sequelize } = require('../src/config/db');
 
 async function runMigration() {
   console.log('Running database schema migration...');

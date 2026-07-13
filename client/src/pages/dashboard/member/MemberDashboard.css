@@ -393,6 +393,12 @@
   color: #92400e;
 }
 
+.member-badge-status.cancelpending {
+  background-color: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
 .member-badge-status.cancelled {
   background-color: #fee2e2;
   color: #991b1b;
@@ -1179,5 +1185,173 @@
   background-color: var(--orange);
   color: #ffffff;
   box-shadow: 0 4px 10px rgba(249, 115, 22, 0.2);
+}
+
+/* --- Registered Memberships Styles --- */
+.member-packages-panel {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.member-packages-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.member-packages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.member-package-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.25s ease;
+}
+
+.member-package-item:hover {
+  border-color: var(--orange);
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.04);
+}
+
+.member-package-item-header {
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  background: #fafafa;
+  user-select: none;
+}
+
+.member-package-item-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.member-package-item-arrow {
+  transition: transform 0.25s ease;
+  color: #94a3b8;
+}
+
+.member-package-item.open .member-package-item-arrow {
+  transform: rotate(180deg);
+}
+
+.member-package-item-details {
+  padding: 20px;
+  border-top: 1px solid #f1f5f9;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.member-package-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.member-package-detail-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.member-package-detail-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.member-package-detail-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.member-package-remaining-box {
+  background: #fff8f1;
+  border: 1px solid #ffe3d1;
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.member-package-remaining-text {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #ea580c;
+}
+
+.member-package-remaining-value {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #ea580c;
+}
+
+.member-package-btn-renew {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background-color: var(--orange);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: all 0.2s ease;
+}
+
+.member-package-btn-renew:hover {
+  background-color: var(--orange-dk);
+}
+
+.member-package-badge-active {
+  background-color: #d1fae5;
+  color: #065f46;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.member-package-badge-expired {
+  background-color: #fee2e2;
+  color: #991b1b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.member-package-badge-cancelled {
+  background-color: #f1f5f9;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
 }
 

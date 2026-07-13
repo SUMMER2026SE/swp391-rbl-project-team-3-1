@@ -32,6 +32,18 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(500),
       allowNull: true
     },
+    cancel_reason: {
+      type: DataTypes.STRING(1000),
+      allowNull: true
+    },
+    cancel_requested_at: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    cancel_requested_by: {
+      type: DataTypes.STRING(50),
+      allowNull: true
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: true,

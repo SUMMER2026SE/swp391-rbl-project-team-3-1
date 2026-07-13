@@ -6,6 +6,10 @@ function HomePage() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [userInfo, setUserInfo] = useState(JSON.parse(localStorage.getItem('userInfo') || 'null'));
 
+  const [plans, setPlans] = useState([]);
+  const [services, setServices] = useState([]);
+  const [coreSports, setCoreSports] = useState([]);
+
   // Trạng thái cho bảng thiết lập hồ sơ (Profile Setup Modal)
   const [showSetupModal, setShowSetupModal] = useState(localStorage.getItem('showProfileSetup') === 'true');
   const [setupHeight, setSetupHeight] = useState('170');
@@ -17,19 +21,17 @@ function HomePage() {
   const [setupError, setSetupError] = useState('');
   const [isSavingSetup, setIsSavingSetup] = useState(false);
 
-  // Trạng thái cho Tư vấn AI Guest (Guest AI Consultation)
+  // States for AI Consultation Modal
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiName, setAiName] = useState('');
-  const [aiAge, setAiAge] = useState('25');
+  const [aiAge, setAiAge] = useState('');
   const [aiGender, setAiGender] = useState('Nam');
-  const [aiHeight, setAiHeight] = useState('170');
-  const [aiWeight, setAiWeight] = useState('65');
-  const [aiFitnessGoal, setAiFitnessGoal] = useState('Tăng cơ');
-  const [aiConsultationType, setAiConsultationType] = useState('BMI');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiLoadingStep, setAiLoadingStep] = useState('');
-  const [aiResult, setAiResult] = useState(null);
-  const [aiError, setAiError] = useState('');
+  const [aiHeight, setAiHeight] = useState('');
+  const [aiWeight, setAiWeight] = useState('');
+  const [aiGoal, setAiGoal] = useState('Giảm cân');
+  const [isConsulting, setIsConsulting] = useState(false);
+  const [consultResult, setConsultResult] = useState(null);
+  const [consultError, setConsultError] = useState('');
 
   useEffect(() => {
     const handleAuthChange = () => {
@@ -56,7 +58,12 @@ function HomePage() {
     };
 
     window.addEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
 
+  useEffect(() => {
     // Scroll reveal animations
     const reveals = document.querySelectorAll('.reveal');
     const observer = new IntersectionObserver(
@@ -72,23 +79,45 @@ function HomePage() {
 
     reveals.forEach((el) => observer.observe(el));
 
-    // Cleanup
     return () => {
-      window.removeEventListener('scroll', handleScroll);
-      observer.disconnect();
+      reveals.forEach(r => observer.unobserve(r));
     };
+  }, [plans, services]); // Depend on dynamic data so observer updates
+
+  useEffect(() => {
+    // Fetch Plans
+    fetch('/api/checkout/plans')
+      .then(res => res.json())
+      .then(data => {
+        if (data.plans) setPlans(data.plans);
+      })
+      .catch(err => console.error('Error fetching plans:', err));
+
+    // Fetch Services
+    fetch('/api/checkout/services')
+      .then(res => res.json())
+      .then(data => {
+        if (data.services) setServices(data.services);
+      })
+      .catch(err => console.error('Error fetching services:', err));
+
+    // Fetch Homepage config
+    fetch('/api/checkout/homepage-config')
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          if (data.coreSports && data.coreSports.length > 0) setCoreSports(data.coreSports);
+          if (data.heroTitle) setHeroTitle(data.heroTitle);
+          if (data.heroSubtitle) setHeroSubtitle(data.heroSubtitle);
+        }
+      })
+      .catch(err => console.error('Error fetching homepage config:', err));
   }, []);
 
   // Navigate to checkout with selected plan
   const goToCheckout = (planKey) => {
     localStorage.setItem('checkoutPlan', planKey);
     window.history.pushState({}, '', `/checkout?plan=${planKey}`);
-    window.dispatchEvent(new Event('popstate'));
-  };
-
-  // Navigate to service detail page
-  const goToServiceDetail = (serviceKey) => {
-    window.history.pushState({}, '', `/detail/${serviceKey}`);
     window.dispatchEvent(new Event('popstate'));
   };
 
@@ -176,38 +205,12 @@ function HomePage() {
     setShowSetupModal(false);
   };
 
-  const handleGuestAiConsult = async (e) => {
+  // Gửi thông số lên AI để nhận tư vấn
+  const handleAiConsultSubmit = async (e) => {
     e.preventDefault();
-    setAiError('');
-    setAiResult(null);
-    setAiLoading(true);
-
-    if (!aiHeight || Number(aiHeight) <= 0) {
-      setAiError('Chiều cao không hợp lệ!');
-      setAiLoading(false);
-      return;
-    }
-    if (!aiWeight || Number(aiWeight) <= 0) {
-      setAiError('Cân nặng không hợp lệ!');
-      setAiLoading(false);
-      return;
-    }
-
-    const steps = [
-      'Đang kết nối máy chủ tư vấn...',
-      'AI đang tính toán chỉ số BMI thể hình...',
-      'AI đang phân tích mục tiêu & thể chất...',
-      'Đang tổng hợp lộ trình khuyến nghị...'
-    ];
-
-    let currentStepIdx = 0;
-    setAiLoadingStep(steps[0]);
-    const stepInterval = setInterval(() => {
-      currentStepIdx++;
-      if (currentStepIdx < steps.length) {
-        setAiLoadingStep(steps[currentStepIdx]);
-      }
-    }, 1200);
+    setConsultError('');
+    setIsConsulting(true);
+    setConsultResult(null);
 
     try {
       const res = await fetch('/api/ai/consult', {
@@ -216,29 +219,49 @@ function HomePage() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          guestName: aiName || 'Khách truy cập',
-          age: aiAge,
+          guestName: aiName || 'Khách',
+          age: Number(aiAge) || 20,
           gender: aiGender,
-          height: aiHeight,
-          weight: aiWeight,
-          fitnessGoal: aiFitnessGoal,
-          consultationType: aiConsultationType
+          height: Number(aiHeight),
+          weight: Number(aiWeight),
+          fitnessGoal: aiGoal,
+          consultationType: 'BMI'
         })
       });
 
-      clearInterval(stepInterval);
       const data = await res.json();
-      setAiLoading(false);
+      setIsConsulting(false);
 
-      if (res.ok) {
-        setAiResult(data.consultation);
+      if (res.ok && data.consultation) {
+        setConsultResult(data.consultation);
       } else {
-        setAiError(data.message || 'Yêu cầu tư vấn AI thất bại!');
+        setConsultError(data.message || 'Lỗi phân tích từ AI. Vui lòng thử lại!');
       }
     } catch (err) {
-      clearInterval(stepInterval);
-      setAiLoading(false);
-      setAiError('Không thể kết nối đến máy chủ AI!');
+      setIsConsulting(false);
+      setConsultError('Không thể kết nối đến server!');
+    }
+  };
+
+  // Đăng ký gói tập được đề xuất
+  const handleRegisterRecommended = () => {
+    const recommendedSport = consultResult?.recommended_sport || '';
+    // Tìm gói tập phù hợp với môn thể thao được đề xuất
+    const matchedPlan = plans.find(p => 
+      p.sportType.toLowerCase().includes(recommendedSport.toLowerCase()) || 
+      recommendedSport.toLowerCase().includes(p.sportType.toLowerCase())
+    ) || plans[0];
+    
+    setShowAiModal(false);
+    setConsultResult(null);
+    setConsultError('');
+    if (matchedPlan) {
+      goToCheckout(matchedPlan.planId);
+    } else {
+      const targetElement = document.querySelector('#pricing');
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     }
   };
 
@@ -275,8 +298,8 @@ function HomePage() {
             </a>
           </li>
           <li>
-            <a href="#trainers" onClick={(e) => handleAnchorClick(e, '#trainers')}>
-              Huấn Luyện Viên
+            <a href="#addons" onClick={(e) => handleAnchorClick(e, '#addons')}>
+              Dịch Vụ Bổ Sung & PT
             </a>
           </li>
           {token && (
@@ -351,7 +374,25 @@ function HomePage() {
       {/* HERO SECTION                               */}
       {/* ========================================== */}
       <section className="hero" id="home">
-        <div className="hero-bg"></div>
+        <div className="hero-bg">
+          <div className="hero-gym-visual">
+            <div className="corridor">
+              {/* Ceiling bar (orange horizontal accent) */}
+              <div className="ceiling-bar"></div>
+              {/* White ceiling strip lights */}
+              <div className="ceiling-light ceiling-light-1"></div>
+              <div className="ceiling-light ceiling-light-2"></div>
+              <div className="ceiling-light ceiling-light-3"></div>
+              {/* Small accent dots */}
+              <div className="accent-dot" style={{ left: '35%', top: '14%' }}></div>
+              <div className="accent-dot" style={{ left: '55%', top: '14%' }}></div>
+              <div className="accent-dot" style={{ left: '50%', top: '20%' }}></div>
+            </div>
+            {/* Orange vertical accent pillars */}
+            <div className="pillar-left"></div>
+            <div className="pillar-right"></div>
+          </div>
+        </div>
 
         <div className="hero-content">
           <h1 className="hero-title">Bứt Phá Giới Hạn</h1>
@@ -359,19 +400,11 @@ function HomePage() {
             Hệ thống quản lý phòng gym thông minh, tối ưu hóa quy trình tập luyện và trải nghiệm khách hàng đẳng cấp.
           </p>
           <div className="hero-actions">
-            <a
-              href="#pricing"
-              onClick={(e) => handleAnchorClick(e, '#pricing')}
-              className="btn-hero-primary"
-            >
-              MUA GÓI TẬP
+            <a href="#pricing" onClick={(e) => handleAnchorClick(e, '#pricing')} className="btn-hero-primary">
+              Xem Gói Tập
             </a>
-            <a
-              href="#services"
-              onClick={(e) => handleAnchorClick(e, '#services')}
-              className="btn-hero-outline"
-            >
-              TÌM HIỂU THÊM
+            <a href="#services" onClick={(e) => handleAnchorClick(e, '#services')} className="btn-hero-outline">
+              Tìm Hiểu Thêm
             </a>
           </div>
         </div>
@@ -386,65 +419,51 @@ function HomePage() {
         </div>
 
         <div className="services-grid">
-          <div 
-            className="service-card reveal reveal-delay-1"
-            onClick={() => goToServiceDetail('gym')}
-            style={{ cursor: 'pointer' }}
-          >
-            <div className="service-icon">
-              <i className="fas fa-dumbbell"></i>
-            </div>
-            <h3 className="service-name">Gym</h3>
-            <p className="service-desc">
-              Trang thiết bị hiện đại, không gian rộng rãi đáp ứng mọi nhu cầu tập luyện thể hình.
-            </p>
-            <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--orange)', marginTop: '8.5px', display: 'inline-block' }}>XEM CHI TIẾT →</span>
-          </div>
-
-          <div 
-            className="service-card reveal reveal-delay-2"
-            onClick={() => goToServiceDetail('yoga')}
-            style={{ cursor: 'pointer' }}
-          >
-            <div className="service-icon">
-              <i className="fas fa-person-praying"></i>
-            </div>
-            <h3 className="service-name">Yoga</h3>
-            <p className="service-desc">
-              Lớp học đa dạng từ cơ bản đến nâng cao, giúp cân bằng thân – tâm – trí.
-            </p>
-            <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--orange)', marginTop: '8.5px', display: 'inline-block' }}>XEM CHI TIẾT →</span>
-          </div>
-
-          <div 
-            className="service-card reveal reveal-delay-3"
-            onClick={() => goToServiceDetail('pt')}
-            style={{ cursor: 'pointer' }}
-          >
-            <div className="service-icon">
-              <i className="fas fa-user-tie"></i>
-            </div>
-            <h3 className="service-name">PT Cá Nhân</h3>
-            <p className="service-desc">
-              Lộ trình tập luyện thiết kế riêng biệt, đồng hành cùng huấn luyện viên chuyên nghiệp.
-            </p>
-            <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--orange)', marginTop: '8.5px', display: 'inline-block' }}>XEM CHI TIẾT →</span>
-          </div>
-
-          <div 
-            className="service-card reveal reveal-delay-4"
-            onClick={() => setShowAiModal(true)}
-            style={{ cursor: 'pointer', border: '1px dashed var(--orange)' }}
-          >
-            <div className="service-icon" style={{ backgroundColor: '#fff8f1', color: 'var(--orange)' }}>
-              <i className="fas fa-robot"></i>
-            </div>
-            <h3 className="service-name">Trợ lý Tư vấn AI</h3>
-            <p className="service-desc">
-              Nhập chỉ số thể chất của bạn để nhận phân tích BMI và lời khuyên tập luyện tức thời từ AI.
-            </p>
-            <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--orange)', marginTop: '8px', display: 'inline-block' }}>DÙNG THỬ NGAY →</span>
-          </div>
+          {coreSports.length > 0 ? (
+            <>
+              {coreSports.map((sport, index) => (
+                <div key={index} className={`service-card reveal reveal-delay-${(index % 3) + 1}`} style={{ backgroundImage: `url('${sport.image}')` }}>
+                  <div className="service-overlay">
+                    <h3 className="service-name">{sport.name}</h3>
+                    <p className="service-desc">{sport.description}</p>
+                  </div>
+                </div>
+              ))}
+              {/* 4th Card: AI Consultation */}
+              <div 
+                className="service-card reveal reveal-delay-4" 
+                style={{ 
+                  backgroundImage: "url('/ai_consult_bg.png')",
+                  border: '1.5px solid rgba(249, 115, 22, 0.35)'
+                }}
+                onClick={() => setShowAiModal(true)}
+              >
+                <div className="service-overlay" style={{ background: 'linear-gradient(to top, rgba(10,10,10,0.95) 0%, rgba(10,10,10,0.6) 60%, transparent 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '36px 28px' }}>
+                  <div className="service-icon" style={{ marginBottom: '8px' }}>
+                    <i className="fa-solid fa-robot" style={{ color: 'var(--orange)', fontSize: '2rem' }}></i>
+                  </div>
+                  <h3 className="service-name" style={{ color: 'var(--orange)' }}>Tư vấn sức khỏe AI</h3>
+                  <p className="service-desc" style={{ fontSize: '0.9rem' }}>Tính chỉ số BMI, phân tích thể trạng và nhận lộ trình tập luyện & dinh dưỡng cá nhân hóa miễn phí.</p>
+                  <button 
+                    className="btn-primary-nav" 
+                    style={{ 
+                      marginTop: '12px', 
+                      fontSize: '0.8rem', 
+                      padding: '6px 16px', 
+                      borderRadius: '20px',
+                      boxShadow: '0 4px 12px rgba(249,115,22,0.3)',
+                      border: 'none',
+                      background: 'var(--orange)'
+                    }}
+                  >
+                    Trải nghiệm ngay
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div style={{ textAlign: 'center', width: '100%', padding: '40px' }}>Đang tải dịch vụ...</div>
+          )}
         </div>
       </section>
 
@@ -454,105 +473,137 @@ function HomePage() {
       <section className="section-pricing" id="pricing">
         <div className="section-header reveal">
           <h2 className="section-title">Gói Tập</h2>
+          <p style={{textAlign: 'center', marginTop: '10px', color: '#64748b'}}>Khám phá các lựa chọn phù hợp nhất cho mục tiêu của bạn.</p>
+        </div>
+
+        {['VIP', 'Combo', 'Gym', 'Yoga', 'Boxing'].map((sport) => {
+          const sportPlans = plans
+            .filter(p => p.sportType === sport && p.price >= 100000)
+            .sort((a, b) => b.durationMonths - a.durationMonths); // Higher durations / Premium to the top
+          if (sportPlans.length === 0) return null;
+          
+          const displayTitles = {
+            Gym: 'Gói Tập Gym',
+            Yoga: 'Gói Tập Yoga',
+            Boxing: 'Gói Tập Boxing',
+            Combo: 'Gói Tập Combo',
+            VIP: 'Gói Tập VIP'
+          };
+          
+          return (
+            <div key={sport} style={{ marginBottom: '60px' }}>
+              <h3 style={{ textAlign: 'center', marginBottom: '30px', fontFamily: 'Barlow Condensed', fontSize: '2rem', color: 'var(--orange)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                {displayTitles[sport] || sport}
+              </h3>
+              <div className={`pricing-grid grid-${sportPlans.length}`}>
+                {sportPlans.map((plan, index) => {
+                  const isFeatured = plan.durationMonths === 6;
+                  return (
+                    <div key={plan.planId} className={`pricing-card reveal reveal-delay-${(index % 3) + 1} ${isFeatured ? 'featured' : ''}`} style={{ display: 'flex', flexDirection: 'column' }}>
+                      {isFeatured && <div className="popular-badge">Khuyên Dùng</div>}
+                      <p className={`plan-name ${isFeatured ? 'featured-name' : ''}`}>{plan.planName}</p>
+                      <div className="plan-price">
+                        <div className="price-amount" style={{ fontSize: '2rem' }}>
+                          {plan.price.toLocaleString('vi-VN')}đ
+                          <span className="price-period" style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                            /{plan.durationMonths} tháng
+                          </span>
+                        </div>
+                        {plan.durationMonths > 1 && (
+                          <div style={{ fontSize: '0.78rem', color: 'var(--orange)', marginTop: '4px', fontWeight: 'bold' }}>
+                            (~{Math.round(plan.price / plan.durationMonths).toLocaleString('vi-VN')}đ/tháng)
+                          </div>
+                        )}
+                      </div>
+                      <div className="plan-divider"></div>
+                      <ul className="plan-features" style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
+                        <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                          <i className="fas fa-check-circle" style={{ color: 'var(--orange)', marginTop: '4px' }}></i>
+                          <span>Bộ môn: <strong>{plan.sportType === 'VIP' || plan.sportType === 'Combo' ? 'Gym, Yoga, Boxing' : plan.sportType}</strong></span>
+                        </li>
+                        {plan.description && plan.description.split('\n').map((line, lIdx) => {
+                          if (!line.trim()) return null;
+                          return (
+                            <li key={lIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                              <i className="fas fa-check-circle" style={{ color: 'var(--orange)', marginTop: '4px' }}></i>
+                              <span>{line}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <button
+                        onClick={() => goToCheckout(plan.planId)}
+                        className={`btn-plan ${isFeatured ? 'btn-featured' : ''}`}
+                        style={{ marginTop: '20px' }}
+                      >
+                        Mua Ngay
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+        {plans.length === 0 && <p style={{textAlign: 'center', width: '100%'}}>Đang tải gói tập...</p>}
+      </section>
+
+      {/* ========================================== */}
+      {/* ADD-ON SERVICES SECTION                    */}
+      {/* ========================================== */}
+      <section className="section-pricing" id="addons" style={{ backgroundColor: '#f1f5f9' }}>
+        <div className="section-header reveal">
+          <h2 className="section-title">Dịch Vụ Bổ Sung & Thuê PT</h2>
+          <p style={{textAlign: 'center', marginTop: '10px', color: '#64748b'}}>Nâng tầm trải nghiệm tập luyện của bạn với các dịch vụ chuyên sâu.</p>
         </div>
 
         <div className="pricing-grid">
-          {/* Gym 3-Month Plan */}
-          <div className="pricing-card reveal reveal-delay-1">
-            <p className="plan-name">Gói 3 Tháng (Gym)</p>
-            <div className="plan-price">
-              <div className="price-amount">
-                5.000đ<span className="price-period">/3 tháng</span>
+          {services.filter(s => s.serviceName !== "Dịch vụ PT (Huấn luyện viên cá nhân)").sort((a,b) => {
+            const isAPT = a.serviceName.includes('PT') ? -1 : 1;
+            const isBPT = b.serviceName.includes('PT') ? -1 : 1;
+            if (isAPT !== isBPT) return isAPT - isBPT;
+            return a.price - b.price;
+          }).map((srv, index) => (
+            <div key={srv.serviceId} className={`pricing-card reveal reveal-delay-${(index % 3) + 1}`} style={{ borderTop: `4px solid ${srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6'}` }}>
+              <p className="plan-name" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6', fontSize: '1.2rem' }}>{srv.serviceName}</p>
+              <div className="plan-price" style={{ marginTop: '10px' }}>
+                <div className="price-amount" style={{ fontSize: '1.6rem' }}>
+                  {srv.price.toLocaleString('vi-VN')}đ
+                </div>
               </div>
+              <div className="plan-divider" style={{ margin: '15px 0' }}></div>
+              <ul className="plan-features" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}>
+                <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <i className="fas fa-check-circle" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6', marginTop: '4px' }}></i> 
+                  <span>Phân loại: <strong>{srv.serviceName.includes('PT') ? 'Huấn Luyện Viên' : 'Tiện Ích'}</strong></span>
+                </li>
+                {srv.description && srv.description.split('\n').map((line, lIdx) => {
+                  if (!line.trim()) return null;
+                  return (
+                    <li key={lIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <i className="fas fa-check-circle" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6', marginTop: '4px' }}></i>
+                      <span>{line}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+              {srv.serviceName.includes('PT') && (
+                <button
+                  onClick={() => {
+                    window.history.pushState({}, '', '/pt-details');
+                    window.dispatchEvent(new Event('popstate'));
+                  }}
+                  className="btn-plan"
+                  style={{ marginTop: '20px', borderColor: '#f59e0b', color: '#f59e0b' }}
+                  onMouseEnter={(e) => { e.target.style.backgroundColor = '#f59e0b'; e.target.style.color = 'white'; }}
+                  onMouseLeave={(e) => { e.target.style.backgroundColor = 'transparent'; e.target.style.color = '#f59e0b'; }}
+                >
+                  Xem Chi Tiết PT
+                </button>
+              )}
             </div>
-            <div className="plan-divider"></div>
-            <ul className="plan-features">
-              <li>
-                <i className="fas fa-check-circle"></i> Truy cập đầy đủ thiết bị Gym
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tủ đồ cá nhân
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Miễn phí giữ xe
-              </li>
-              <li className="disabled">
-                <i className="fas fa-circle"></i> Chưa bao gồm lớp Yoga/Boxing
-              </li>
-            </ul>
-            <button
-              onClick={() => goToCheckout('Gym 3 Tháng')}
-              className="btn-plan"
-            >
-              Mua Ngay
-            </button>
-          </div>
-
-          {/* Gym 6-Month Plan (Featured) */}
-          <div className="pricing-card featured reveal reveal-delay-2">
-            <div className="popular-badge">Phổ biến nhất</div>
-            <p className="plan-name featured-name">Gói 6 Tháng (Gym)</p>
-            <div className="plan-price">
-              <div className="price-amount">
-                10.000đ<span className="price-period">/6 tháng</span>
-              </div>
-            </div>
-            <div className="plan-divider"></div>
-            <ul className="plan-features">
-              <li>
-                <i className="fas fa-check-circle"></i> Truy cập đầy đủ thiết bị Gym
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tủ đồ VIP riêng biệt
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Miễn phí giữ xe
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Hỗ trợ đo chỉ số Inbody miễn phí
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Ưu tiên đặt lịch HLV
-              </li>
-            </ul>
-            <button
-              onClick={() => goToCheckout('Gym 6 Tháng')}
-              className="btn-plan btn-featured"
-            >
-              MUA NGAY
-            </button>
-          </div>
-
-          {/* Gym 12-Month Plan */}
-          <div className="pricing-card reveal reveal-delay-3">
-            <p className="plan-name">Gói 12 Tháng (Gym)</p>
-            <div className="plan-price">
-              <div className="price-amount">
-                15.000đ<span className="price-period">/năm</span>
-              </div>
-            </div>
-            <div className="plan-divider"></div>
-            <ul className="plan-features">
-              <li>
-                <i className="fas fa-check-circle"></i> Toàn bộ quyền lợi của gói 6 tháng
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tặng 1 tháng tập luyện miễn phí
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Tặng 2 buổi tập thử với PT riêng
-              </li>
-              <li>
-                <i className="fas fa-check-circle"></i> Kiểm tra sức khỏe Inbody định kỳ
-              </li>
-            </ul>
-            <button
-              onClick={() => goToCheckout('Gym 12 Tháng')}
-              className="btn-plan"
-            >
-              Mua Ngay
-            </button>
-          </div>
+          ))}
+          {services.length === 0 && <p style={{textAlign: 'center', width: '100%'}}>Đang tải dịch vụ...</p>}
         </div>
       </section>
 
@@ -576,15 +627,6 @@ function HomePage() {
       {showSetupModal && (
         <div className="setup-modal-overlay">
           <div className="setup-modal-card animate-slide-up">
-            <button 
-              type="button" 
-              className="modal-close-btn" 
-              onClick={handleSetupSkip}
-              disabled={isSavingSetup}
-              title="Đóng"
-            >
-              <i className="fa-solid fa-xmark"></i>
-            </button>
             
             {/* Steps indicator */}
             <div className="setup-step-indicator">
@@ -752,192 +794,215 @@ function HomePage() {
         </div>
       )}
 
-      {/* GUEST AI CONSULTATION MODAL OVERLAY */}
+      {/* AI CONSULTATION MODAL OVERLAY */}
       {showAiModal && (
-        <div className="setup-modal-overlay">
-          <div className="setup-modal-card animate-slide-up" style={{ maxWidth: '650px' }}>
-            <button 
-              type="button" 
-              className="modal-close-btn" 
-              onClick={() => { setShowAiModal(false); setAiResult(null); setAiError(''); }}
-              title="Đóng"
-            >
+        <div className="ai-modal-overlay">
+          <div className="ai-modal-card">
+            <button className="ai-modal-close" onClick={() => { setShowAiModal(false); setConsultResult(null); setConsultError(''); }}>
               <i className="fa-solid fa-xmark"></i>
             </button>
-            
-            {/* Steps indicator */}
-            <div className="setup-step-indicator" style={{ background: '#fff7ed', color: 'var(--orange)' }}>
-              TRỢ LÝ SỨC KHỎE FX AI
-            </div>
 
-            {/* Header */}
-            <h2 className="setup-modal-title">Tư vấn Sức khỏe AI</h2>
-            <p className="setup-modal-subtitle">
-              Nhập chỉ số thể chất của bạn để nhận phân tích BMI và lời khuyên tập luyện tức thì từ trí tuệ nhân tạo
-            </p>
+            {!consultResult ? (
+              <>
+                <h2 className="ai-results-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                  <i className="fa-solid fa-robot"></i> Tư vấn sức khỏe AI
+                </h2>
+                <p className="setup-modal-subtitle" style={{ color: '#94a3b8' }}>
+                  Nhập thông số cơ thể của bạn để AI tính toán BMI và gợi ý chế độ tập luyện, dinh dưỡng phù hợp nhất.
+                </p>
 
-            {aiError && (
-              <div className="setup-alert-error animate-fade-in" style={{ marginBottom: '16px' }}>
-                <i className="fa-solid fa-circle-exclamation"></i>
-                <span>{aiError}</span>
-              </div>
-            )}
+                {consultError && (
+                  <div className="setup-alert-error animate-fade-in" style={{ marginBottom: '20px' }}>
+                    <i className="fa-solid fa-circle-exclamation"></i>
+                    <span>{consultError}</span>
+                  </div>
+                )}
 
-            {aiLoading && (
-              <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                <div className="ai-pulse-loader" style={{ display: 'inline-flex', alignItems: 'center', justify: 'center', width: '90px', height: '90px', borderRadius: '50%', background: '#fff6ed', animation: 'pulse-orange 1.8s infinite', margin: '0 auto' }}>
-                  <i className="fa-solid fa-robot fa-bounce" style={{ fontSize: '3rem', color: 'var(--orange)' }}></i>
-                </div>
-                <h4 style={{ marginTop: '20px', color: '#1e293b' }}>{aiLoadingStep}</h4>
-                <p style={{ color: '#94a3b8', fontSize: '0.86rem', marginTop: '8px' }}>Quá trình phân tích chỉ số có thể mất vài giây...</p>
-              </div>
-            )}
-
-            {!aiLoading && !aiResult && (
-              <form onSubmit={handleGuestAiConsult} className="setup-form">
-                
-                {/* Row for Name & Age */}
-                <div className="setup-form-row">
+                <form onSubmit={handleAiConsultSubmit} className="setup-form">
                   <div className="setup-field">
-                    <label>HỌ VÀ TÊN</label>
-                    <input 
-                      type="text" 
-                      placeholder="Nguyễn Văn A" 
-                      value={aiName} 
-                      onChange={(e) => setAiName(e.target.value)} 
+                    <label style={{ color: '#94a3b8' }}>Họ và tên của bạn</label>
+                    <input
+                      type="text"
+                      className="ai-input"
+                      placeholder="Nguyễn Văn A"
+                      value={aiName}
+                      onChange={(e) => setAiName(e.target.value)}
+                      required
+                      disabled={isConsulting}
                     />
                   </div>
-                  <div className="setup-field">
-                    <label>TUỔI (NĂM)</label>
-                    <input 
-                      type="number" 
-                      placeholder="25" 
-                      value={aiAge} 
-                      onChange={(e) => setAiAge(e.target.value)} 
-                      required 
-                    />
-                  </div>
-                </div>
 
-                {/* Row for Gender & Type */}
-                <div className="setup-form-row">
+                  <div className="setup-form-row">
+                    <div className="setup-field">
+                      <label style={{ color: '#94a3b8' }}>Tuổi</label>
+                      <input
+                        type="number"
+                        className="ai-input"
+                        placeholder="22"
+                        value={aiAge}
+                        onChange={(e) => setAiAge(e.target.value)}
+                        required
+                        disabled={isConsulting}
+                      />
+                    </div>
+
+                    <div className="setup-field">
+                      <label style={{ color: '#94a3b8' }}>Giới tính</label>
+                      <div className="setup-gender-buttons" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                        {['Nam', 'Nữ', 'Khác'].map((g) => (
+                          <button
+                            key={g}
+                            type="button"
+                            className={`ai-gender-btn ${aiGender === g ? 'active' : ''}`}
+                            onClick={() => setAiGender(g)}
+                            disabled={isConsulting}
+                          >
+                            {g}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="setup-form-row">
+                    <div className="setup-field">
+                      <label style={{ color: '#94a3b8' }}>Chiều cao (cm)</label>
+                      <input
+                        type="number"
+                        className="ai-input"
+                        placeholder="170"
+                        value={aiHeight}
+                        onChange={(e) => setAiHeight(e.target.value)}
+                        required
+                        disabled={isConsulting}
+                      />
+                    </div>
+                    <div className="setup-field">
+                      <label style={{ color: '#94a3b8' }}>Cân nặng (kg)</label>
+                      <input
+                        type="number"
+                        className="ai-input"
+                        placeholder="65"
+                        value={aiWeight}
+                        onChange={(e) => setAiWeight(e.target.value)}
+                        required
+                        disabled={isConsulting}
+                      />
+                    </div>
+                  </div>
+
                   <div className="setup-field">
-                    <label>GIỚI TÍNH</label>
-                    <select 
-                      className="member-form-select" 
-                      value={aiGender} 
-                      onChange={(e) => setAiGender(e.target.value)}
-                      style={{ height: '48px', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0 16px', background: '#f8fafc', fontWeight: '600', width: '100%' }}
+                    <label style={{ color: '#94a3b8' }}>Mục tiêu tập luyện</label>
+                    <select
+                      className="ai-input"
+                      value={aiGoal}
+                      onChange={(e) => setAiGoal(e.target.value)}
+                      disabled={isConsulting}
+                      style={{ cursor: 'pointer' }}
                     >
-                      <option value="Nam">Nam</option>
-                      <option value="Nữ">Nữ</option>
-                      <option value="Khác">Khác</option>
+                      <option value="Giảm cân">Giảm cân</option>
+                      <option value="Tăng cơ">Tăng cơ</option>
+                      <option value="Cải thiện sức bền">Cải thiện sức bền</option>
+                      <option value="Linh hoạt & Dẻo dai">Linh hoạt & Dẻo dai</option>
                     </select>
                   </div>
-                  <div className="setup-field">
-                    <label>PHƯƠNG THỨC TƯ VẤN</label>
-                    <select 
-                      className="member-form-select" 
-                      value={aiConsultationType} 
-                      onChange={(e) => setAiConsultationType(e.target.value)}
-                      style={{ height: '48px', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0 16px', background: '#f8fafc', fontWeight: '600', width: '100%' }}
-                    >
-                      <option value="BMI">Chỉ số BMI thể chất</option>
-                      <option value="General Fitness">Luyện tập thể hình</option>
-                      <option value="Weight Loss">Kế hoạch giảm mỡ</option>
-                      <option value="Muscle Gain">Kế hoạch tăng cơ</option>
-                      <option value="Relaxation">Yoga & Phục hồi</option>
-                    </select>
-                  </div>
-                </div>
 
-                {/* Row for Height & Weight */}
-                <div className="setup-form-row">
-                  <div className="setup-field">
-                    <label>CHIỀU CAO (CM)</label>
-                    <input 
-                      type="number" 
-                      placeholder="170" 
-                      value={aiHeight} 
-                      onChange={(e) => setAiHeight(e.target.value)} 
-                      required 
-                    />
-                  </div>
-                  <div className="setup-field">
-                    <label>CÂN NẶNG (KG)</label>
-                    <input 
-                      type="number" 
-                      placeholder="65" 
-                      value={aiWeight} 
-                      onChange={(e) => setAiWeight(e.target.value)} 
-                      required 
-                    />
-                  </div>
-                </div>
-
-                <div className="setup-field">
-                  <label>MỤC TIÊU LUYỆN TẬP</label>
-                  <select 
-                    className="member-form-select" 
-                    value={aiFitnessGoal} 
-                    onChange={(e) => setAiFitnessGoal(e.target.value)}
-                    style={{ height: '48px', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0 16px', background: '#f8fafc', fontWeight: '600', width: '100%' }}
+                  <button
+                    type="submit"
+                    className="setup-submit-btn"
+                    style={{ background: 'linear-gradient(135deg, var(--orange) 0%, #ea580c 100%)', boxShadow: '0 4px 15px rgba(249,115,22,0.3)', border: 'none' }}
+                    disabled={isConsulting}
                   >
-                    <option value="Giảm cân">Giảm cân</option>
-                    <option value="Tăng cơ">Tăng cơ</option>
-                    <option value="Cải thiện sức bền">Cải thiện sức bền</option>
-                    <option value="Linh hoạt & Dẻo dai">Linh hoạt & Dẻo dai</option>
-                    <option value="Sức khỏe tổng thể">Sức khỏe tổng thể</option>
-                  </select>
-                </div>
+                    {isConsulting ? (
+                      <>
+                        <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px' }}></i> AI ĐANG PHÂN TÍCH...
+                      </>
+                    ) : (
+                      'NHẬN ĐỀ XUẤT LỘ TRÌNH'
+                    )}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <h2 className="ai-results-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                  <i className="fa-solid fa-circle-check" style={{ color: '#10b981' }}></i> Kết quả phân tích AI
+                </h2>
 
-                <button type="submit" className="setup-submit-btn" style={{ marginBottom: '10px' }}>
-                  NHẬN TƯ VẤN SỨC KHỎE
-                </button>
-              </form>
-            )}
+                <div className="ai-result-card">
+                  <div className="ai-bmi-section">
+                    <span className="ai-recommend-label" style={{ marginBottom: '8px' }}>Chỉ số BMI của bạn</span>
+                    <span className="ai-bmi-score" style={{ color: 
+                      Number(consultResult.bmi) < 18.5 ? '#3b82f6' :
+                      Number(consultResult.bmi) < 25 ? '#10b981' :
+                      Number(consultResult.bmi) < 30 ? '#f59e0b' : '#ef4444'
+                    }}>
+                      {consultResult.bmi}
+                    </span>
+                    <span className="ai-bmi-badge" style={{ 
+                      backgroundColor: 
+                        Number(consultResult.bmi) < 18.5 ? 'rgba(59, 130, 246, 0.2)' :
+                        Number(consultResult.bmi) < 25 ? 'rgba(16, 185, 129, 0.2)' :
+                        Number(consultResult.bmi) < 30 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                      color:
+                        Number(consultResult.bmi) < 18.5 ? '#3b82f6' :
+                        Number(consultResult.bmi) < 25 ? '#10b981' :
+                        Number(consultResult.bmi) < 30 ? '#f59e0b' : '#ef4444'
+                    }}>
+                      {
+                        Number(consultResult.bmi) < 18.5 ? 'Cân nặng thấp (Gầy)' :
+                        Number(consultResult.bmi) < 25 ? 'Bình thường' :
+                        Number(consultResult.bmi) < 30 ? 'Thừa cân' : 'Béo phì'
+                      }
+                    </span>
+                  </div>
 
-            {aiResult && !aiLoading && (
-              <div className="ai-results-wrapper animate-slide-up" style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '8px', textAlign: 'left' }}>
-                
-                {/* BMI display card */}
-                <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                  <h4 style={{ color: '#64748b', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase' }}>CHỈ SỐ BMI CỦA BẠN</h4>
-                  <div style={{ fontSize: '2.5rem', fontWeight: '900', color: 'var(--orange)', marginTop: '8px' }}>{aiResult.bmi}</div>
-                  <div style={{ fontSize: '0.86rem', color: '#475569', fontWeight: '700', marginTop: '4px' }}>
-                    ({aiResult.weight}kg / {aiResult.height}cm)
+                  <div style={{ marginTop: '16px' }}>
+                    <h4 style={{ color: 'var(--orange)', fontFamily: 'Barlow Condensed', fontSize: '1.2rem', marginBottom: '8px', textTransform: 'uppercase' }}>
+                      <i className="fa-solid fa-notes-medical"></i> Nhận xét & lời khuyên từ AI
+                    </h4>
+                    <p className="ai-advice-text">{consultResult.recommendation_detail}</p>
                   </div>
                 </div>
 
-                <div className="member-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginTop: '16px' }}>
-                  <div className="member-stat-card" style={{ borderLeft: '4px solid var(--orange)', padding: '16px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                    <span style={{ fontSize: '0.74rem', color: '#94a3b8', fontWeight: 'bold' }}>MÔN TẬP GỢI Ý</span>
-                    <h4 style={{ fontSize: '1.1rem', marginTop: '6px', color: '#1e293b' }}>{aiResult.recommended_sport}</h4>
+                <div className="ai-result-card" style={{ borderLeft: '4px solid var(--orange)' }}>
+                  <h4 style={{ color: 'var(--orange)', fontFamily: 'Barlow Condensed', fontSize: '1.2rem', marginBottom: '12px', textTransform: 'uppercase' }}>
+                    <i className="fa-solid fa-trophy"></i> Lộ trình & Gói tập đề xuất
+                  </h4>
+                  
+                  <div className="ai-recommend-row">
+                    <span className="ai-recommend-label">Bộ môn phù hợp</span>
+                    <span className="ai-recommend-value" style={{ color: 'var(--orange)' }}>{consultResult.recommended_sport}</span>
                   </div>
-                  <div className="member-stat-card" style={{ borderLeft: '4px solid #10b981', padding: '16px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                    <span style={{ fontSize: '0.74rem', color: '#94a3b8', fontWeight: 'bold' }}>GÓI TẬP ĐỀ XUẤT</span>
-                    <h4 style={{ fontSize: '1.1rem', marginTop: '6px', color: '#1e293b' }}>{aiResult.recommended_membership}</h4>
+                  
+                  <div className="ai-recommend-row">
+                    <span className="ai-recommend-label">Gói tập khuyên dùng</span>
+                    <span className="ai-recommend-value">{consultResult.recommended_membership}</span>
+                  </div>
+
+                  <div className="ai-recommend-row" style={{ borderBottom: 'none' }}>
+                    <span className="ai-recommend-label">Lịch tập đề xuất</span>
+                    <span className="ai-recommend-value" style={{ fontStyle: 'italic' }}>{consultResult.recommended_schedule}</span>
                   </div>
                 </div>
 
-                <div style={{ marginTop: '16px', padding: '16px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <h4 style={{ fontSize: '0.86rem', color: '#1e293b', fontWeight: 'bold' }}>LỊCH TRÌNH RÈN LUYỆN GỢI Ý</h4>
-                  <p style={{ marginTop: '8px', fontSize: '0.86rem', color: '#ff7a00', fontWeight: '600' }}>{aiResult.recommended_schedule}</p>
+                <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                  <button
+                    onClick={() => { setConsultResult(null); setConsultError(''); }}
+                    className="ai-gender-btn"
+                    style={{ flex: 1, padding: '12px' }}
+                  >
+                    Tính lại
+                  </button>
+                  <button
+                    onClick={handleRegisterRecommended}
+                    className="setup-submit-btn"
+                    style={{ flex: 2, padding: '12px', background: 'linear-gradient(135deg, var(--orange) 0%, #ea580c 100%)', border: 'none' }}
+                  >
+                    Đăng ký gói đề xuất ngay
+                  </button>
                 </div>
-
-                <div style={{ marginTop: '16px', padding: '16px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <h4 style={{ fontSize: '0.86rem', color: '#1e293b', fontWeight: 'bold' }}>TƯ VẤN CHI TIẾT TỪ AI</h4>
-                  <p style={{ marginTop: '8px', fontSize: '0.86rem', color: '#475569', lineHeight: '1.5', textAlign: 'justify' }}>{aiResult.recommendation_detail}</p>
-                </div>
-
-                <button 
-                  onClick={() => setAiResult(null)} 
-                  className="setup-submit-btn" 
-                  style={{ marginTop: '20px', width: '100%' }}
-                >
-                  TƯ VẤN MỚI
-                </button>
-              </div>
+              </>
             )}
           </div>
         </div>

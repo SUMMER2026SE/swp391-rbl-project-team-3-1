@@ -1,6 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import './MemberDashboard.css';
 
+const TIME_SLOTS = [
+  { start: '05:00:00', end: '06:30:00', label: '05:00 - 06:30' },
+  { start: '07:00:00', end: '08:30:00', label: '07:00 - 08:30' },
+  { start: '09:00:00', end: '10:30:00', label: '09:00 - 10:30' },
+  { start: '11:00:00', end: '12:30:00', label: '11:00 - 12:30' },
+  { start: '14:00:00', end: '15:30:00', label: '14:00 - 15:30' },
+  { start: '16:00:00', end: '17:30:00', label: '16:00 - 17:30' },
+  { start: '18:00:00', end: '19:30:00', label: '18:00 - 19:30' },
+  { start: '20:00:00', end: '21:30:00', label: '20:00 - 21:30' },
+];
+
+const getLocalDateString = (dateObj) => {
+  const d = dateObj || new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 function MemberDashboard({
   token,
   userInfo,
@@ -12,6 +31,7 @@ function MemberDashboard({
   fetchProfile
 }) {
   const [activeTab, setActiveTab] = useState('tongquan');
+  const [expandedPackageId, setExpandedPackageId] = useState(null);
 
   // --- MEMBER DASHBOARD STATE VARIABLES ---
   const [editFullName, setEditFullName] = useState('');
@@ -29,12 +49,17 @@ function MemberDashboard({
 
   // Interactive local states for Appointments, Workouts, Meals, Notifications
   const [appointmentsList, setAppointmentsList] = useState([]);
+  const [cancellationModalOpen, setCancellationModalOpen] = useState(false);
+  const [cancellationAppointmentId, setCancellationAppointmentId] = useState(null);
+  const [cancellationReason, setCancellationReason] = useState('');
+  const [isCancellationSubmitting, setIsCancellationSubmitting] = useState(false);
+  const [selectedPTCancelRequest, setSelectedPTCancelRequest] = useState(null);
   const [dbWorkoutPlans, setDbWorkoutPlans] = useState([]);
   const [dbMealPlans, setDbMealPlans] = useState([]);
   const [workoutSubTab, setWorkoutSubTab] = useState('today');
   const [mealSubTab, setMealSubTab] = useState('today');
   const [bookingDate, setBookingDate] = useState('');
-  const [bookingTime, setBookingTime] = useState('07:00');
+  const [bookingTime, setBookingTime] = useState('');
   const [bookingType, setBookingType] = useState('PT Cá Nhân');
   const [bookingNote, setBookingNote] = useState('');
   const [isBookingLoading, setIsBookingLoading] = useState(false);
@@ -42,6 +67,9 @@ function MemberDashboard({
   // Active trainers list & chosen trainer state
   const [trainersList, setTrainersList] = useState([]);
   const [selectedTrainerId, setSelectedTrainerId] = useState('');
+  const [currentWeekStart, setCurrentWeekStart] = useState(new Date());
+  const [trainerSchedules, setTrainerSchedules] = useState([]);
+  const [isTrainerScheduleLoading, setIsTrainerScheduleLoading] = useState(false);
 
   // Password change states
   const [cpwOld, setCpwOld] = useState('');
@@ -58,8 +86,137 @@ function MemberDashboard({
     'morning': false, 'noon': false, 'evening': false
   });
 
+  // Fetch trainer schedule
+  useEffect(() => {
+    if (selectedTrainerId && activeTab === 'lichhen') {
+      const fetchSchedules = async () => {
+        setIsTrainerScheduleLoading(true);
+        try {
+          const start = new Date(currentWeekStart);
+          start.setDate(currentWeekStart.getDate() - 15);
+          const end = new Date(currentWeekStart);
+          end.setDate(currentWeekStart.getDate() + 15);
+
+          const startStr = getLocalDateString(start);
+          const endStr = getLocalDateString(end);
+          const res = await fetch(`/api/checkout/trainers/${selectedTrainerId}/schedule?startDate=${startStr}&endDate=${endStr}`);
+          const data = await res.json();
+          if (data.schedules) {
+            setTrainerSchedules(data.schedules);
+          }
+        } catch (err) {
+          console.error('Error fetching trainer schedules', err);
+        } finally {
+          setIsTrainerScheduleLoading(false);
+        }
+      };
+      fetchSchedules();
+    }
+  }, [selectedTrainerId, currentWeekStart, activeTab]);
+
+  // Load completed exercises and meals from localStorage when memberInfo is available
+  useEffect(() => {
+    const memberId = profileData?.memberInfo?.member_id;
+    if (memberId) {
+      try {
+        const saved = localStorage.getItem(`member_progress_${memberId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.completedExercises) setCompletedExercises(parsed.completedExercises);
+          if (parsed.completedMeals) setCompletedMeals(parsed.completedMeals);
+        } else {
+          setCompletedExercises({});
+          setCompletedMeals({});
+        }
+      } catch (e) {
+        console.error('Error loading progress from localStorage:', e);
+      }
+    }
+  }, [profileData]);
+
+  // Save to localStorage whenever completedExercises or completedMeals change
+  useEffect(() => {
+    const memberId = profileData?.memberInfo?.member_id;
+    if (memberId) {
+      try {
+        localStorage.setItem(`member_progress_${memberId}`, JSON.stringify({
+          completedExercises,
+          completedMeals
+        }));
+      } catch (e) {
+        console.error('Error saving progress to localStorage:', e);
+      }
+    }
+  }, [completedExercises, completedMeals, profileData]);
+
   // Notifications state
   const [notifications, setNotifications] = useState([]);
+
+  const reloadNotifications = () => {
+    if (!token || token === 'mock-preview-token') return;
+    fetch('/api/notifications', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.notifications) {
+          const mapped = data.notifications.map(n => ({
+            id: n.notification_id,
+            message: n.content,
+            title: n.title,
+            type: n.notification_type,
+            unread: !n.is_read,
+            time: n.created_at ? new Date(n.created_at).toLocaleString('vi-VN') : 'Vừa xong'
+          }));
+          setNotifications(mapped);
+        }
+      })
+      .catch(err => console.error('Error fetching notifications:', err));
+  };
+
+  // Set up real-time notification stream via SSE
+  useEffect(() => {
+    if (!token || token === 'mock-preview-token') return;
+    
+    const streamUrl = `/api/notifications/stream?token=${encodeURIComponent(token)}`;
+    const eventSource = new EventSource(streamUrl);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.connected) {
+          console.log('[SSE] Connected to notification stream.');
+          return;
+        }
+
+        const newNotif = {
+          id: data.notification_id,
+          message: data.content,
+          title: data.title,
+          type: data.notification_type,
+          unread: !data.is_read,
+          time: data.created_at ? new Date(data.created_at).toLocaleString('vi-VN') : 'Vừa xong'
+        };
+
+        setNotifications(prev => {
+          if (prev.some(n => n.id === newNotif.id)) return prev;
+          return [newNotif, ...prev];
+        });
+
+      } catch (err) {
+        console.error('[SSE] Error processing stream message:', err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('[SSE] Stream connection error:', err);
+    };
+
+    return () => {
+      eventSource.close();
+      console.log('[SSE] Closed stream connection.');
+    };
+  }, [token]);
 
   // Weight history tracking state
   const [weightHistory, setWeightHistory] = useState([]);
@@ -78,6 +235,63 @@ function MemberDashboard({
   const [aiLoadingStep, setAiLoadingStep] = useState('');
   const [aiResult, setAiResult] = useState(null);
   const [aiError, setAiError] = useState('');
+
+  const isAppointmentPast = (ap) => {
+    if (!ap) return false;
+    if (ap.endDateTime) {
+      return new Date(ap.endDateTime) < new Date();
+    }
+    let dateStr = ap.workingDate;
+    let timeStr = ap.endTime || '00:00';
+
+    if (!dateStr && ap.date && ap.date !== 'N/A') {
+      const parts = ap.date.split('/');
+      if (parts.length === 3) {
+        dateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+    }
+
+    if (!ap.endTime && ap.time) {
+      const matches = ap.time.match(/(\d{2}):(\d{2})/g);
+      if (matches && matches.length >= 2) {
+        timeStr = matches[1];
+      } else if (matches && matches.length === 1) {
+        timeStr = matches[0];
+      }
+    }
+
+    if (dateStr) {
+      return new Date(`${dateStr}T${timeStr}`) < new Date();
+    }
+    return false;
+  };
+
+  const renderAppointmentStatus = (ap) => {
+    if (isAppointmentPast(ap) && ap.status === 'confirmed') {
+      return <span className="member-badge-status confirmed">Đã hoàn thành</span>;
+    }
+    return (
+      <span className={`member-badge-status ${ap.status}`}>
+        {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : ap.status === 'rejected' ? 'Bị từ chối' : 'Đã hủy'}
+      </span>
+    );
+  };
+
+  const upcomingAppointments = appointmentsList
+    .filter(ap => !isAppointmentPast(ap) && ap.status !== 'cancelled' && ap.status !== 'rejected')
+    .sort((a, b) => {
+      const timeA = a.startDateTime ? new Date(a.startDateTime).getTime() : 0;
+      const timeB = b.startDateTime ? new Date(b.startDateTime).getTime() : 0;
+      return timeA - timeB;
+    });
+
+  const historyAppointments = appointmentsList
+    .filter(ap => isAppointmentPast(ap) || ap.status === 'cancelled' || ap.status === 'rejected')
+    .sort((a, b) => {
+      const timeA = a.startDateTime ? new Date(a.startDateTime).getTime() : 0;
+      const timeB = b.startDateTime ? new Date(b.startDateTime).getTime() : 0;
+      return timeB - timeA;
+    });
 
   // Synchronize edit fields when profileData loads
   useEffect(() => {
@@ -114,34 +328,8 @@ function MemberDashboard({
         setEditLevel(profileData.memberInfo.fitness_level || 'Người mới bắt đầu');
         setEditEmergency(profileData.memberInfo.emergency_contact || '');
 
-        // Initialize notifications
-        const pt = profileData.memberInfo.activePtName || 'Bùi Nguyễn Minh Tuệ';
-        const futureDate = new Date();
-        futureDate.setDate(futureDate.getDate() + 2);
-        const daysOfWeek = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-        const dayOfWeekStr = daysOfWeek[futureDate.getDay()];
-        const futureDateFormatted = `${dayOfWeekStr} lúc 07:00`;
-
-        setNotifications([
-          {
-            id: 1,
-            message: `Lịch hẹn tập thử với HLV ${pt !== 'Chưa đăng ký' ? pt : 'Bùi Nguyễn Minh Tuệ'} vào ${futureDateFormatted} đã được xác nhận.`,
-            time: '2 giờ trước',
-            unread: true
-          },
-          {
-            id: 2,
-            message: `Gói tập Gói Năm của bạn hiện đang kích hoạt (còn ${profileData.memberInfo.remainingDays || 287} ngày).`,
-            time: '1 ngày trước',
-            unread: false
-          },
-          {
-            id: 3,
-            message: 'Chào mừng hội viên mới! Bạn đã thiết lập thông tin sức khỏe thành công.',
-            time: '2 ngày trước',
-            unread: false
-          }
-        ]);
+        // Initialize notifications (now handled by API fetch and SSE)
+        reloadNotifications();
 
         // Initialize weight history
         const curW = profileData.memberInfo.weight || 65;
@@ -215,13 +403,18 @@ function MemberDashboard({
   };
 
   const fetchTrainersList = () => {
-    fetch('/api/checkout/trainers')
+    if (!token || token === 'mock-preview-token') return;
+    fetch('/api/dashboard/member/my-trainers', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
       .then(res => res.json())
       .then(data => {
         if (data && data.trainers) {
           setTrainersList(data.trainers);
           if (data.trainers.length > 0) {
             setSelectedTrainerId(data.trainers[0].trainerId);
+          } else {
+            setSelectedTrainerId('');
           }
         }
       })
@@ -233,6 +426,7 @@ function MemberDashboard({
     reloadPlans();
     reloadAiHistory();
     fetchTrainersList();
+    reloadNotifications();
   }, [token]);
 
   // --- ACTIONS & HANDLERS ---
@@ -456,32 +650,71 @@ function MemberDashboard({
     const ap = appointmentsList.find(a => a.id === id);
     if (!ap) return;
 
-    const confirmCancel = window.confirm(`Bạn có chắc chắn muốn hủy lịch hẹn tập này?`);
-    if (confirmCancel) {
-      fetch(`/api/dashboard/member/appointments/${id}/cancel`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      })
-        .then(res => res.json())
-        .then(data => {
-          alert(data.message || 'Đã hủy lịch hẹn thành công!');
-          reloadMemberAppointments();
+    setCancellationAppointmentId(id);
+    setCancellationReason('');
+    setCancellationModalOpen(true);
+  };
 
-          const newNotif = {
-            id: Date.now(),
-            message: `Bạn đã hủy lịch hẹn tập thành công.`,
-            time: 'Vừa xong',
-            unread: true
-          };
-          setNotifications(prev => [newNotif, ...prev]);
-        })
-        .catch(err => {
-          console.error(err);
-          alert('Lỗi kết nối khi hủy lịch tập!');
-        });
-    }
+  const submitCancellationRequest = () => {
+    if (!cancellationAppointmentId || !cancellationReason.trim()) return;
+
+    setIsCancellationSubmitting(true);
+    fetch(`/api/dashboard/member/appointments/${cancellationAppointmentId}/cancel`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ reason: cancellationReason })
+    })
+      .then(res => {
+        if (!res.ok) {
+          return res.json().then(err => { throw new Error(err.message || 'Lỗi server'); });
+        }
+        return res.json();
+      })
+      .then(data => {
+        alert(data.message || 'Đã gửi yêu cầu hủy lịch hẹn thành công!');
+        setCancellationModalOpen(false);
+        setCancellationReason('');
+        setCancellationAppointmentId(null);
+        reloadMemberAppointments();
+
+        const newNotif = {
+          id: Date.now(),
+          message: `Bạn đã gửi yêu cầu hủy lịch hẹn tập. Đang chờ HLV phản hồi.`,
+          time: 'Vừa xong',
+          unread: true
+        };
+        setNotifications(prev => [newNotif, ...prev]);
+      })
+      .catch(err => {
+        console.error(err);
+        alert(err.message || 'Có lỗi xảy ra khi gửi yêu cầu hủy lịch!');
+      })
+      .finally(() => {
+        setIsCancellationSubmitting(false);
+      });
+  };
+
+  const handleRespondPTCancel = (id, action) => {
+    fetch(`/api/dashboard/member/appointments/${id}/cancel-respond`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ action })
+    })
+      .then(res => res.json())
+      .then(data => {
+        alert(data.message || 'Đã phản hồi yêu cầu thành công!');
+        reloadMemberAppointments();
+      })
+      .catch(err => {
+        console.error('Error responding to PT cancel request:', err);
+        alert('Có lỗi xảy ra khi phản hồi yêu cầu hủy!');
+      });
   };
 
   const toggleExercise = (exId) => {
@@ -543,11 +776,37 @@ function MemberDashboard({
   };
 
   const markAllNotifsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+    if (!token || token === 'mock-preview-token') {
+      setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+      return;
+    }
+    fetch('/api/notifications/read-all', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => {
+        if (res.ok) {
+          setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+        }
+      })
+      .catch(err => console.error('Error marking all notifications read:', err));
   };
 
   const clearNotification = (id) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+    if (!token || token === 'mock-preview-token') {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+      return;
+    }
+    fetch(`/api/notifications/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => {
+        if (res.ok) {
+          setNotifications(prev => prev.filter(n => n.id !== id));
+        }
+      })
+      .catch(err => console.error('Error deleting notification:', err));
   };
 
   const doChangePw = async (e) => {
@@ -617,12 +876,14 @@ function MemberDashboard({
     return `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]} năm ${now.getFullYear()}`;
   };
 
-  // Helper to check if a date is today
+  // Helper to check if a date is today or in the future
   const isToday = (dateVal) => {
     if (!dateVal) return false;
     const planDate = new Date(dateVal);
     const today = new Date();
-    return planDate.toLocaleDateString('vi-VN') === today.toLocaleDateString('vi-VN');
+    today.setHours(0, 0, 0, 0);
+    planDate.setHours(0, 0, 0, 0);
+    return planDate >= today;
   };
 
   // Filter workout plans
@@ -675,31 +936,25 @@ function MemberDashboard({
 
   const targetKcal = todayMealPlans.length > 0
     ? Number(todayMealPlans[0].calories_per_day) || 2000
-    : 1620;
+    : 0;
 
   const eatenKcal = todayMealPlans.length > 0
     ? todayMealPlans.reduce((sum, plan) => {
       const key = `db-meal-${plan.meal_plan_id}`;
       return sum + (completedMeals[key] ? plan.calories_per_day : 0);
     }, 0)
-    : mealsData.reduce((sum, meal) => {
-      return sum + (completedMeals[meal.key] ? meal.kcal : 0);
-    }, 0);
+    : 0;
 
   const unreadNotifsCount = notifications.filter(n => n.unread).length;
 
   const renderTabContent = () => {
     switch (activeTab) {
       case 'tongquan':
+        const memberships = profileData?.memberInfo?.memberships || [];
         return (
           <>
             {/* Stat Cards */}
             <div className="member-stats-grid">
-              <div className="member-stat-card">
-                <span className="member-stat-label">Ngày còn lại</span>
-                <span className="member-stat-value">{profileData?.memberInfo?.remainingDays ?? 287}</span>
-                <i className="fa-solid fa-calendar member-stat-icon"></i>
-              </div>
               <div className="member-stat-card">
                 <span className="member-stat-label">Buổi tập tuần này</span>
                 <span className="member-stat-value">{completedExsCount} / 5</span>
@@ -707,9 +962,24 @@ function MemberDashboard({
               </div>
               <div className="member-stat-card">
                 <span className="member-stat-label">PT đang học</span>
-                <span className="member-stat-value" style={{ fontSize: '1.15rem', marginTop: '6px' }}>
-                  {profileData?.memberInfo?.activePtName || 'Chưa đăng ký'}
-                </span>
+                <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {trainersList.length > 0 ? (
+                    trainersList.map((t, idx) => (
+                      <div key={idx} style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span className="member-stat-value" style={{ fontSize: '1rem', fontWeight: '700', lineHeight: '1.2' }}>
+                          {t.fullName}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px', fontWeight: '500' }}>
+                          {t.specialization}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="member-stat-value" style={{ fontSize: '1.15rem' }}>
+                      {profileData?.memberInfo?.activePtName || 'Chưa đăng ký'}
+                    </span>
+                  )}
+                </div>
                 <i className="fa-solid fa-user-tie member-stat-icon"></i>
               </div>
               <div className="member-stat-card">
@@ -717,6 +987,100 @@ function MemberDashboard({
                 <span className="member-stat-value">{profileData?.memberInfo?.bmi || '22.4'}</span>
                 <i className="fa-solid fa-gauge-simple-high member-stat-icon"></i>
               </div>
+            </div>
+
+            {/* Gói tập đã đăng ký Accordion Panel */}
+            <div className="member-packages-panel" style={{ marginBottom: '24px' }}>
+              <h3 className="member-packages-title">
+                <i className="fa-solid fa-address-card" style={{ color: 'var(--orange)' }}></i> Gói tập đã đăng ký
+              </h3>
+              {memberships.length > 0 ? (
+                <div className="member-packages-list">
+                  {memberships.map((m) => {
+                    const isOpen = expandedPackageId === m.memberMembershipId;
+                    const renderStatusBadge = (status) => {
+                      if (status === 'Active') {
+                        return <span className="member-package-badge-active">Đang hoạt động</span>;
+                      } else if (status === 'Expired') {
+                        return <span className="member-package-badge-expired">Hết hạn</span>;
+                      } else {
+                        return <span className="member-package-badge-cancelled">{status}</span>;
+                      }
+                    };
+
+                    return (
+                      <div className={`member-package-item ${isOpen ? 'open' : ''}`} key={m.memberMembershipId}>
+                        <div
+                          className="member-package-item-header"
+                          onClick={() => setExpandedPackageId(isOpen ? null : m.memberMembershipId)}
+                        >
+                          <div className="member-package-item-name">
+                            <i className="fa-solid fa-dumbbell" style={{ color: isOpen ? 'var(--orange)' : '#64748b' }}></i>
+                            {m.planName}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {renderStatusBadge(m.status)}
+                            <i className="fa-solid fa-chevron-down member-package-item-arrow"></i>
+                          </div>
+                        </div>
+                        {isOpen && (
+                          <div className="member-package-item-details">
+                            <div className="member-package-details-grid">
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Ngày bắt đầu</span>
+                                <span className="member-package-detail-value">{m.startDate}</span>
+                              </div>
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Ngày kết thúc</span>
+                                <span className="member-package-detail-value">{m.endDate}</span>
+                              </div>
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Bộ môn</span>
+                                <span className="member-package-detail-value">{m.sportType}</span>
+                              </div>
+                              <div className="member-package-detail-col">
+                                <span className="member-package-detail-label">Thời hạn gói</span>
+                                <span className="member-package-detail-value">{m.durationMonths} tháng</span>
+                              </div>
+                            </div>
+                            {m.description && (
+                              <div className="member-package-detail-col" style={{ marginTop: '4px' }}>
+                                <span className="member-package-detail-label">Mô tả gói tập</span>
+                                <span className="member-package-detail-value" style={{ fontWeight: 'normal', color: '#64748b', fontSize: '0.86rem' }}>
+                                  {m.description}
+                                </span>
+                              </div>
+                            )}
+                            <div className="member-package-remaining-box">
+                              <span className="member-package-remaining-text">Số ngày còn lại của gói tập:</span>
+                              <span className="member-package-remaining-value">{m.remainingDays} ngày</span>
+                            </div>
+                            {(m.status === 'Active' || m.status === 'Expired') && (
+                              <button
+                                className="member-package-btn-renew"
+                                onClick={() => {
+                                  window.history.pushState(
+                                    {},
+                                    '',
+                                    `/checkout?plan=${m.planId}&renewMembershipId=${m.memberMembershipId}&sportType=${encodeURIComponent(m.sportType)}`
+                                  );
+                                  window.dispatchEvent(new Event('popstate'));
+                                }}
+                              >
+                                <i className="fa-solid fa-arrows-rotate"></i> Gia hạn gói tập
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="member-no-data" style={{ padding: '20px' }}>
+                  Bạn chưa đăng ký bất kỳ gói tập nào trong hệ thống!
+                </div>
+              )}
             </div>
 
             {/* Grid Columns */}
@@ -739,22 +1103,52 @@ function MemberDashboard({
                       </tr>
                     </thead>
                     <tbody>
-                      {appointmentsList.filter(a => a.status !== 'cancelled' && a.status !== 'rejected').slice(0, 4).map((ap) => (
+                      {upcomingAppointments.slice(0, 4).map((ap) => (
                         <tr key={ap.id}>
                           <td>{ap.time}</td>
                           <td>{ap.trainer}</td>
                           <td>{ap.type}</td>
                           <td>
                             <span className={`member-badge-status ${ap.status}`}>
-                              {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : ap.status === 'rejected' ? 'Bị từ chối' : 'Đã hủy'}
+                              {ap.status === 'confirmed' ? 'Xác nhận' : 
+                               ap.status === 'pending' ? 'Chờ duyệt' : 
+                               ap.status === 'rejected' ? 'Bị từ chối' : 
+                               ap.status === 'cancelpending' ? (ap.cancelRequestedBy === 'TRAINER' ? 'HLV xin hủy' : 'Chờ duyệt hủy') : 'Đã hủy'}
                             </span>
                           </td>
                           <td>
-                            <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
+                            {ap.status === 'cancelpending' ? (
+                              ap.cancelRequestedBy === 'TRAINER' ? (
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                  <span 
+                                    onClick={() => setSelectedPTCancelRequest(ap)}
+                                    style={{ color: 'var(--orange)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', marginRight: '6px' }}
+                                  >
+                                    Xem lý do
+                                  </span>
+                                  <button 
+                                    onClick={() => handleRespondPTCancel(ap.id, 'accept')}
+                                    style={{ padding: '4px 8px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                  >
+                                    Đồng ý
+                                  </button>
+                                  <button 
+                                    onClick={() => handleRespondPTCancel(ap.id, 'reject')}
+                                    style={{ padding: '4px 8px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                  >
+                                    Từ chối
+                                  </button>
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
+                              )
+                            ) : ap.status === 'cancelled' || ap.status === 'rejected' ? null : (
+                              <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
+                            )}
                           </td>
                         </tr>
                       ))}
-                      {appointmentsList.filter(a => a.status !== 'cancelled' && a.status !== 'rejected').length === 0 && (
+                      {upcomingAppointments.length === 0 && (
                         <tr>
                           <td colSpan="5" className="member-no-data">Không có lịch hẹn nào sắp tới</td>
                         </tr>
@@ -782,15 +1176,10 @@ function MemberDashboard({
                       </div>
                     ))
                   ) : (
-                    mealsData.map((meal) => (
-                      <div className="member-menu-meal-item" key={meal.key}>
-                        <div>
-                          <div className="member-meal-time">{meal.name}</div>
-                          <div className="member-meal-desc">{meal.desc}</div>
-                        </div>
-                        <div className="member-meal-kcal">{meal.kcal} kcal</div>
-                      </div>
-                    ))
+                    <div style={{ padding: '24px 10px', textAlign: 'center', color: '#94a3b8', fontWeight: '600', fontSize: '0.9rem' }}>
+                      <i className="fa-solid fa-utensils" style={{ display: 'block', fontSize: '1.8rem', color: '#cbd5e1', marginBottom: '10px' }}></i>
+                      Chưa có plan cho hôm nay
+                    </div>
                   )}
                 </div>
                 <div className="member-menu-total-row">
@@ -808,49 +1197,15 @@ function MemberDashboard({
             <div className="member-form-card">
               <h3 className="member-card-title" style={{ marginBottom: '20px' }}>Đăng ký lịch hẹn mới</h3>
               <form className="member-booking-form" onSubmit={handleBookAppointment}>
+
                 <div className="member-form-group">
-                  <label className="member-form-label">Chọn ngày tập</label>
-                  <input
-                    type="date"
-                    className="member-form-input"
-                    value={bookingDate}
-                    onChange={(e) => setBookingDate(e.target.value)}
-                    min={(() => {
-                      const today = new Date();
-                      const year = today.getFullYear();
-                      const month = String(today.getMonth() + 1).padStart(2, '0');
-                      const day = String(today.getDate()).padStart(2, '0');
-                      return `${year}-${month}-${day}`;
-                    })()}
-                    required
-                  />
-                </div>
-                <div className="member-form-group">
-                  <label className="member-form-label">Chọn khung giờ</label>
-                  <select
-                    className="member-form-select"
-                    value={bookingTime}
-                    onChange={(e) => setBookingTime(e.target.value)}
-                  >
-                    <option value="07:00">07:00 - Sáng</option>
-                    <option value="08:00">08:00 - Sáng</option>
-                    <option value="09:00">09:00 - Sáng</option>
-                    <option value="10:00">10:00 - Sáng</option>
-                    <option value="14:00">14:00 - Chiều</option>
-                    <option value="15:00">15:00 - Chiều</option>
-                    <option value="16:00">16:00 - Chiều</option>
-                    <option value="17:00">17:00 - Chiều</option>
-                    <option value="18:00">18:00 - Tối</option>
-                    <option value="19:00">19:00 - Tối</option>
-                  </select>
-                </div>
-                <div className="member-form-group">
-                  <label className="member-form-label">Chọn Huấn Luyện Viên (PT)</label>
+                  <label className="member-form-label">Chọn Huấn Luyện Viên (PT) để xem lịch</label>
                   <select
                     className="member-form-select"
                     value={selectedTrainerId}
                     onChange={(e) => setSelectedTrainerId(e.target.value)}
                     required
+                    disabled={trainersList.length === 0}
                   >
                     {trainersList.length > 0 ? (
                       trainersList.map(t => (
@@ -859,10 +1214,116 @@ function MemberDashboard({
                         </option>
                       ))
                     ) : (
-                      <option value="">Đang tải danh sách HLV...</option>
+                      <option value="">Bạn chưa có HLV trong gói tập đã đăng ký!</option>
                     )}
                   </select>
                 </div>
+
+                {selectedTrainerId && (
+                  <div className="member-form-group" style={{ marginTop: '16px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <label className="member-form-label" style={{ margin: 0 }}>Thời khóa biểu (Click vào ca trống để chọn)</label>
+                      <div className="week-controls" style={{ display: 'flex', gap: '8px' }}>
+                        <button type="button" onClick={() => {
+                          const d = new Date(currentWeekStart);
+                          d.setDate(d.getDate() - 7);
+                          setCurrentWeekStart(d);
+                        }} style={{ padding: '4px 8px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                          <i className="fa-solid fa-chevron-left"></i> Tuần trước
+                        </button>
+                        <button type="button" onClick={() => {
+                          const d = new Date(currentWeekStart);
+                          d.setDate(d.getDate() + 7);
+                          setCurrentWeekStart(d);
+                        }} style={{ padding: '4px 8px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                          Tuần sau <i className="fa-solid fa-chevron-right"></i>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="timetable-container" style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                      <table className="timetable" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center', fontSize: '0.85rem' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ padding: '8px', borderBottom: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', background: '#f8fafc' }}>Ca \ Ngày</th>
+                            {[0, 1, 2, 3, 4, 5, 6].map(i => {
+                              const d = new Date(currentWeekStart);
+                              const day = d.getDay();
+                              const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+                              d.setDate(diff + i);
+                              return (
+                                <th key={i} style={{ padding: '8px', borderBottom: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                                  {d.toLocaleDateString('vi-VN', { weekday: 'short' })} <br />
+                                  {d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                                </th>
+                              );
+                            })}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {TIME_SLOTS.map((slot, sIdx) => (
+                            <tr key={sIdx}>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', fontWeight: 'bold', background: '#f8fafc' }}>{slot.label}</td>
+                              {[0, 1, 2, 3, 4, 5, 6].map(dIdx => {
+                                const d = new Date(currentWeekStart);
+                                const day = d.getDay();
+                                const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+                                d.setDate(diff + dIdx);
+                                const dateStr = getLocalDateString(d);
+
+                                const isBooked = trainerSchedules.some(s => s.workingDate === dateStr && s.startTime.startsWith(slot.start.substring(0, 5)) && (s.status === 'Booked' || s.status === 'Busy' || s.status === 'Off'));
+
+                                const [slotH, slotM, slotS] = slot.start.split(':').map(Number);
+                                const slotDate = new Date(d.getFullYear(), d.getMonth(), d.getDate(), slotH, slotM, slotS || 0);
+                                const isPast = slotDate < new Date();
+                                const isSelected = bookingDate === dateStr && bookingTime === slot.start.substring(0, 5);
+
+                                let bg = '#dcfce7';
+                                let color = '#166534';
+                                let text = 'Trống';
+                                let cursor = 'pointer';
+
+                                if (isPast) {
+                                  bg = '#f1f5f9'; color = '#94a3b8'; text = 'Đã qua'; cursor = 'not-allowed';
+                                } else if (isBooked) {
+                                  bg = '#e2e8f0'; color = '#64748b'; text = 'Bận'; cursor = 'not-allowed';
+                                }
+
+                                if (isSelected) {
+                                  bg = '#3b82f6'; color = '#ffffff'; text = 'Đang chọn';
+                                }
+
+                                return (
+                                  <td key={dIdx} onClick={() => {
+                                    if (!isBooked && !isPast) {
+                                      setBookingDate(dateStr);
+                                      setBookingTime(slot.start.substring(0, 5));
+                                    }
+                                  }} style={{
+                                    padding: '8px',
+                                    borderBottom: '1px solid #e2e8f0',
+                                    borderRight: '1px solid #e2e8f0',
+                                    background: bg,
+                                    color: color,
+                                    cursor: cursor,
+                                    transition: 'all 0.2s ease',
+                                    boxShadow: isSelected ? 'inset 0 0 0 2px #2563eb' : 'none'
+                                  }}>
+                                    {text}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {isTrainerScheduleLoading && <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '8px' }}>Đang tải lịch trình...</p>}
+                    <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '8px' }}>
+                      Đã chọn: <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{bookingDate ? new Date(bookingDate).toLocaleDateString('vi-VN') : 'Chưa chọn'}</span> lúc <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{bookingTime || 'Chưa chọn'}</span>
+                    </p>
+                  </div>
+                )}
                 <div className="member-form-group">
                   <label className="member-form-label">Loại hình tập luyện</label>
                   <select
@@ -873,7 +1334,6 @@ function MemberDashboard({
                     <option value="PT Cá Nhân">PT Cá Nhân (1 kèm 1)</option>
                     <option value="Yoga">Lớp Yoga nhóm</option>
                     <option value="Cardio">Cardio & Giảm mỡ</option>
-                    <option value="Zumba">Lớp Zumba nhóm</option>
                   </select>
                 </div>
                 <div className="member-form-group">
@@ -886,10 +1346,15 @@ function MemberDashboard({
                     onChange={(e) => setBookingNote(e.target.value)}
                   />
                 </div>
+                {trainersList.length === 0 && (
+                  <p style={{ color: '#ef4444', fontSize: '0.82rem', fontWeight: 'bold', margin: '4px 0 0 0' }}>
+                    * Bạn chỉ được đặt lịch với HLV mà mình đăng ký gói tập. Vui lòng đăng ký gói tập có kèm HLV trước.
+                  </p>
+                )}
                 <button
                   type="submit"
                   className="member-btn-submit"
-                  disabled={isBookingLoading}
+                  disabled={isBookingLoading || trainersList.length === 0}
                   style={{ width: '100%', marginTop: '8px' }}
                 >
                   {isBookingLoading ? 'Đang gửi...' : 'Gửi yêu cầu đặt lịch'}
@@ -897,8 +1362,8 @@ function MemberDashboard({
               </form>
             </div>
 
-            <div className="member-card-panel">
-              <h3 className="member-card-title" style={{ marginBottom: '20px' }}>Danh sách lịch hẹn</h3>
+            <div className="member-card-panel" style={{ marginBottom: '30px' }}>
+              <h3 className="member-card-title" style={{ marginBottom: '20px' }}>Danh sách lịch hẹn sắp tới</h3>
               <div className="member-table-container">
                 <table className="member-table">
                   <thead>
@@ -911,25 +1376,70 @@ function MemberDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {appointmentsList.map((ap) => (
+                    {upcomingAppointments.map((ap) => (
                       <tr key={ap.id}>
                         <td>{ap.time}</td>
                         <td>{ap.trainer}</td>
                         <td>{ap.type}</td>
                         <td>
                           <span className={`member-badge-status ${ap.status}`}>
-                            {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : ap.status === 'rejected' ? 'Bị từ chối' : 'Đã hủy'}
+                            {ap.status === 'confirmed' ? 'Xác nhận' : 
+                             ap.status === 'pending' ? 'Chờ duyệt' : 
+                             ap.status === 'rejected' ? 'Bị từ chối' : 
+                             ap.status === 'cancelpending' ? (ap.cancelRequestedBy === 'TRAINER' ? 'HLV xin hủy' : 'Chờ duyệt hủy') : 'Đã hủy'}
                           </span>
                         </td>
                         <td>
-                          {ap.status !== 'cancelled' && ap.status !== 'rejected' ? (
+                          {ap.status === 'cancelpending' ? (
+                            <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
+                          ) : ap.status === 'cancelled' || ap.status === 'rejected' ? null : (
                             <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
-                          ) : (
-                            <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Đã đóng</span>
                           )}
                         </td>
                       </tr>
                     ))}
+                    {upcomingAppointments.length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="member-no-data">Không có lịch hẹn nào sắp tới</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="member-card-panel">
+              <h3 className="member-card-title" style={{ marginBottom: '20px' }}>Lịch sử lịch hẹn</h3>
+              <div className="member-table-container">
+                <table className="member-table">
+                  <thead>
+                    <tr>
+                      <th>Thời gian</th>
+                      <th>HLV / Lớp</th>
+                      <th>Loại</th>
+                      <th>Trạng thái</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyAppointments.map((ap) => (
+                      <tr key={ap.id}>
+                        <td>{ap.time}</td>
+                        <td>{ap.trainer}</td>
+                        <td>{ap.type}</td>
+                        <td>
+                          {renderAppointmentStatus(ap)}
+                        </td>
+                        <td>
+                          <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Đã đóng</span>
+                        </td>
+                      </tr>
+                    ))}
+                    {historyAppointments.length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="member-no-data">Chưa có lịch sử lịch hẹn</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -957,14 +1467,14 @@ function MemberDashboard({
 
             {/* Subtabs control */}
             <div className="member-subtabs">
-              <button 
+              <button
                 type="button"
                 className={`member-subtab-btn ${workoutSubTab === 'today' ? 'active' : ''}`}
                 onClick={() => setWorkoutSubTab('today')}
               >
                 Hôm nay
               </button>
-              <button 
+              <button
                 type="button"
                 className={`member-subtab-btn ${workoutSubTab === 'history' ? 'active' : ''}`}
                 onClick={() => setWorkoutSubTab('history')}
@@ -1104,14 +1614,14 @@ function MemberDashboard({
 
               {/* Subtabs control */}
               <div className="member-subtabs">
-                <button 
+                <button
                   type="button"
                   className={`member-subtab-btn ${mealSubTab === 'today' ? 'active' : ''}`}
                   onClick={() => setMealSubTab('today')}
                 >
                   Hôm nay
                 </button>
-                <button 
+                <button
                   type="button"
                   className={`member-subtab-btn ${mealSubTab === 'history' ? 'active' : ''}`}
                   onClick={() => setMealSubTab('history')}
@@ -1206,115 +1716,6 @@ function MemberDashboard({
             </div>
           </div>
         );
-
-      case 'tiendo':
-        {
-          const bmiVal = Number(profileData?.memberInfo?.bmi || 22.4);
-          let bmiPct = 50;
-          if (bmiVal < 18.5) {
-            bmiPct = (bmiVal / 18.5) * 25;
-          } else if (bmiVal >= 18.5 && bmiVal < 25) {
-            bmiPct = 25 + ((bmiVal - 18.5) / 6.5) * 35;
-          } else if (bmiVal >= 25 && bmiVal < 30) {
-            bmiPct = 60 + ((bmiVal - 25) / 5) * 20;
-          } else {
-            bmiPct = 80 + Math.min(((bmiVal - 30) / 10) * 20, 20);
-          }
-
-          let bmiFeedback = 'Cân nặng bình thường';
-          let bmiFeedbackColor = '#10b981';
-          if (bmiVal < 18.5) {
-            bmiFeedback = 'Hơi gầy - Cần bổ sung dinh dưỡng';
-            bmiFeedbackColor = '#3b82f6';
-          } else if (bmiVal >= 25 && bmiVal < 30) {
-            bmiFeedback = 'Thừa cân - Nên duy trì thâm hụt calo nhẹ';
-            bmiFeedbackColor = '#f59e0b';
-          } else if (bmiVal >= 30) {
-            bmiFeedback = 'Béo phì - Cần kiểm soát ăn uống & nâng tập';
-            bmiFeedbackColor = '#ef4444';
-          }
-
-          const maxW = Math.max(...weightHistory.map(w => w.weight), 100);
-
-          return (
-            <div className="member-progress-layout">
-              <div>
-                <div className="member-card-panel" style={{ marginBottom: '24px' }}>
-                  <h3 className="member-card-title">Chỉ số BMI của bạn</h3>
-                  <div style={{ textAlign: 'center', marginTop: '20px' }}>
-                    <span style={{ fontSize: '3rem', fontWeight: 900, color: bmiFeedbackColor }}>{bmiVal}</span>
-                    <div style={{ fontWeight: 700, color: bmiFeedbackColor, marginTop: '4px' }}>{bmiFeedback}</div>
-                  </div>
-
-                  <div className="member-bmi-indicator-bar">
-                    <div className="member-bmi-pointer" style={{ left: `${bmiPct}%` }}></div>
-                  </div>
-                  <div className="member-bmi-labels">
-                    <span>Gầy (&lt;18.5)</span>
-                    <span>Bình thường (18.5-25)</span>
-                    <span>Béo phì (&gt;30)</span>
-                  </div>
-                </div>
-
-                <div className="member-card-panel">
-                  <h3 className="member-card-title" style={{ marginBottom: '16px' }}>Cập nhật cân nặng mới</h3>
-                  <form onSubmit={handleAddWeightHistory} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div className="member-form-group">
-                      <label className="member-form-label">Cân nặng (kg)</label>
-                      <input
-                        type="number"
-                        className="member-form-input"
-                        step="0.1"
-                        placeholder="Nhập số cân nặng"
-                        value={newHistoryWeight}
-                        onChange={(e) => setNewHistoryWeight(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div className="member-form-group">
-                      <label className="member-form-label">Ngày ghi nhận</label>
-                      <input
-                        type="date"
-                        className="member-form-input"
-                        value={newHistoryDate}
-                        onChange={(e) => setNewHistoryDate(e.target.value)}
-                      />
-                    </div>
-                    <button type="submit" className="member-btn-submit" style={{ width: '100%' }}>Lưu số đo mới</button>
-                  </form>
-                </div>
-              </div>
-
-              <div>
-                <div className="member-card-panel">
-                  <h3 className="member-card-title">Lịch sử cân nặng</h3>
-                  <div className="member-bar-chart">
-                    {weightHistory.map((h, idx) => {
-                      const barHeight = Math.round((h.weight / maxW) * 120);
-                      return (
-                        <div className="member-chart-column" key={idx}>
-                          <div className="member-chart-bar-fill" style={{ height: `${barHeight}px` }}>
-                            <span className="member-chart-bar-lbl">{h.weight}</span>
-                          </div>
-                          <span className="member-chart-x-label">{h.date}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="member-progress-history-list">
-                    {[...weightHistory].reverse().map((h, idx) => (
-                      <div className="member-history-item" key={idx}>
-                        <span className="member-history-date">{h.date}</span>
-                        <span className="member-history-val">{h.weight} kg</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        }
 
       case 'thongbao':
         return (
@@ -1826,9 +2227,6 @@ function MemberDashboard({
               <div className="member-profile-name" title={userInfo?.fullName}>
                 {userInfo?.fullName || 'Hội viên'}
               </div>
-              <span className="member-package-badge">
-                {profileData?.memberInfo?.planName || 'Gói Năm'}
-              </span>
             </div>
           </div>
 
@@ -1864,14 +2262,6 @@ function MemberDashboard({
                 onClick={() => setActiveTab('meal')}
               >
                 <i className="fa-solid fa-bowl-food"></i> Meal Plan
-              </button>
-            </li>
-            <li>
-              <button
-                className={`member-menu-item ${activeTab === 'tiendo' ? 'active' : ''}`}
-                onClick={() => setActiveTab('tiendo')}
-              >
-                <i className="fa-solid fa-person-running"></i> Tiến độ
               </button>
             </li>
             <li>
@@ -1930,8 +2320,249 @@ function MemberDashboard({
         {/* Render Tab Contents */}
         {renderTabContent()}
       </main>
+      {cancellationModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '500px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            padding: '24px',
+            position: 'relative'
+          }}>
+            <h3 style={{
+              margin: '0 0 8px 0',
+              fontSize: '1.25rem',
+              fontWeight: '700',
+              color: '#0f172a'
+            }}>
+              Lý do hủy lịch hẹn tập
+            </h3>
+            <p style={{
+              margin: '0 0 16px 0',
+              fontSize: '0.88rem',
+              color: '#64748b',
+              lineHeight: '1.5'
+            }}>
+              Vui lòng nhập lý do hủy lịch hẹn tập. Yêu cầu hủy sẽ được gửi đến Huấn luyện viên của bạn để xét duyệt.
+            </p>
+            <textarea
+              placeholder="Nhập lý do hủy lịch hẹn..."
+              value={cancellationReason}
+              onChange={(e) => setCancellationReason(e.target.value)}
+              style={{
+                width: '100%',
+                minHeight: '120px',
+                padding: '12px 14px',
+                borderRadius: '8px',
+                border: '1.5px solid #e2e8f0',
+                fontFamily: 'inherit',
+                fontSize: '0.95rem',
+                outline: 'none',
+                resize: 'none',
+                transition: 'border-color 0.2s ease'
+              }}
+              onFocus={(e) => e.target.style.borderColor = 'var(--orange)'}
+              onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+            />
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end',
+              marginTop: '20px'
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setCancellationModalOpen(false);
+                  setCancellationReason('');
+                  setCancellationAppointmentId(null);
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  color: '#475569',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={submitCancellationRequest}
+                disabled={isCancellationSubmitting || !cancellationReason.trim()}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: !cancellationReason.trim() ? '#cbd5e1' : 'var(--orange)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: !cancellationReason.trim() ? 'not-allowed' : 'pointer',
+                  fontWeight: '600',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                {isCancellationSubmitting ? 'Đang gửi...' : 'Gửi yêu cầu'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* PT Cancellation Request Details Modal (for Member) */}
+      {selectedPTCancelRequest && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '500px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            padding: '24px',
+            position: 'relative'
+          }}>
+            <h3 style={{
+              margin: '0 0 12px 0',
+              fontSize: '1.25rem',
+              fontWeight: '700',
+              color: '#ef4444',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <i className="fa-solid fa-circle-exclamation"></i> HLV yêu cầu hủy lịch dạy
+            </h3>
+            
+            <div style={{
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '14px',
+              marginBottom: '16px',
+              fontSize: '0.9rem',
+              color: '#334155',
+              lineHeight: '1.6'
+            }}>
+              <div><strong>Huấn luyện viên:</strong> {selectedPTCancelRequest.trainer}</div>
+              <div><strong>Thời gian học:</strong> {selectedPTCancelRequest.time}</div>
+              <div style={{ marginTop: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
+                <strong>Lý do xin hủy của HLV:</strong>
+                <div style={{
+                  backgroundColor: '#ffffff',
+                  border: '1.5px solid #cbd5e1',
+                  borderRadius: '6px',
+                  padding: '10px 12px',
+                  marginTop: '6px',
+                  fontStyle: 'italic',
+                  color: '#475569',
+                  minHeight: '80px',
+                  whiteSpace: 'pre-wrap'
+                }}>
+                  {selectedPTCancelRequest.cancelReason || 'Không có lý do chi tiết.'}
+                </div>
+              </div>
+              <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#94a3b8', textAlign: 'right' }}>
+                Yêu cầu lúc: {selectedPTCancelRequest.cancelRequestedAt ? new Date(selectedPTCancelRequest.cancelRequestedAt).toLocaleDateString('vi-VN') : 'N/A'}
+              </div>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end',
+              marginTop: '20px'
+            }}>
+              <button
+                type="button"
+                onClick={() => setSelectedPTCancelRequest(null)}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  color: '#475569',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleRespondPTCancel(selectedPTCancelRequest.id, 'reject');
+                  setSelectedPTCancelRequest(null);
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                Từ chối hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleRespondPTCancel(selectedPTCancelRequest.id, 'accept');
+                  setSelectedPTCancelRequest(null);
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#10b981',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                Đồng ý hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export default MemberDashboard;
+
