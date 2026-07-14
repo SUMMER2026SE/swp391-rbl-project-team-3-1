@@ -454,7 +454,8 @@ function TrainerDashboard({
                   time: `${shift.start} - ${shift.end}`,
                   member: shift.memberName || 'Hội viên',
                   type: 'Đặt lịch tập cá nhân',
-                  status: shift.status
+                  status: shift.status,
+                  cancelRequestedBy: shift.cancelRequestedBy
                 });
               }
             });
