@@ -1658,7 +1658,14 @@ function TrainerDashboard({
                             item.cancelRequestedBy === 'MEMBER' ? (
                                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                   <span 
-                                    onClick={() => alert(`Lý do hội viên xin hủy: ${item.cancelReason || 'Không có lý do'}`)}
+                                    onClick={() => setSelectedCancelRequest({
+                                      id: item.id,
+                                      name: item.member,
+                                      date: item.date,
+                                      time: item.time,
+                                      cancelReason: item.cancelReason,
+                                      cancelRequestedAt: null
+                                    })}
                                     style={{ color: 'var(--orange)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', marginRight: '6px' }}
                                   >
                                     Xem lý do
