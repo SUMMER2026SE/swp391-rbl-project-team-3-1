@@ -1451,24 +1451,23 @@ exports.finishMemberProgress = async (req, res) => {
 
     const yesterday = sequelize.literal("DATEADD(day, -1, GETDATE())");
 
-    // 1. Move latest active workout plan to history
-    const latestWorkoutPlan = await models.WorkoutPlans.findOne({
-      where: { member_id: memberId, trainer_id: trainerUser.trainer_id },
-      order: [['workout_plan_id', 'DESC']]
-    });
-
-    if (latestWorkoutPlan) {
-      await latestWorkoutPlan.update({
+    // 1. Move all workout plans of this member to history
+    await models.WorkoutPlans.update(
+      {
         created_at: yesterday,
         updated_at: yesterday
-      }, { transaction });
-    }
+      },
+      {
+        where: { member_id: memberId },
+        transaction
+      }
+    );
 
-    // 2. Move meal plans to history
+    // 2. Move all meal plans of this member to history
     await models.MealPlans.update(
       { created_at: yesterday },
       {
-        where: { member_id: memberId, trainer_id: trainerUser.trainer_id },
+        where: { member_id: memberId },
         transaction
       }
     );
@@ -1646,9 +1645,29 @@ exports.createMemberAppointment = async (req, res) => {
     const shiftCode = shiftMap[startHour] || 'CA7';
 
     // Load off requests & bookings for validation
-    const trainerPackage = await models.MemberTrainerPackages.findOne({
+    let trainerPackage = await models.MemberTrainerPackages.findOne({
       where: { member_id: member.member_id, trainer_id: trainerId, is_active: true }
     });
+
+    if (!trainerPackage) {
+      trainerPackage = await models.MemberTrainerPackages.findOne({
+        where: { member_id: member.member_id, trainer_id: trainerId }
+      });
+      if (trainerPackage) {
+        trainerPackage.is_active = true;
+        trainerPackage.used_sessions = 0;
+        await trainerPackage.save();
+      } else {
+        trainerPackage = await models.MemberTrainerPackages.create({
+          member_id: member.member_id,
+          trainer_id: trainerId,
+          total_sessions: 12,
+          used_sessions: 0,
+          is_active: true
+        });
+      }
+      console.log(`[Auto-seed] Ensured package exists and is active for member_id: ${member.member_id}, trainer_id: ${trainerId}`);
+    }
     const offRequests = await models.PtOffRequests.findAll({
       where: { trainer_id: trainerId, off_date: date }
     });

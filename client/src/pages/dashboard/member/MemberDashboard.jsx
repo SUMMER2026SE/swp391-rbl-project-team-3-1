@@ -67,6 +67,7 @@ function MemberDashboard({
   const [selectedPTCancelRequest, setSelectedPTCancelRequest] = useState(null);
   const [dbWorkoutPlans, setDbWorkoutPlans] = useState([]);
   const [dbMealPlans, setDbMealPlans] = useState([]);
+  const [plansLoaded, setPlansLoaded] = useState(false);
   const [workoutSubTab, setWorkoutSubTab] = useState('today');
   const [mealSubTab, setMealSubTab] = useState('today');
   const [bookingDate, setBookingDate] = useState('');
@@ -161,6 +162,20 @@ function MemberDashboard({
       }
     }
   }, [completedExercises, completedMeals, profileData]);
+
+  // Reset progress when there are no active plans for today
+  useEffect(() => {
+    const memberId = profileData?.memberInfo?.member_id;
+    if (memberId && plansLoaded) {
+      const activeWorkouts = dbWorkoutPlans.filter(plan => !plan.created_at || isToday(plan.created_at));
+      const activeMeals = dbMealPlans.filter(plan => !plan.created_at || isToday(plan.created_at));
+
+      if (activeWorkouts.length === 0 && activeMeals.length === 0) {
+        setCompletedExercises({});
+        setCompletedMeals({});
+      }
+    }
+  }, [plansLoaded, dbWorkoutPlans, dbMealPlans, profileData]);
 
   // Notifications state
   const [notifications, setNotifications] = useState([]);
@@ -385,27 +400,28 @@ function MemberDashboard({
 
   const reloadPlans = () => {
     if (!token || token === 'mock-preview-token') return;
-    fetch('/api/workout-plans', {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setDbWorkoutPlans(data);
+    setPlansLoaded(false);
+    Promise.all([
+      fetch('/api/workout-plans', {
+        headers: { Authorization: `Bearer ${token}` }
+      }).then(res => res.json()),
+      fetch('/api/meal-plans', {
+        headers: { Authorization: `Bearer ${token}` }
+      }).then(res => res.json())
+    ])
+      .then(([workouts, meals]) => {
+        if (Array.isArray(workouts)) {
+          setDbWorkoutPlans(workouts);
         }
-      })
-      .catch(err => console.error('Error fetching workout plans:', err));
-
-    fetch('/api/meal-plans', {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setDbMealPlans(data);
+        if (Array.isArray(meals)) {
+          setDbMealPlans(meals);
         }
+        setPlansLoaded(true);
       })
-      .catch(err => console.error('Error fetching meal plans:', err));
+      .catch(err => {
+        console.error('Error fetching plans:', err);
+        setPlansLoaded(true);
+      });
   };
 
   const reloadAiHistory = () => {
