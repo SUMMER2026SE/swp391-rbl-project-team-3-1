@@ -166,6 +166,8 @@ exports.getTrainerSchedule = async (req, res) => {
         let memberName = null;
         let cancelRequestedBy = null;
 
+        let cancelReason = null;
+
         if (isOff) {
           status = 'Off';
         } else {
@@ -175,6 +177,7 @@ exports.getTrainerSchedule = async (req, res) => {
             status = booking.status; // 'Pending' | 'Approved'
             bookingId = booking.booking_id;
             cancelRequestedBy = booking.cancel_requested_by;
+            cancelReason = booking.cancel_reason;
             // Chỉ hiển thị tên Member nếu người gọi là Admin hoặc chính Trainer đó
             if (isAdmin || isOwner) {
               memberName = booking.member?.user?.full_name || 'Hội viên';
@@ -189,7 +192,8 @@ exports.getTrainerSchedule = async (req, res) => {
           status,
           bookingId,
           memberName,
-          cancelRequestedBy
+          cancelRequestedBy,
+          cancelReason
         };
       });
 

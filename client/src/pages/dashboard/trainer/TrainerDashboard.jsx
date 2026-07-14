@@ -455,7 +455,8 @@ function TrainerDashboard({
                   member: shift.memberName || 'Hội viên',
                   type: 'Đặt lịch tập cá nhân',
                   status: shift.status,
-                  cancelRequestedBy: shift.cancelRequestedBy
+                  cancelRequestedBy: shift.cancelRequestedBy,
+                  cancelReason: shift.cancelReason
                 });
               }
             });
@@ -1650,8 +1651,14 @@ function TrainerDashboard({
                           </td>
                           <td>
                             {item.status === 'CancelPending' ? (
-                              item.cancelRequestedBy === 'MEMBER' ? (
+                            item.cancelRequestedBy === 'MEMBER' ? (
                                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                  <span 
+                                    onClick={() => alert(`Lý do hội viên xin hủy: ${item.cancelReason || 'Không có lý do'}`)}
+                                    style={{ color: 'var(--orange)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', marginRight: '6px' }}
+                                  >
+                                    Xem lý do
+                                  </span>
                                   <button 
                                     onClick={() => handleRespondCancelRequest(item.id, 'accept')}
                                     style={{ padding: '4px 8px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
