@@ -40,6 +40,9 @@ async function migrate() {
           status NVARCHAR(20) NOT NULL DEFAULT 'Pending',
           reject_reason NVARCHAR(500) NULL,
           note NVARCHAR(500) NULL,
+          cancel_reason NVARCHAR(500) NULL,
+          cancel_requested_at DATETIME2 NULL,
+          cancel_requested_by NVARCHAR(50) NULL,
           created_at DATETIME2 NOT NULL DEFAULT GETDATE(),
           updated_at DATETIME2 NOT NULL DEFAULT GETDATE()
         );
@@ -47,6 +50,30 @@ async function migrate() {
       END
       ELSE
         PRINT 'PtBookings table already exists';
+    `);
+
+    // 2.5 Add cancel columns to PtBookings if they don't exist
+    await sequelize.query(`
+      IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'PtBookings')
+      BEGIN
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'PtBookings' AND COLUMN_NAME = 'cancel_reason')
+        BEGIN
+          ALTER TABLE PtBookings ADD cancel_reason NVARCHAR(500) NULL;
+          PRINT 'Added cancel_reason column to PtBookings';
+        END
+
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'PtBookings' AND COLUMN_NAME = 'cancel_requested_at')
+        BEGIN
+          ALTER TABLE PtBookings ADD cancel_requested_at DATETIME2 NULL;
+          PRINT 'Added cancel_requested_at column to PtBookings';
+        END
+
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'PtBookings' AND COLUMN_NAME = 'cancel_requested_by')
+        BEGIN
+          ALTER TABLE PtBookings ADD cancel_requested_by NVARCHAR(50) NULL;
+          PRINT 'Added cancel_requested_by column to PtBookings';
+        END
+      END
     `);
 
     // 3. Create filtered unique index for active bookings (prevents double-booking)
@@ -60,6 +87,37 @@ async function migrate() {
       END
       ELSE
         PRINT 'Index UQ_Trainer_Slot_Active already exists';
+    `);
+
+    // 4. Create PtOffRequests table
+    await sequelize.query(`
+      IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'PtOffRequests')
+      BEGIN
+        CREATE TABLE PtOffRequests (
+          request_id INT IDENTITY(1,1) PRIMARY KEY,
+          trainer_id INT NOT NULL FOREIGN KEY REFERENCES Trainers(trainer_id),
+          off_date DATE NOT NULL,
+          status NVARCHAR(20) NOT NULL DEFAULT 'Pending',
+          reject_reason NVARCHAR(500) NULL,
+          created_at DATETIME2 NOT NULL DEFAULT GETDATE(),
+          updated_at DATETIME2 NOT NULL DEFAULT GETDATE()
+        );
+        PRINT 'Created PtOffRequests table';
+      END
+      ELSE
+        PRINT 'PtOffRequests table already exists';
+    `);
+
+    // 5. Create unique index UQ_Trainer_OffDate
+    await sequelize.query(`
+      IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'UQ_Trainer_OffDate' AND object_id = OBJECT_ID('PtOffRequests'))
+      BEGIN
+        CREATE UNIQUE INDEX UQ_Trainer_OffDate
+        ON PtOffRequests (trainer_id, off_date);
+        PRINT 'Created unique index UQ_Trainer_OffDate';
+      END
+      ELSE
+        PRINT 'Index UQ_Trainer_OffDate already exists';
     `);
 
     console.log('✅ Migration completed successfully!');
