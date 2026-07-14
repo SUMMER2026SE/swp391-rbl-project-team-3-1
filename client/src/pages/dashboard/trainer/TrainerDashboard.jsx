@@ -1649,7 +1649,24 @@ function TrainerDashboard({
                           </td>
                           <td>
                             {item.status === 'CancelPending' ? (
-                              <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
+                              item.cancelRequestedBy === 'MEMBER' ? (
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                  <button 
+                                    onClick={() => handleRespondCancelRequest(item.id, 'accept')}
+                                    style={{ padding: '4px 8px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                  >
+                                    Đồng ý
+                                  </button>
+                                  <button 
+                                    onClick={() => handleRespondCancelRequest(item.id, 'reject')}
+                                    style={{ padding: '4px 8px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                  >
+                                    Từ chối
+                                  </button>
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
+                              )
                             ) : item.status === 'Completed' ? null : (
                               <button 
                                 onClick={() => handleTrainerCancelClick(item.id)}

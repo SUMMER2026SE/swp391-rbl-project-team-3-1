@@ -1445,7 +1445,30 @@ function MemberDashboard({
                         </td>
                         <td>
                           {ap.status === 'cancelpending' ? (
-                            <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
+                            ap.cancelRequestedBy === 'TRAINER' ? (
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <span 
+                                  onClick={() => setSelectedPTCancelRequest(ap)}
+                                  style={{ color: 'var(--orange)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', marginRight: '6px' }}
+                                >
+                                  Xem lý do
+                                </span>
+                                <button 
+                                  onClick={() => handleRespondPTCancel(ap.id, 'accept')}
+                                  style={{ padding: '4px 8px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                >
+                                  Đồng ý
+                                </button>
+                                <button 
+                                  onClick={() => handleRespondPTCancel(ap.id, 'reject')}
+                                  style={{ padding: '4px 8px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                >
+                                  Từ chối
+                                </button>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
+                            )
                           ) : ap.status === 'cancelled' || ap.status === 'rejected' ? null : (
                             <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
                           )}
