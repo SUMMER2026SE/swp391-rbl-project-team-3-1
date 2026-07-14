@@ -27,6 +27,7 @@ function AdminDashboard({ token, userInfo, logout }) {
   const [heroSubtitle, setHeroSubtitle] = useState('Hệ thống quản lý phòng gym thông minh, tối ưu hóa quy trình tập luyện và trải nghiệm khách hàng đẳng cấp.');
   const [paymentsList, setPaymentsList] = useState([]);
   const [offRequestsList, setOffRequestsList] = useState([]);
+  const [notifications, setNotifications] = useState([]);
 
   const isAppointmentPast = (ap) => {
     if (!ap) return false;
@@ -144,14 +145,95 @@ function AdminDashboard({ token, userInfo, logout }) {
   };
 
   // Fetch all admin tables from backend
-  const reloadAllAdminData = () => {
+  const fetchOffRequests = () => {
+    if (!token || token === 'mock-preview-token') return;
+    fetch('/api/dashboard/admin/off-requests', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => { if (data && data.requests) setOffRequestsList(data.requests); })
+      .catch(err => console.error('Error fetching off requests:', err));
+  };
+
+  const reloadNotifications = () => {
+    if (!token || token === 'mock-preview-token') return;
+    fetch('/api/notifications', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.notifications) {
+          const mapped = data.notifications.map(n => ({
+            id: n.notification_id,
+            message: n.content,
+            title: n.title,
+            type: n.notification_type,
+            unread: !n.is_read,
+            time: n.created_at ? new Date(n.created_at.replace('Z', '')).toLocaleString('vi-VN') : 'Vừa xong'
+          }));
+          setNotifications(mapped);
+        }
+      })
+      .catch(err => console.error('Error fetching notifications:', err));
+  };
+
+  const markAllNotifsRead = () => {
     if (!token) return;
+    fetch('/api/notifications/read-all', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => {
+        if (res.ok) {
+          setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+        }
+      })
+      .catch(err => console.error('Error marking all notifications read:', err));
+  };
+
+  const clearNotification = (id) => {
+    if (!token) return;
+    fetch(`/api/notifications/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => {
+        if (res.ok) {
+          setNotifications(prev => prev.filter(n => n.id !== id));
+        }
+      })
+      .catch(err => console.error('Error deleting notification:', err));
+  };
+
+  const handleNotificationClick = (n) => {
+    // Mark as read
+    if (n.unread) {
+      fetch(`/api/notifications/${n.id}/read`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(res => {
+          if (res.ok) {
+            setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, unread: false } : item));
+          }
+        })
+        .catch(err => console.error('Error marking notification read:', err));
+    }
+
+    // Switch tab
+    if (n.type && (n.type.includes('OFF_REQUEST') || n.type.includes('OFF'))) {
+      setActiveTab('hlv');
+    }
+  };
+
+  const reloadAllAdminData = () => {
+    if (!token || token === 'mock-preview-token') return;
 
     fetch('/api/dashboard/admin/stats', {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => res.json())
-      .then(data => { if (data) setStats(data); })
+      .then(data => { if (data && data.stats) setStats(data.stats); })
       .catch(err => console.error('Error fetching admin stats:', err));
 
     fetch('/api/dashboard/admin/users', {
@@ -166,45 +248,41 @@ function AdminDashboard({ token, userInfo, logout }) {
     })
       .then(res => res.json())
       .then(data => { if (data && data.trainers) setTrainersList(data.trainers); })
-      .catch(err => console.error('Error fetching trainers:', err));
+      .catch(err => console.error('Error fetching admin trainers:', err));
 
     fetch('/api/dashboard/admin/plans', {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => res.json())
-      .then(data => { if (data && data.plans) setPackagesList(data.plans); })
-      .catch(err => console.error('Error fetching plans:', err));
+      .then(data => { if (data && data.plans) setPlansList(data.plans); })
+      .catch(err => console.error('Error fetching admin plans:', err));
 
     fetch('/api/dashboard/admin/appointments', {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => res.json())
       .then(data => { if (data && data.appointments) setAppointmentsList(data.appointments); })
-      .catch(err => console.error('Error fetching appointments:', err));
+      .catch(err => console.error('Error fetching admin appointments:', err));
 
-    fetch('/api/dashboard/admin/services', {
+    fetch('/api/admin/services', {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => res.json())
       .then(data => { if (data && data.services) setServicesList(data.services); })
-      .catch(err => console.error('Error fetching services:', err));
+      .catch(err => console.error('Error fetching admin services:', err));
 
     fetch('/api/dashboard/admin/complaints', {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => res.json())
       .then(data => { if (data && data.complaints) setComplaintsList(data.complaints); })
-      .catch(err => console.error('Error fetching complaints:', err));
+      .catch(err => console.error('Error fetching admin complaints:', err));
 
-    
-      fetch('/api/checkout/services')
-        .then(res => res.json())
-        .then(data => { if (data && data.services) setAllServices(data.services); })
-        .catch(err => console.error('Error fetching all services:', err));
-    
-      fetch('/api/checkout/homepage-config')
+    fetch('/api/dashboard/admin/homepage-config', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
       .then(res => res.json())
-      .then(data => { 
+      .then(data => {
         if (data) {
           if (data.coreSports) setCoreSports(data.coreSports);
           if (data.heroTitle) setHeroTitle(data.heroTitle);
@@ -213,23 +291,59 @@ function AdminDashboard({ token, userInfo, logout }) {
       })
       .catch(err => console.error('Error fetching homepage config:', err));
 
-    /* fetch('/api/dashboard/admin/payments', {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => { if (data && data.payments) setPaymentsList(data.payments); })
-      .catch(err => console.error('Error fetching payments:', err)); */
-
-    /* fetch('/api/dashboard/admin/off-requests', {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => { if (data && data.requests) setOffRequestsList(data.requests); })
-      .catch(err => console.error('Error fetching off requests:', err)); */
+    fetchOffRequests();
+    reloadNotifications();
   };
-
   useEffect(() => {
     reloadAllAdminData();
+  }, [token]);
+
+  useEffect(() => {
+    if (!token || token === 'mock-preview-token') return;
+    
+    const streamUrl = `/api/notifications/stream?token=${encodeURIComponent(token)}`;
+    const eventSource = new EventSource(streamUrl);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.connected) {
+          console.log('[SSE Admin] Connected to notification stream.');
+          return;
+        }
+
+        const newNotif = {
+          id: data.notification_id,
+          message: data.content,
+          title: data.title,
+          type: data.notification_type,
+          unread: !data.is_read,
+          time: data.created_at ? new Date(data.created_at.replace('Z', '')).toLocaleString('vi-VN') : 'Vừa xong'
+        };
+
+        setNotifications(prev => {
+          if (prev.some(n => n.id === newNotif.id)) return prev;
+          return [newNotif, ...prev];
+        });
+
+        // Realtime auto-refresh on Off request / booking events
+        if (['OFF_REQUEST_CREATED', 'OFF_REQUEST_APPROVED', 'OFF_REQUEST_REJECTED', 'OFF_REQUEST_CANCELLED', 'NEW_OFF_REQUEST'].includes(data.type || newNotif.type)) {
+          fetchOffRequests();
+        }
+
+      } catch (err) {
+        console.error('[SSE Admin] Error processing stream message:', err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('[SSE Admin] Stream connection error:', err);
+    };
+
+    return () => {
+      eventSource.close();
+      console.log('[SSE Admin] Closed stream connection.');
+    };
   }, [token]);
 
   // Actions connecting to SQL Server Backend
@@ -260,10 +374,15 @@ function AdminDashboard({ token, userInfo, logout }) {
   };
 
   const handleRejectOffRequest = (id) => {
-    if (!window.confirm('Bạn có chắc chắn muốn từ chối yêu cầu nghỉ này?')) return;
+    const reason = window.prompt('Nhập lý do từ chối:');
+    if (reason === null) return;
     fetch(`/api/dashboard/admin/off-requests/${id}/reject`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${token}` }
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ reason: reason || 'Không có lý do' })
     })
       .then(res => res.json())
       .then(data => {
@@ -1080,7 +1199,7 @@ function AdminDashboard({ token, userInfo, logout }) {
                 </thead>
                 <tbody>
                   {offRequestsList.map((req) => (
-                    <tr key={req.scheduleId}>
+                    <tr key={req.requestId}>
                       <td>
                         <span className="admin-table-name">{req.trainerName}</span>
                       </td>
@@ -1096,14 +1215,14 @@ function AdminDashboard({ token, userInfo, logout }) {
                         <button 
                           className="admin-btn-submit" 
                           style={{ padding: '6px 12px', fontSize: '0.8rem', marginRight: '8px' }}
-                          onClick={() => handleApproveOffRequest(req.scheduleId)}
+                          onClick={() => handleApproveOffRequest(req.requestId)}
                         >
                           Duyệt
                         </button>
                         <button 
                           className="admin-btn-cancel" 
                           style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-                          onClick={() => handleRejectOffRequest(req.scheduleId)}
+                          onClick={() => handleRejectOffRequest(req.requestId)}
                         >
                           Từ chối
                         </button>
@@ -1589,6 +1708,37 @@ function AdminDashboard({ token, userInfo, logout }) {
           </div>
         );
 
+      case 'thongbao':
+        return (
+          <div className="admin-card-panel" style={{ background: '#fff', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
+            <div className="admin-card-header" style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 className="admin-card-title" style={{ margin: 0, textTransform: 'none', fontSize: '1.25rem', fontWeight: 'bold' }}>Thông báo hệ thống</h3>
+              {notifications.filter(n => n.unread).length > 0 && (
+                <span className="admin-link-action" style={{ color: 'var(--orange)', cursor: 'pointer', fontWeight: '500', fontSize: '0.9rem' }} onClick={markAllNotifsRead}>Đánh dấu tất cả đã đọc</span>
+              )}
+            </div>
+            <div className="admin-notif-list" style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {notifications.map((n) => (
+                <div className={`admin-notif-item ${n.unread ? 'unread' : ''}`} key={n.id} onClick={() => handleNotificationClick(n)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', backgroundColor: n.unread ? '#fff8f1' : '#f8fafc', borderRadius: '8px', border: n.unread ? '1px solid #ffedd5' : '1px solid #e2e8f0', transition: 'all 0.2s', cursor: 'pointer' }}>
+                  <div className="admin-notif-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', borderRadius: '50%', backgroundColor: n.unread ? '#ffedd5' : '#cbd5e1', color: n.unread ? 'var(--orange)' : '#64748b', fontSize: '1.1rem' }}>
+                    <i className={`fa-solid ${n.unread ? 'fa-envelope-open-text' : 'fa-envelope'}`}></i>
+                  </div>
+                  <div className="admin-notif-body" style={{ flex: 1, marginLeft: '16px' }}>
+                    <div className="admin-notif-message" style={{ fontSize: '0.95rem', fontWeight: n.unread ? 'bold' : 'normal', color: 'var(--text)' }}>{n.message}</div>
+                    <div className="admin-notif-time" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '4px' }}>{n.time}</div>
+                  </div>
+                  <button className="admin-notif-btn-clear" style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.1rem', padding: '8px' }} onClick={() => clearNotification(n.id)}>
+                    <i className="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+              ))}
+              {notifications.length === 0 && (
+                <div className="admin-no-data" style={{ padding: '40px 20px', textAlign: 'center', color: '#94a3b8', fontSize: '0.95rem' }}>Hộp thư thông báo trống</div>
+              )}
+            </div>
+          </div>
+        );
+
       default:
         return <div>Vui lòng chọn tab hợp lệ.</div>;
     }
@@ -1749,8 +1899,13 @@ function AdminDashboard({ token, userInfo, logout }) {
               <input type="text" className="admin-search-input" placeholder="Tìm kiếm nhanh..." />
             </div>
 
-            <button className="admin-icon-btn" onClick={() => { setActiveTab('khieunai'); alert('Chuyển hướng đến danh sách báo cáo khiếu nại...'); }}>
+            <button className="admin-icon-btn" style={{ position: 'relative' }} onClick={() => setActiveTab('thongbao')}>
               <i className="fa-regular fa-bell"></i>
+              {notifications.filter(n => n.unread).length > 0 && (
+                <span className="admin-bell-badge" style={{ position: 'absolute', top: '-4px', right: '-4px', backgroundColor: 'var(--orange)', color: '#fff', fontSize: '0.65rem', minWidth: '16px', height: '16px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                  {notifications.filter(n => n.unread).length}
+                </span>
+              )}
             </button>
 
             <button className="admin-icon-btn" onClick={() => alert('Chức năng cài đặt chung đang được phát triển...')}>

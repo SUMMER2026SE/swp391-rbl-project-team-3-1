@@ -22,6 +22,9 @@ var _Users = require("./Users");
 var _WorkoutExercises = require("./WorkoutExercises");
 var _WorkoutPlans = require("./WorkoutPlans");
 var _AppConfigs = require("./AppConfigs");
+var _PtOffRequests = require("./PtOffRequests");
+var _PtBookings = require("./PtBookings");
+var _MemberTrainerPackages = require("./MemberTrainerPackages");
 
 function initModels(sequelize) {
   var AIConsultations = _AIConsultations(sequelize, DataTypes);
@@ -47,6 +50,9 @@ function initModels(sequelize) {
   var WorkoutExercises = _WorkoutExercises(sequelize, DataTypes);
   var WorkoutPlans = _WorkoutPlans(sequelize, DataTypes);
   var AppConfigs = _AppConfigs(sequelize, DataTypes);
+  var PtOffRequests = _PtOffRequests(sequelize, DataTypes);
+  var PtBookings = _PtBookings(sequelize, DataTypes);
+  var MemberTrainerPackages = _MemberTrainerPackages(sequelize, DataTypes);
 
   AIConsultations.belongsTo(Members, { as: "member", foreignKey: "member_id"});
   Members.hasMany(AIConsultations, { as: "AIConsultations", foreignKey: "member_id"});
@@ -108,6 +114,18 @@ function initModels(sequelize) {
   Users.hasOne(Trainers, { as: "Trainer", foreignKey: "user_id"});
   WorkoutExercises.belongsTo(WorkoutPlans, { as: "workout_plan", foreignKey: "workout_plan_id"});
   WorkoutPlans.hasMany(WorkoutExercises, { as: "WorkoutExercises", foreignKey: "workout_plan_id"});
+  PtOffRequests.belongsTo(Trainers, { as: "trainer", foreignKey: "trainer_id"});
+  Trainers.hasMany(PtOffRequests, { as: "PtOffRequests", foreignKey: "trainer_id"});
+
+  PtBookings.belongsTo(Members, { as: "member", foreignKey: "member_id"});
+  Members.hasMany(PtBookings, { as: "PtBookings", foreignKey: "member_id"});
+  PtBookings.belongsTo(Trainers, { as: "trainer", foreignKey: "trainer_id"});
+  Trainers.hasMany(PtBookings, { as: "PtBookings", foreignKey: "trainer_id"});
+
+  MemberTrainerPackages.belongsTo(Members, { as: "member", foreignKey: "member_id"});
+  Members.hasMany(MemberTrainerPackages, { as: "MemberTrainerPackages", foreignKey: "member_id"});
+  MemberTrainerPackages.belongsTo(Trainers, { as: "trainer", foreignKey: "trainer_id"});
+  Trainers.hasMany(MemberTrainerPackages, { as: "MemberTrainerPackages", foreignKey: "trainer_id"});
 
   return {
     AIConsultations,
@@ -133,6 +151,9 @@ function initModels(sequelize) {
     WorkoutExercises,
     WorkoutPlans,
     AppConfigs,
+    PtOffRequests,
+    PtBookings,
+    MemberTrainerPackages,
   };
 }
 module.exports = initModels;
