@@ -1791,6 +1791,9 @@ function TrainerDashboard({
                             } else if (shiftStatus === 'Approved') {
                               bg = '#dcfce7'; color = '#166534';
                               text = `Dạy: ${memberName || 'Học viên'}`;
+                            } else if (shiftStatus === 'CancelPending') {
+                              bg = '#fee2e2'; color = '#b91c1c';
+                              text = `Chờ hủy: ${memberName || 'Học viên'}`;
                             }
 
                             return (
@@ -1829,6 +1832,10 @@ function TrainerDashboard({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{ width: '16px', height: '16px', backgroundColor: '#dcfce7', borderRadius: '4px', border: '1px solid #bbf7d0' }}></div>
                       <span>Lịch dạy (Đã duyệt)</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '16px', height: '16px', backgroundColor: '#fee2e2', borderRadius: '4px', border: '1px solid #fca5a5' }}></div>
+                      <span>Đặt ca chờ hủy</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{ width: '16px', height: '16px', backgroundColor: '#cbd5e1', borderRadius: '4px', border: '1px solid #94a3b8' }}></div>

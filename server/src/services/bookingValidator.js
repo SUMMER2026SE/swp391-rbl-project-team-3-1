@@ -74,7 +74,7 @@ function validateBooking({
   // 5. Kiểm tra trùng lịch dạy (đã có member khác đặt ca này)
   const isSlotOccupied = existingBookings.some(b => {
     if (Number(b.trainer_id) !== Number(trainerId)) return false;
-    if (b.status !== 'Pending' && b.status !== 'Approved') return false;
+    if (b.status !== 'Pending' && b.status !== 'Approved' && b.status !== 'CancelPending') return false;
     if (b.shift_code !== shiftCode) return false;
 
     const bD = new Date(b.session_date);

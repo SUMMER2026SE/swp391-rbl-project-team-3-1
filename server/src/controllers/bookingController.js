@@ -133,7 +133,7 @@ exports.getTrainerSchedule = async (req, res) => {
       where: {
         trainer_id: tId,
         session_date: { [Op.between]: [from, to] },
-        status: { [Op.in]: ['Pending', 'Approved'] }
+        status: { [Op.in]: ['Pending', 'Approved', 'CancelPending'] }
       },
       include: [
         {
