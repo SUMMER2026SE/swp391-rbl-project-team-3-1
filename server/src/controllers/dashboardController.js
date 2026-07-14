@@ -1088,15 +1088,27 @@ exports.getTrainerMembers = async (req, res) => {
       const primaryMembership = matchedActiveMemberships[0];
       const planName = primaryMembership?.membership_plan?.plan_name || 'Standard Plan';
 
+      // Helper to check if a date is today or in the future
+      const isToday = (dateVal) => {
+        if (!dateVal) return false;
+        const planDate = new Date(dateVal);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        planDate.setHours(0, 0, 0, 0);
+        return planDate >= today;
+      };
+
       // Fetch actual workout and meal plan assigned to this member by this trainer
       const latestWorkoutPlan = await models.WorkoutPlans.findOne({
         where: { member_id: m.member_id, trainer_id: trainerUser.trainer_id },
         order: [['workout_plan_id', 'DESC']]
       });
 
+      const isWorkoutToday = latestWorkoutPlan && isToday(latestWorkoutPlan.created_at);
+
       let workoutExercises = [];
       let workoutExercisesCount = 0;
-      if (latestWorkoutPlan) {
+      if (isWorkoutToday) {
         workoutExercises = await models.WorkoutExercises.findAll({
           where: { workout_plan_id: latestWorkoutPlan.workout_plan_id }
         });
@@ -1107,6 +1119,8 @@ exports.getTrainerMembers = async (req, res) => {
         where: { member_id: m.member_id, trainer_id: trainerUser.trainer_id },
         order: [['meal_plan_id', 'DESC']]
       });
+
+      const todayMeals = mealPlans.filter(mp => isToday(mp.created_at));
 
       let remainingDays = 0;
       matchedActiveMemberships.forEach(ms => {
@@ -1129,13 +1143,13 @@ exports.getTrainerMembers = async (req, res) => {
         weight: m.weight || 70,
         bmi: m.bmi || 22.5,
         remainingDays: remainingDays,
-        workoutAssigned: latestWorkoutPlan ? latestWorkoutPlan.title : 'Chưa phân công',
-        mealAssigned: mealPlans.length > 0 ? mealPlans[0].title : 'Chưa phân công',
-        workoutPlanId: latestWorkoutPlan ? latestWorkoutPlan.workout_plan_id : null,
-        workoutCreatedAt: latestWorkoutPlan ? latestWorkoutPlan.created_at : null,
+        workoutAssigned: isWorkoutToday ? latestWorkoutPlan.title : 'Chưa phân công',
+        mealAssigned: todayMeals.length > 0 ? todayMeals[0].title : 'Chưa phân công',
+        workoutPlanId: isWorkoutToday ? latestWorkoutPlan.workout_plan_id : null,
+        workoutCreatedAt: isWorkoutToday ? latestWorkoutPlan.created_at : null,
         workoutExercisesCount,
         workoutExercises: workoutExercises.map(e => ({ name: e.exercise_name, sets: e.sets, reps: e.reps })),
-        assignedMeals: mealPlans.map(mp => ({ id: mp.meal_plan_id, title: mp.title, description: mp.description, calories: mp.calories_per_day, createdAt: mp.created_at }))
+        assignedMeals: todayMeals.map(mp => ({ id: mp.meal_plan_id, title: mp.title, description: mp.description, calories: mp.calories_per_day, createdAt: mp.created_at }))
       };
     }));
 
