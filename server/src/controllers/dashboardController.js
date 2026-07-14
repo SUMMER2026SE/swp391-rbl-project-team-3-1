@@ -1,5 +1,6 @@
 const { models, sequelize } = require('../config/db');
 const bcrypt = require('bcryptjs');
+const notificationEmitter = require('../utils/notificationEmitter');
 
 const ROLE = {
   MEMBER: 1,
@@ -1528,46 +1529,59 @@ exports.getMemberAppointments = async (req, res) => {
       return res.status(200).json({ appointments: [] });
     }
 
-    const appointments = await models.Appointments.findAll({
+    const bookings = await models.PtBookings.findAll({
       where: { member_id: member.member_id },
       include: [
         {
-          model: models.TrainerSchedules,
-          as: 'schedule',
-          include: [
-            {
-              model: models.Trainers,
-              as: 'trainer',
-              include: [{ model: models.Users, as: 'user', attributes: ['full_name'] }]
-            }
-          ]
+          model: models.Trainers,
+          as: 'trainer',
+          include: [{ model: models.Users, as: 'user', attributes: ['full_name'] }]
         }
       ],
-      order: [['appointment_id', 'DESC']]
+      order: [['booking_id', 'DESC']]
     });
-    const mappedAppts = appointments.map(a => {
-      const startTimeFormatted = toTimeStr(a.schedule?.start_time, '07:00');
-      const endTimeFormatted = toTimeStr(a.schedule?.end_time, '08:30');
-      const workingDateStr = toYYYYMMDD(a.schedule?.working_date);
+
+    const SHIFT_MAP = {
+      'CA1': { start: '05:00', end: '06:30' },
+      'CA2': { start: '07:00', end: '08:30' },
+      'CA3': { start: '09:00', end: '10:30' },
+      'CA4': { start: '11:00', end: '12:30' },
+      'CA5': { start: '14:00', end: '15:30' },
+      'CA6': { start: '16:00', end: '17:30' },
+      'CA7': { start: '18:00', end: '19:30' },
+    };
+
+    const mappedAppts = bookings.map(b => {
+      const shift = SHIFT_MAP[b.shift_code] || { start: b.shift_code || '08:00', end: '09:30' };
+      const startTimeFormatted = shift.start;
+      const endTimeFormatted = shift.end;
+      const workingDateStr = b.session_date; 
       const startDateTime = workingDateStr ? `${workingDateStr}T${startTimeFormatted}:00` : null;
       const endDateTime = workingDateStr ? `${workingDateStr}T${endTimeFormatted}:00` : null;
 
+      let mappedStatus = 'pending';
+      if (b.status === 'Approved') mappedStatus = 'confirmed';
+      else if (b.status === 'Rejected') mappedStatus = 'rejected';
+      else if (b.status === 'Cancelled') mappedStatus = 'cancelled';
+      else if (b.status === 'CancelPending') mappedStatus = 'cancelpending';
+      else mappedStatus = b.status?.toLowerCase() || 'pending';
+
       return {
-        id: a.appointment_id,
-        ptName: a.schedule?.trainer?.user?.full_name || 'HLV Cá Nhân',
-        trainer: a.schedule?.trainer?.user?.full_name || 'HLV Cá Nhân',
-        date: toDateStr(a.schedule?.working_date),
+        id: b.booking_id,
+        ptName: b.trainer?.user?.full_name || 'HLV Cá Nhân',
+        trainer: b.trainer?.user?.full_name || 'HLV Cá Nhân',
+        date: toDateStr(b.session_date),
         workingDate: workingDateStr,
         startTime: startTimeFormatted,
         endTime: endTimeFormatted,
         startDateTime,
         endDateTime,
-        time: a.schedule?.working_date ? `${toDateStr(a.schedule.working_date)} (${startTimeFormatted} - ${endTimeFormatted})` : `${startTimeFormatted} - ${endTimeFormatted}`,
-        type: a.note || 'Tập thử Gym',
-        status: (a.status === 'Confirmed' || a.status === 'Scheduled' ? 'confirmed' : a.status || 'pending').toLowerCase(),
-        cancelReason: a.cancel_reason,
-        cancelRequestedAt: a.cancel_requested_at,
-        cancelRequestedBy: a.cancel_requested_by
+        time: b.session_date ? `${toDateStr(b.session_date)} (${startTimeFormatted} - ${endTimeFormatted})` : `${startTimeFormatted} - ${endTimeFormatted}`,
+        type: b.note || 'Đặt lịch tập cá nhân',
+        status: mappedStatus,
+        cancelReason: b.reject_reason || b.cancel_reason,
+        cancelRequestedAt: b.cancel_requested_at,
+        cancelRequestedBy: b.cancel_requested_by
       };
     });
 
@@ -1581,16 +1595,9 @@ exports.getMemberAppointments = async (req, res) => {
 // POST /api/dashboard/member/appointments
 exports.createMemberAppointment = async (req, res) => {
   try {
-    let { date, time, type, note, trainerId } = req.body;
-
+    const { date, time, type, note, trainerId: reqTrainerId } = req.body;
     if (!date || !time) {
-      return res.status(400).json({ message: 'Vui lòng cung cấp ngày hẹn và thời gian!' });
-    }
-
-    const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    if (date < todayStr) {
-      return res.status(400).json({ message: 'Không thể đặt lịch hẹn cho những ngày đã qua!' });
+      return res.status(400).json({ message: 'Thiếu thông tin ngày hoặc ca tập!' });
     }
 
     const member = await models.Members.findOne({ where: { user_id: req.user.userId } });
@@ -1598,138 +1605,131 @@ exports.createMemberAppointment = async (req, res) => {
       return res.status(400).json({ message: 'Hồ sơ hội viên chưa được thiết lập!' });
     }
 
-    if (trainerId) {
-      trainerId = Number(trainerId);
-    }
-
-    // To link an appointment, we need a TrainerSchedule.
-    // Try to find the member's active PT from their workout plans if not explicitly selected
+    let trainerId = reqTrainerId ? Number(reqTrainerId) : null;
     if (!trainerId) {
       const activeWorkoutPlan = await models.WorkoutPlans.findOne({
         where: { member_id: member.member_id },
         order: [['created_at', 'DESC']]
       });
-
       if (activeWorkoutPlan) {
         trainerId = activeWorkoutPlan.trainer_id;
-      } else {
-        // Look in MealPlans if no WorkoutPlan exists
-        const activeMealPlan = await models.MealPlans.findOne({
-          where: { member_id: member.member_id },
-          order: [['created_at', 'DESC']]
-        });
-        if (activeMealPlan) {
-          trainerId = activeMealPlan.trainer_id;
-        }
       }
     }
 
-    // Fallback: pick the first trainer in database
     if (!trainerId) {
       const defaultTrainer = await models.Trainers.findOne();
       if (!defaultTrainer) {
-        return res.status(400).json({ message: 'Hệ thống hiện tại chưa có HLV nào hoạt động để đặt lịch!' });
+        return res.status(400).json({ message: 'Hệ thống chưa có HLV nào hoạt động!' });
       }
       trainerId = defaultTrainer.trainer_id;
     }
 
-    // Add 1.5 hours
-    const [h, m] = time.split(':').map(Number);
-    const totalMinutes = h * 60 + m + 90;
-    const endH = Math.floor(totalMinutes / 60) % 24;
-    const endM = totalMinutes % 60;
-    
-    // Format times as string (e.g. HH:mm:00) to avoid MSSQL parameter binding / type validation errors
-    const start_time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
-    const end_time = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`;
-    const endTimeStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
-
-    // Check if slot already booked
-    const existingSchedule = await models.TrainerSchedules.findOne({
-      where: {
-        trainer_id: trainerId,
-        working_date: date,
-        start_time: start_time,
-        availability_status: ['Busy', 'Off']
-      }
+    // Check if the trainer has taken the whole day off
+    const dayOff = await models.PtOffRequests.findOne({
+      where: { trainer_id: trainerId, off_date: date, status: 'Approved' }
     });
-
-    if (existingSchedule) {
-      return res.status(400).json({ message: 'Ca tập này đã có người đặt hoặc HLV đang bận, vui lòng chọn ca khác!' });
+    if (dayOff) {
+      return res.status(400).json({ message: 'HLV đã đăng ký nghỉ phép ngày này!' });
     }
 
-    // Create a new Available Trainer Schedule row
-    const newSchedule = await models.TrainerSchedules.create({
-      trainer_id: trainerId,
-      working_date: date,
-      start_time,
-      end_time,
-      availability_status: 'Available'
+    // Map time (e.g. '18:00' or '18:00 - 19:30') to shift_code
+    const startHour = time.split(' ')[0].substring(0, 5); // e.g. '18:00'
+    const shiftMap = {
+      '05:00': 'CA1',
+      '07:00': 'CA2',
+      '09:00': 'CA3',
+      '11:00': 'CA4',
+      '14:00': 'CA5',
+      '16:00': 'CA6',
+      '18:00': 'CA7'
+    };
+    const shiftCode = shiftMap[startHour] || 'CA7';
+
+    // Load off requests & bookings for validation
+    const trainerPackage = await models.MemberTrainerPackages.findOne({
+      where: { member_id: member.member_id, trainer_id: trainerId, is_active: true }
+    });
+    const offRequests = await models.PtOffRequests.findAll({
+      where: { trainer_id: trainerId, off_date: date }
+    });
+    const existingBookings = await models.PtBookings.findAll({
+      where: { trainer_id: trainerId, session_date: date }
     });
 
-    const newAppt = await models.Appointments.create({
+    const { validateBooking } = require('../services/bookingValidator');
+    const validation = validateBooking({
+      trainerId,
+      memberId: member.member_id,
+      sessionDate: date,
+      shiftCode,
+      existingBookings,
+      offRequests,
+      trainerPackage
+    });
+
+    if (!validation.valid) {
+      return res.status(400).json({ message: validation.reason });
+    }
+
+    // Create PT Booking
+    const booking = await models.PtBookings.create({
       member_id: member.member_id,
-      schedule_id: newSchedule.schedule_id,
-      status: 'Pending',
-      note: note || type || 'Đăng ký tập luyện cá nhân'
-      // Omitted created_at so SQL Server default getdate() is used
+      trainer_id: trainerId,
+      session_date: date,
+      shift_code: shiftCode,
+      note: note || type || 'Đăng ký tập luyện cá nhân',
+      status: 'Pending'
     });
 
-    // Create real-time notification for Trainer
-    try {
+    // Notify Trainer
+    const trainerRecord = await models.Trainers.findByPk(trainerId);
+    if (trainerRecord) {
       const memberUser = await models.Users.findByPk(member.user_id);
       const memberName = memberUser?.full_name || 'Hội viên';
-      
-      const trainerRecord = await models.Trainers.findByPk(trainerId);
-      if (trainerRecord) {
-        const trainerUserId = trainerRecord.user_id;
-        const notification = await models.Notifications.create({
-          user_id: trainerUserId,
-          title: 'Yêu cầu đặt lịch mới',
-          content: `Hội viên ${memberName} đã gửi yêu cầu đặt lịch tập mới vào ngày ${toDateStr(date)} lúc ${time}.`,
-          notification_type: 'appointment_booked',
-          is_read: false
-        });
 
-        // Emit via notificationEmitter
-        const notificationEmitter = require('../utils/notificationEmitter');
-        notificationEmitter.emit('notification_created', {
-          user_id: trainerUserId,
-          notification: {
-            notification_id: notification.notification_id,
-            user_id: trainerUserId,
-            title: notification.title,
-            content: notification.content,
-            notification_type: notification.notification_type,
-            is_read: notification.is_read,
-            created_at: new Date()
-          }
-        });
-      }
-    } catch (notifErr) {
-      console.error('⚠️ Lỗi tạo thông báo đặt lịch:', notifErr.message);
+      const newNotif = await models.Notifications.create({
+        user_id: trainerRecord.user_id,
+        title: 'Yêu cầu đặt lịch mới',
+        content: `Học viên ${memberName} đã đặt lịch tập ca ${shiftCode} ngày ${date}`,
+        notification_type: 'BOOKING_CREATED',
+        is_read: false
+      });
+
+      // Broadcast to SSE
+      broadcastSSE({
+        type: 'BOOKING_CREATED',
+        userId: trainerRecord.user_id,
+        message: `Học viên ${memberName} đã đặt lịch tập ca ${shiftCode} ngày ${date}`,
+        notification: newNotif
+      });
     }
 
-    // Fetch the target trainer details to return in response
-    const targetTrainer = await models.Trainers.findByPk(trainerId, {
-      include: [{ model: models.Users, as: 'user', attributes: ['full_name'] }]
+    // Broadcast update slot to anyone viewing the trainer's schedule
+    broadcastSSE({
+      type: 'SCHEDULE_SLOT_UPDATED',
+      trainerId,
+      sessionDate: date,
+      shiftCode,
+      status: 'Pending'
     });
 
     return res.status(201).json({
       message: 'Đăng ký lịch hẹn thành công! Đang chờ huấn luyện viên xác nhận.',
       appointment: {
-        id: newAppt.appointment_id,
-        ptName: targetTrainer?.user?.full_name || 'HLV Cá Nhân',
+        id: booking.booking_id,
+        ptName: trainerRecord?.user?.full_name || 'HLV Cá Nhân',
         date: date,
-        time: `${time} - ${endTimeStr}`,
-        type: newAppt.note,
-        status: newAppt.status
+        time: time,
+        type: booking.note,
+        status: 'pending'
       }
     });
-
   } catch (error) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ message: 'Ca tập này vừa có người đặt, vui lòng chọn ca khác.' });
+    }
     console.error('❌ Error creating member appointment:', error);
-    return res.status(500).json({ message: 'Lỗi server khi đăng ký lịch tập!: ' + error.message });
+    return res.status(500).json({ message: 'Lỗi server khi đặt lịch!' });
   }
 };
 
@@ -1991,221 +1991,147 @@ exports.requestMemberAppointmentCancel = async (req, res) => {
     const { id } = req.params;
     const { reason } = req.body;
 
-    if (!reason || reason.trim() === '') {
-      return res.status(400).json({ message: 'Vui lòng cung cấp lý do hủy lịch hẹn!' });
-    }
-
-    const appointment = await models.Appointments.findOne({
-      where: { appointment_id: id },
+    const booking = await models.PtBookings.findOne({
+      where: { booking_id: id },
       include: [
-        {
-          model: models.Members,
-          as: 'member',
-          include: [{ model: models.Users, as: 'user', attributes: ['user_id', 'full_name'] }]
-        },
-        {
-          model: models.TrainerSchedules,
-          as: 'schedule',
-          include: [
-            {
-              model: models.Trainers,
-              as: 'trainer',
-              include: [{ model: models.Users, as: 'user', attributes: ['user_id', 'full_name'] }]
-            }
-          ]
-        }
+        { model: models.Members, as: 'member', include: [{ model: models.Users, as: 'user' }] },
+        { model: models.Trainers, as: 'trainer', include: [{ model: models.Users, as: 'user' }] }
       ]
     });
 
-    if (!appointment) {
+    if (!booking) {
       return res.status(404).json({ message: 'Không tìm thấy lịch hẹn!' });
     }
 
-    // Update status, reason, request time, and requested by
-    await appointment.update({
-      status: 'CancelPending',
-      cancel_reason: reason,
-      cancel_requested_at: require('sequelize').fn('getdate'),
-      cancel_requested_by: 'MEMBER'
-    });
+    if (booking.status === 'Pending') {
+      booking.status = 'Cancelled';
+      await booking.save();
 
-    // Notify the Trainer
-    try {
-      const trainerUserId = appointment.schedule?.trainer?.user?.user_id;
-      if (trainerUserId) {
-        const memberName = appointment.member?.user?.full_name || 'Hội viên';
-        const dateFormatted = appointment.schedule?.working_date ? toDateStr(appointment.schedule.working_date) : 'N/A';
-        const startTimeFormatted = appointment.schedule?.start_time ? toTimeStr(appointment.schedule.start_time, '07:00') : 'N/A';
-        const endTimeFormatted = appointment.schedule?.end_time ? toTimeStr(appointment.schedule.end_time, '08:30') : 'N/A';
-        
-        const titleStr = 'Yêu cầu hủy lịch hẹn tập';
-        const contentStr = `Học viên ${memberName} gửi yêu cầu hủy lịch dạy lúc ${startTimeFormatted} - ${endTimeFormatted} ngày ${dateFormatted}. Lý do: ${reason}`;
+      broadcastSSE({
+        type: 'SCHEDULE_SLOT_UPDATED',
+        trainerId: booking.trainer_id,
+        sessionDate: booking.session_date,
+        shiftCode: booking.shift_code,
+        status: 'Free'
+      });
 
-        const notification = await models.Notifications.create({
-          user_id: trainerUserId,
-          title: titleStr,
-          content: contentStr,
-          notification_type: 'appointment_cancel_request',
-          is_read: false
-        });
-
-        // Push real-time SSE notification
-        const notificationEmitter = require('../utils/notificationEmitter');
-        notificationEmitter.emit('notification_created', {
-          user_id: trainerUserId,
-          notification: {
-            notification_id: notification.notification_id,
-            user_id: trainerUserId,
-            title: notification.title,
-            content: notification.content,
-            notification_type: notification.notification_type,
-            is_read: false,
-            created_at: notification.created_at || new Date()
-          }
-        });
-      }
-    } catch (notifErr) {
-      console.error('❌ Error creating cancel request notification:', notifErr);
+      return res.status(200).json({ message: 'Đã hủy yêu cầu đặt lịch thành công!' });
     }
 
-    return res.status(200).json({ message: 'Đã gửi yêu cầu hủy lịch hẹn tập. Đang chờ HLV duyệt!' });
-  } catch (error) {
-    console.error('❌ Error requesting cancel appointment:', error);
-    return res.status(500).json({ message: 'Lỗi server khi gửi yêu cầu hủy!' });
+    if (booking.status !== 'Approved') {
+      return res.status(400).json({ message: 'Không thể hủy lịch ở trạng thái này!' });
+    }
+
+    booking.status = 'CancelPending';
+    booking.cancel_reason = reason || 'Hội viên xin hủy';
+    booking.cancel_requested_at = sequelize.fn('getdate');
+    booking.cancel_requested_by = 'MEMBER';
+    await booking.save();
+
+    if (booking.trainer && booking.trainer.user) {
+      const memberName = booking.member?.user?.full_name || 'Hội viên';
+      const newNotif = await models.Notifications.create({
+        user_id: booking.trainer.user_id,
+        title: 'Yêu cầu hủy lịch tập',
+        content: `Học viên ${memberName} gửi yêu cầu hủy lịch tập ca ${booking.shift_code} ngày ${booking.session_date}. Lý do: ${reason}`,
+        notification_type: 'BOOKING_CANCEL_REQUESTED',
+        is_read: false
+      });
+
+      broadcastSSE({
+        type: 'BOOKING_CANCEL_REQUESTED',
+        userId: booking.trainer.user_id,
+        message: `Học viên ${memberName} gửi yêu cầu hủy lịch tập ca ${booking.shift_code} ngày ${booking.session_date}. Lý do: ${reason}`,
+        notification: newNotif
+      });
+    }
+
+    return res.status(200).json({ message: 'Đã gửi yêu cầu hủy lịch hẹn lên HLV.' });
+  } catch (err) {
+    console.error('Error requestMemberAppointmentCancel:', err);
+    return res.status(500).json({ message: 'Lỗi server khi hủy lịch tập.' });
   }
 };
 
 // PUT /api/dashboard/trainer/appointments/:id/cancel-respond
 exports.respondTrainerAppointmentCancel = async (req, res) => {
+  const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { action } = req.body; // 'accept' or 'reject'
+    const { action } = req.body; 
 
-    const appointment = await models.Appointments.findOne({
-      where: { appointment_id: id },
+    const booking = await models.PtBookings.findOne({
+      where: { booking_id: id },
       include: [
-        {
-          model: models.Members,
-          as: 'member',
-          include: [{ model: models.Users, as: 'user', attributes: ['user_id', 'full_name'] }]
-        },
-        {
-          model: models.TrainerSchedules,
-          as: 'schedule',
-          include: [
-            {
-              model: models.Trainers,
-              as: 'trainer',
-              include: [{ model: models.Users, as: 'user', attributes: ['user_id', 'full_name'] }]
-            }
-          ]
-        }
-      ]
+        { model: models.Members, as: 'member', include: [{ model: models.Users, as: 'user' }] },
+        { model: models.Trainers, as: 'trainer', include: [{ model: models.Users, as: 'user' }] }
+      ],
+      transaction
     });
 
-    if (!appointment) {
+    if (!booking) {
+      await transaction.rollback();
       return res.status(404).json({ message: 'Không tìm thấy lịch hẹn!' });
     }
 
-    const nextStatus = action === 'accept' ? 'Cancelled' : 'Confirmed';
-    await appointment.update({ status: nextStatus });
-
-    // Update schedule status
-    if (appointment.schedule_id) {
-      const nextAvailability = action === 'accept' ? 'Available' : 'Busy';
-      await models.TrainerSchedules.update(
-        { availability_status: nextAvailability },
-        { where: { schedule_id: appointment.schedule_id } }
-      );
+    if (booking.status !== 'CancelPending' || booking.cancel_requested_by !== 'MEMBER') {
+      await transaction.rollback();
+      return res.status(400).json({ message: 'Lịch hẹn không có yêu cầu hủy từ học viên!' });
     }
 
-    // Auto mark the Trainer's cancellation request notification as read
-    try {
-      const trainerUserId = appointment.schedule?.trainer?.user?.user_id;
-      const dateFormatted = appointment.schedule?.working_date ? toDateStr(appointment.schedule.working_date) : 'N/A';
-      const startTimeFormatted = appointment.schedule?.start_time ? toTimeStr(appointment.schedule.start_time, '07:00') : 'N/A';
-
-      if (trainerUserId) {
-        const ptNotification = await models.Notifications.findOne({
-          where: {
-            user_id: trainerUserId,
-            notification_type: 'appointment_cancel_request',
-            is_read: false,
-            content: {
-              [require('sequelize').Op.like]: `%ngày ${dateFormatted}%`
-            }
-          }
-        });
-
-        if (ptNotification) {
-          await ptNotification.update({ is_read: true });
-          
-          const notificationEmitter = require('../utils/notificationEmitter');
-          notificationEmitter.emit('notification_created', {
-            user_id: trainerUserId,
-            notification: {
-              notification_id: ptNotification.notification_id,
-              user_id: trainerUserId,
-              title: ptNotification.title,
-              content: ptNotification.content,
-              notification_type: ptNotification.notification_type,
-              is_read: true,
-              created_at: ptNotification.created_at || new Date()
-            }
-          });
-        }
+    if (action === 'accept') {
+      booking.status = 'Cancelled';
+      
+      const trainerPackage = await models.MemberTrainerPackages.findOne({
+        where: { member_id: booking.member_id, trainer_id: booking.trainer_id, is_active: true },
+        transaction
+      });
+      if (trainerPackage && trainerPackage.used_sessions > 0) {
+        trainerPackage.used_sessions -= 1;
+        await trainerPackage.save({ transaction });
       }
-    } catch (ptNotifErr) {
-      console.error('❌ Error marking trainer notif read:', ptNotifErr);
+    } else {
+      booking.status = 'Approved';
     }
 
-    // Notify Member
-    try {
-      const memberUserId = appointment.member?.user?.user_id;
-      if (memberUserId) {
-        const ptName = appointment.schedule?.trainer?.user?.full_name || 'Huấn luyện viên';
-        const dateFormatted = appointment.schedule?.working_date ? toDateStr(appointment.schedule.working_date) : 'N/A';
-        const startTimeFormatted = appointment.schedule?.start_time ? toTimeStr(appointment.schedule.start_time, '07:00') : 'N/A';
+    booking.cancel_reason = null;
+    booking.cancel_requested_at = null;
+    booking.cancel_requested_by = null;
+    await booking.save({ transaction });
 
-        const titleStr = action === 'accept' ? 'Yêu cầu hủy lịch đã được chấp nhận' : 'Yêu cầu hủy lịch bị từ chối';
-        const contentStr = action === 'accept'
-          ? `HLV ${ptName} đã đồng ý hủy lịch dạy ngày ${dateFormatted} lúc ${startTimeFormatted}.`
-          : `HLV ${ptName} đã từ chối yêu cầu hủy lịch dạy ngày ${dateFormatted} lúc ${startTimeFormatted}.`;
+    await transaction.commit();
 
-        const notification = await models.Notifications.create({
-          user_id: memberUserId,
-          title: titleStr,
-          content: contentStr,
-          notification_type: action === 'accept' ? 'appointment_cancel_accepted' : 'appointment_cancel_rejected',
-          is_read: false
-        });
+    if (booking.member && booking.member.user) {
+      const trainerName = booking.trainer?.user?.full_name || 'HLV';
+      const statusStr = action === 'accept' ? 'đồng ý' : 'từ chối';
+      const newNotif = await models.Notifications.create({
+        user_id: booking.member.user_id,
+        title: 'Kết quả yêu cầu hủy lịch tập',
+        content: `HLV ${trainerName} đã ${statusStr} yêu cầu hủy lịch tập ca ${booking.shift_code} ngày ${booking.session_date} của bạn.`,
+        notification_type: action === 'accept' ? 'BOOKING_CANCEL_ACCEPTED' : 'BOOKING_CANCEL_REJECTED'
+      });
 
-        const notificationEmitter = require('../utils/notificationEmitter');
-        notificationEmitter.emit('notification_created', {
-          user_id: memberUserId,
-          notification: {
-            notification_id: notification.notification_id,
-            user_id: memberUserId,
-            title: notification.title,
-            content: notification.content,
-            notification_type: notification.notification_type,
-            is_read: false,
-            created_at: notification.created_at || new Date()
-          }
-        });
-      }
-    } catch (notifErr) {
-      console.error('❌ Error sending member cancellation response notification:', notifErr);
+      broadcastSSE({
+        type: action === 'accept' ? 'BOOKING_CANCEL_ACCEPTED' : 'BOOKING_CANCEL_REJECTED',
+        userId: booking.member.user_id,
+        message: `HLV ${trainerName} đã ${statusStr} yêu cầu hủy lịch tập của bạn.`,
+        notification: newNotif
+      });
     }
 
-    return res.status(200).json({ 
-      message: action === 'accept' 
-        ? 'Đã đồng ý hủy lịch hẹn!' 
-        : 'Đã từ chối hủy lịch hẹn!' 
+    broadcastSSE({
+      type: 'SCHEDULE_SLOT_UPDATED',
+      trainerId: booking.trainer_id,
+      sessionDate: booking.session_date,
+      shiftCode: booking.shift_code,
+      status: action === 'accept' ? 'Free' : 'Approved'
     });
-  } catch (error) {
-    console.error('❌ Error responding to cancel appointment:', error);
-    return res.status(500).json({ message: 'Lỗi server khi phản hồi yêu cầu hủy!' });
+
+    return res.status(200).json({ message: 'Đã phản hồi yêu cầu hủy thành công.' });
+  } catch (err) {
+    await transaction.rollback();
+    console.error('Error respondTrainerAppointmentCancel:', err);
+    return res.status(500).json({ message: 'Lỗi server khi phản hồi hủy lịch.' });
   }
 };
 
@@ -2215,219 +2141,552 @@ exports.requestTrainerAppointmentCancel = async (req, res) => {
     const { id } = req.params;
     const { reason } = req.body;
 
-    if (!reason || reason.trim() === '') {
-      return res.status(400).json({ message: 'Vui lòng cung cấp lý do hủy lịch dạy!' });
+    if (!reason) {
+      return res.status(400).json({ message: 'Vui lòng nhập lý do hủy lịch!' });
     }
 
-    const appointment = await models.Appointments.findOne({
-      where: { appointment_id: id },
+    const booking = await models.PtBookings.findOne({
+      where: { booking_id: id },
       include: [
-        {
-          model: models.Members,
-          as: 'member',
-          include: [{ model: models.Users, as: 'user', attributes: ['user_id', 'full_name'] }]
-        },
-        {
-          model: models.TrainerSchedules,
-          as: 'schedule',
-          include: [
-            {
-              model: models.Trainers,
-              as: 'trainer',
-              include: [{ model: models.Users, as: 'user', attributes: ['user_id', 'full_name'] }]
-            }
-          ]
-        }
+        { model: models.Members, as: 'member', include: [{ model: models.Users, as: 'user' }] },
+        { model: models.Trainers, as: 'trainer', include: [{ model: models.Users, as: 'user' }] }
       ]
     });
 
-    if (!appointment) {
-      return res.status(404).json({ message: 'Không tìm thấy lịch dạy!' });
+    if (!booking) {
+      return res.status(404).json({ message: 'Không tìm thấy lịch hẹn!' });
     }
 
-    // Update status, reason, request time, and requested by
-    await appointment.update({
-      status: 'CancelPending',
-      cancel_reason: reason,
-      cancel_requested_at: require('sequelize').fn('getdate'),
-      cancel_requested_by: 'TRAINER'
-    });
-
-    // Notify the Member
-    try {
-      const memberUserId = appointment.member?.user?.user_id;
-      if (memberUserId) {
-        const ptName = appointment.schedule?.trainer?.user?.full_name || 'HLV';
-        const dateFormatted = appointment.schedule?.working_date ? toDateStr(appointment.schedule.working_date) : 'N/A';
-        const startTimeFormatted = appointment.schedule?.start_time ? toTimeStr(appointment.schedule.start_time, '07:00') : 'N/A';
-        const endTimeFormatted = appointment.schedule?.end_time ? toTimeStr(appointment.schedule.end_time, '08:30') : 'N/A';
-        
-        const titleStr = 'Huấn luyện viên yêu cầu hủy lịch dạy';
-        const contentStr = `HLV ${ptName} gửi yêu cầu hủy lịch dạy lúc ${startTimeFormatted} - ${endTimeFormatted} ngày ${dateFormatted}. Lý do: ${reason}`;
-
-        const notification = await models.Notifications.create({
-          user_id: memberUserId,
-          title: titleStr,
-          content: contentStr,
-          notification_type: 'appointment_cancel_request_pt',
-          is_read: false
-        });
-
-        // Push real-time SSE notification
-        const notificationEmitter = require('../utils/notificationEmitter');
-        notificationEmitter.emit('notification_created', {
-          user_id: memberUserId,
-          notification: {
-            notification_id: notification.notification_id,
-            user_id: memberUserId,
-            title: notification.title,
-            content: notification.content,
-            notification_type: notification.notification_type,
-            is_read: false,
-            created_at: notification.created_at || new Date()
-          }
-        });
-      }
-    } catch (notifErr) {
-      console.error('❌ Error creating PT cancel request notification:', notifErr);
+    if (booking.status !== 'Approved') {
+      return res.status(400).json({ message: 'Chỉ có thể yêu cầu hủy lịch tập đã xác nhận!' });
     }
 
-    return res.status(200).json({ message: 'Đã gửi yêu cầu hủy lịch dạy. Đang chờ học viên duyệt!' });
-  } catch (error) {
-    console.error('❌ Error PT requesting cancel appointment:', error);
-    return res.status(500).json({ message: 'Lỗi server khi gửi yêu cầu hủy lịch!' });
+    booking.status = 'CancelPending';
+    booking.cancel_reason = reason;
+    booking.cancel_requested_at = sequelize.fn('getdate');
+    booking.cancel_requested_by = 'TRAINER';
+    await booking.save();
+
+    if (booking.member && booking.member.user) {
+      const trainerName = booking.trainer?.user?.full_name || 'HLV';
+      const newNotif = await models.Notifications.create({
+        user_id: booking.member.user_id,
+        title: 'HLV xin hủy lịch tập',
+        content: `HLV ${trainerName} đã gửi yêu cầu hủy lịch tập ca ${booking.shift_code} ngày ${booking.session_date}. Lý do: ${reason}`,
+        notification_type: 'BOOKING_CANCEL_REQUESTED',
+        is_read: false
+      });
+
+      broadcastSSE({
+        type: 'BOOKING_CANCEL_REQUESTED',
+        userId: booking.member.user_id,
+        message: `HLV ${trainerName} gửi yêu cầu hủy lịch tập của bạn.`,
+        notification: newNotif
+      });
+    }
+
+    return res.status(200).json({ message: 'Đã gửi yêu cầu hủy lên học viên chờ duyệt!' });
+  } catch (err) {
+    console.error('Error requestTrainerAppointmentCancel:', err);
+    return res.status(500).json({ message: 'Lỗi server.' });
   }
 };
 
 // PUT /api/dashboard/member/appointments/:id/cancel-respond
 exports.respondMemberAppointmentCancel = async (req, res) => {
+  const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { action } = req.body; // 'accept' or 'reject'
+    const { action } = req.body; 
 
-    const appointment = await models.Appointments.findOne({
-      where: { appointment_id: id },
+    const booking = await models.PtBookings.findOne({
+      where: { booking_id: id },
       include: [
-        {
-          model: models.Members,
-          as: 'member',
-          include: [{ model: models.Users, as: 'user', attributes: ['user_id', 'full_name'] }]
-        },
-        {
-          model: models.TrainerSchedules,
-          as: 'schedule',
-          include: [
-            {
-              model: models.Trainers,
-              as: 'trainer',
-              include: [{ model: models.Users, as: 'user', attributes: ['user_id', 'full_name'] }]
-            }
-          ]
-        }
-      ]
+        { model: models.Members, as: 'member', include: [{ model: models.Users, as: 'user' }] },
+        { model: models.Trainers, as: 'trainer', include: [{ model: models.Users, as: 'user' }] }
+      ],
+      transaction
     });
 
-    if (!appointment) {
+    if (!booking) {
+      await transaction.rollback();
       return res.status(404).json({ message: 'Không tìm thấy lịch hẹn!' });
     }
 
-    const nextStatus = action === 'accept' ? 'Cancelled' : 'Confirmed';
-    await appointment.update({ status: nextStatus });
-
-    // Update schedule status
-    if (appointment.schedule_id) {
-      const nextAvailability = action === 'accept' ? 'Available' : 'Busy';
-      await models.TrainerSchedules.update(
-        { availability_status: nextAvailability },
-        { where: { schedule_id: appointment.schedule_id } }
-      );
+    if (booking.status !== 'CancelPending' || booking.cancel_requested_by !== 'TRAINER') {
+      await transaction.rollback();
+      return res.status(400).json({ message: 'Không có yêu cầu hủy từ HLV!' });
     }
 
-    // Auto mark the Member's cancellation request notification as read
-    try {
-      const memberUserId = appointment.member?.user?.user_id;
-      const dateFormatted = appointment.schedule?.working_date ? toDateStr(appointment.schedule.working_date) : 'N/A';
+    if (action === 'accept') {
+      booking.status = 'Cancelled';
 
-      if (memberUserId) {
-        const memberNotification = await models.Notifications.findOne({
-          where: {
-            user_id: memberUserId,
-            notification_type: 'appointment_cancel_request_pt',
-            is_read: false,
-            content: {
-              [require('sequelize').Op.like]: `%ngày ${dateFormatted}%`
-            }
-          }
-        });
-
-        if (memberNotification) {
-          await memberNotification.update({ is_read: true });
-          
-          const notificationEmitter = require('../utils/notificationEmitter');
-          notificationEmitter.emit('notification_created', {
-            user_id: memberUserId,
-            notification: {
-              notification_id: memberNotification.notification_id,
-              user_id: memberUserId,
-              title: memberNotification.title,
-              content: memberNotification.content,
-              notification_type: memberNotification.notification_type,
-              is_read: true,
-              created_at: memberNotification.created_at || new Date()
-            }
-          });
-        }
+      const trainerPackage = await models.MemberTrainerPackages.findOne({
+        where: { member_id: booking.member_id, trainer_id: booking.trainer_id, is_active: true },
+        transaction
+      });
+      if (trainerPackage && trainerPackage.used_sessions > 0) {
+        trainerPackage.used_sessions -= 1;
+        await trainerPackage.save({ transaction });
       }
-    } catch (memberNotifErr) {
-      console.error('❌ Error marking member notif read:', memberNotifErr);
+    } else {
+      booking.status = 'Approved';
     }
 
-    // Notify Trainer
-    try {
-      const trainerUserId = appointment.schedule?.trainer?.user?.user_id;
-      if (trainerUserId) {
-        const memberName = appointment.member?.user?.full_name || 'Hội viên';
-        const dateFormatted = appointment.schedule?.working_date ? toDateStr(appointment.schedule.working_date) : 'N/A';
-        const startTimeFormatted = appointment.schedule?.start_time ? toTimeStr(appointment.schedule.start_time, '07:00') : 'N/A';
+    booking.cancel_reason = null;
+    booking.cancel_requested_at = null;
+    booking.cancel_requested_by = null;
+    await booking.save({ transaction });
 
-        const titleStr = action === 'accept' ? 'Yêu cầu hủy lịch dạy đã được đồng ý' : 'Yêu cầu hủy lịch dạy bị từ chối';
-        const contentStr = action === 'accept'
-          ? `Học viên ${memberName} đã đồng ý hủy lịch dạy ngày ${dateFormatted} lúc ${startTimeFormatted}.`
-          : `Học viên ${memberName} đã từ chối yêu cầu hủy lịch dạy ngày ${dateFormatted} lúc ${startTimeFormatted}.`;
+    await transaction.commit();
 
-        const notification = await models.Notifications.create({
-          user_id: trainerUserId,
-          title: titleStr,
-          content: contentStr,
-          notification_type: action === 'accept' ? 'appointment_cancel_accepted_member' : 'appointment_cancel_rejected_member',
-          is_read: false
-        });
+    if (booking.trainer && booking.trainer.user) {
+      const memberName = booking.member?.user?.full_name || 'Hội viên';
+      const statusStr = action === 'accept' ? 'đồng ý' : 'từ chối';
+      const newNotif = await models.Notifications.create({
+        user_id: booking.trainer.user_id,
+        title: 'Học viên phản hồi yêu cầu hủy',
+        content: `Học viên ${memberName} đã ${statusStr} yêu cầu hủy lịch ca ${booking.shift_code} ngày ${booking.session_date} của bạn.`,
+        notification_type: action === 'accept' ? 'BOOKING_CANCEL_ACCEPTED' : 'BOOKING_CANCEL_REJECTED'
+      });
 
-        const notificationEmitter = require('../utils/notificationEmitter');
-        notificationEmitter.emit('notification_created', {
-          user_id: trainerUserId,
-          notification: {
-            notification_id: notification.notification_id,
-            user_id: trainerUserId,
-            title: notification.title,
-            content: notification.content,
-            notification_type: notification.notification_type,
-            is_read: false,
-            created_at: notification.created_at || new Date()
-          }
-        });
-      }
-    } catch (notifErr) {
-      console.error('❌ Error sending trainer cancellation response notification:', notifErr);
+      broadcastSSE({
+        type: action === 'accept' ? 'BOOKING_CANCEL_ACCEPTED' : 'BOOKING_CANCEL_REJECTED',
+        userId: booking.trainer.user_id,
+        message: `Học viên ${memberName} đã ${statusStr} yêu cầu hủy lịch của bạn.`,
+        notification: newNotif
+      });
     }
 
-    return res.status(200).json({ 
-      message: action === 'accept' 
-        ? 'Đã đồng ý hủy lịch hẹn!' 
-        : 'Đã từ chối hủy lịch hẹn!' 
+    broadcastSSE({
+      type: 'SCHEDULE_SLOT_UPDATED',
+      trainerId: booking.trainer_id,
+      sessionDate: booking.session_date,
+      shiftCode: booking.shift_code,
+      status: action === 'accept' ? 'Free' : 'Approved'
     });
-  } catch (error) {
-    console.error('❌ Error responding to cancel appointment:', error);
-    return res.status(500).json({ message: 'Lỗi server khi phản hồi yêu cầu hủy!' });
+
+    return res.status(200).json({ message: 'Đã phản hồi yêu cầu hủy lịch tập của HLV.' });
+  } catch (err) {
+    await transaction.rollback();
+    console.error('Error respondMemberAppointmentCancel:', err);
+    return res.status(500).json({ message: 'Lỗi server.' });
   }
 };
+
+// =========================================================
+// REAL-TIME NOTIFICATIONS (SSE) & OFF-REQUESTS LOGIC
+// =========================================================
+
+const sseClients = [];
+
+function broadcastSSE(data) {
+  sseClients.forEach(client => {
+    try {
+      // If a specific userId is targetted, only broadcast to that user
+      if (data.userId && Number(client.user.userId) !== Number(data.userId)) {
+        return;
+      }
+      client.res.write(`data: ${JSON.stringify(data)}\n\n`);
+    } catch (e) {
+      console.error('Error broadcasting to client', e);
+    }
+  });
+}
+
+exports.broadcastSSE = broadcastSSE;
+
+exports.sseNotificationsStream = (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const clientId = Date.now() + Math.random().toString();
+  const client = { id: clientId, res, user: req.user };
+  sseClients.push(client);
+
+  req.on('close', () => {
+    const index = sseClients.findIndex(c => c.id === clientId);
+    if (index !== -1) sseClients.splice(index, 1);
+  });
+};
+
+// PT Request Time Off
+exports.createOffRequest = async (req, res) => {
+  try {
+    const trainerUser = await models.Trainers.findOne({ where: { user_id: req.user.userId } });
+    if (!trainerUser) return res.status(403).json({ message: 'Chỉ PT mới có thể đặt lịch nghỉ!' });
+
+    const { scheduleId } = req.body;
+    const schedule = await models.TrainerSchedules.findOne({ where: { schedule_id: scheduleId, trainer_id: trainerUser.trainer_id } });
+    
+    if (!schedule) return res.status(404).json({ message: 'Không tìm thấy ca làm việc này.' });
+    if (schedule.availability_status !== 'Available') return res.status(400).json({ message: 'Ca làm việc không ở trạng thái trống.' });
+
+    // Validate current month
+    const currentDate = new Date();
+    const workingDate = new Date(schedule.working_date);
+    if (workingDate.getMonth() !== currentDate.getMonth() || workingDate.getFullYear() !== currentDate.getFullYear()) {
+      return res.status(400).json({ message: 'Chỉ được xin nghỉ phép trong tháng hiện tại.' });
+    }
+
+    // Validate max 4 off requests in current month
+    const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+    const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+
+    const offCount = await models.TrainerSchedules.count({
+      where: {
+        trainer_id: trainerUser.trainer_id,
+        availability_status: { [require('sequelize').Op.in]: ['Pending_Off', 'Off'] },
+        working_date: { [require('sequelize').Op.between]: [firstDay, lastDay] }
+      }
+    });
+
+    if (offCount >= 4) {
+      return res.status(400).json({ message: 'Bạn đã đạt giới hạn tối đa 4 buổi nghỉ trong tháng này.' });
+    }
+
+    schedule.availability_status = 'Pending_Off';
+    await schedule.save();
+
+    // Create Notification for Admin
+    const admins = await models.Users.findAll({ where: { role: 'Admin' } });
+    for (const admin of admins) {
+      const newNotif = await models.Notifications.create({
+        user_id: admin.user_id,
+        title: 'Yêu cầu nghỉ phép mới',
+        content: `PT ${req.user.fullName || 'Unknown'} vừa gửi yêu cầu nghỉ phép ngày ${date}`,
+        notification_type: 'OFF_REQUEST_CREATED'
+      });
+      // Emit to Admin via SSE
+      notificationEmitter.emit('notification_created', {
+        user_id: admin.user_id,
+        notification: newNotif
+      });
+    }
+
+    broadcastSSE({ type: 'NEW_OFF_REQUEST', message: `PT ${req.user.fullName || 'Unknown'} vừa xin nghỉ ngày ${schedule.working_date}` });
+
+    return res.status(200).json({ message: 'Gửi yêu cầu xin nghỉ phép thành công!' });
+  } catch (error) {
+    console.error('Error creating off request:', error);
+    return res.status(500).json({ message: 'Lỗi server khi xin nghỉ phép.' });
+  }
+};
+
+// Admin Get Off Requests
+exports.getAdminOffRequests = async (req, res) => {
+  try {
+    const requests = await models.PtOffRequests.findAll({
+      where: { status: 'Pending' },
+      include: [{
+        model: models.Trainers,
+        as: 'trainer',
+        include: [{ model: models.Users, as: 'user', attributes: ['full_name'] }]
+      }],
+      order: [['created_at', 'ASC']]
+    });
+
+    const mapped = requests.map(r => ({
+      requestId: r.request_id,
+      trainerName: r.trainer?.user?.full_name || 'Unknown',
+      specialization: r.trainer?.specialization || 'N/A',
+      date: r.off_date,
+      createdAt: r.created_at
+    }));
+
+    return res.status(200).json({ requests: mapped });
+  } catch (error) {
+    console.error('Error fetching off requests:', error);
+    return res.status(500).json({ message: 'Lỗi server khi tải danh sách yêu cầu nghỉ phép.' });
+  }
+};
+
+// Admin Approve Off Request
+exports.approveOffRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const request = await models.PtOffRequests.findByPk(id, { include: [{ model: models.Trainers, as: 'trainer' }] });
+    if (!request || request.status !== 'Pending') return res.status(404).json({ message: 'Không tìm thấy yêu cầu hợp lệ.' });
+
+    // Check if there are any Approved Bookings on that date for the PT
+    const hasApprovedBooking = await models.PtBookings.findOne({
+      where: {
+        trainer_id: request.trainer_id,
+        session_date: request.off_date,
+        status: 'Approved'
+      }
+    });
+
+    if (hasApprovedBooking) {
+      return res.status(400).json({ message: 'Không thể duyệt nghỉ vì ngày này đã có lịch dạy đã xác nhận với học viên.' });
+    }
+
+    request.status = 'Approved';
+    await request.save();
+
+    // Cập nhật TrainerSchedules: Chuyển Pending_Off -> Off
+    await models.TrainerSchedules.update(
+      { availability_status: 'Off' },
+      { where: { trainer_id: request.trainer_id, working_date: request.off_date, availability_status: 'Pending_Off' } }
+    );
+
+    const newNotif = await models.Notifications.create({
+      user_id: request.trainer.user_id,
+      title: 'Yêu cầu nghỉ phép được duyệt',
+      content: `Yêu cầu nghỉ phép ngày ${request.off_date} của bạn đã được duyệt.`,
+      notification_type: 'OFF_REQUEST_APPROVED'
+    });
+    notificationEmitter.emit('notification_created', {
+      user_id: request.trainer.user_id,
+      notification: newNotif
+    });
+
+    broadcastSSE({ type: 'OFF_REQUEST_APPROVED', userId: request.trainer.user_id, message: `Yêu cầu nghỉ ngày ${request.off_date} đã được duyệt.` });
+
+    return res.status(200).json({ message: 'Duyệt yêu cầu thành công.' });
+  } catch (error) {
+    console.error('Error approving off request:', error);
+    return res.status(500).json({ message: 'Lỗi server.' });
+  }
+};
+
+// Admin Reject Off Request
+exports.rejectOffRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const request = await models.PtOffRequests.findByPk(id, { include: [{ model: models.Trainers, as: 'trainer' }] });
+    if (!request || request.status !== 'Pending') return res.status(404).json({ message: 'Không tìm thấy yêu cầu hợp lệ.' });
+
+    request.status = 'Rejected';
+    request.reject_reason = reason || 'Không có lý do';
+    await request.save();
+
+    // Xóa dummy schedule Pending_Off
+    await models.TrainerSchedules.destroy(
+      { where: { trainer_id: request.trainer_id, working_date: request.off_date, availability_status: 'Pending_Off' } }
+    );
+
+    const newNotif = await models.Notifications.create({
+      user_id: request.trainer.user_id,
+      title: 'Yêu cầu nghỉ phép bị từ chối',
+      content: `Yêu cầu nghỉ phép ngày ${request.off_date} của bạn bị từ chối. Lý do: ${request.reject_reason}`,
+      notification_type: 'OFF_REQUEST_REJECTED'
+    });
+    notificationEmitter.emit('notification_created', {
+      user_id: request.trainer.user_id,
+      notification: newNotif
+    });
+
+    broadcastSSE({ type: 'OFF_REQUEST_REJECTED', userId: request.trainer.user_id, message: `Yêu cầu nghỉ ngày ${request.off_date} bị từ chối.` });
+
+    return res.status(200).json({ message: 'Đã từ chối yêu cầu nghỉ phép.' });
+  } catch (error) {
+    console.error('Error rejecting off request:', error);
+    return res.status(500).json({ message: 'Lỗi server.' });
+  }
+};
+
+// Admin Get Approved Offs
+exports.getAdminApprovedOffs = async (req, res) => {
+  try {
+    const requests = await models.PtOffRequests.findAll({
+      where: { status: 'Approved' },
+      include: [{
+        model: models.Trainers,
+        as: 'trainer',
+        include: [{ model: models.Users, as: 'user', attributes: ['full_name'] }]
+      }],
+      order: [['off_date', 'DESC']]
+    });
+
+    const approvedOffs = requests.map(r => ({
+      requestId: r.request_id,
+      trainerName: r.trainer?.user?.full_name || 'Unknown',
+      specialization: r.trainer?.specialization || 'N/A',
+      date: r.off_date
+    }));
+
+    return res.status(200).json({ approvedOffs });
+  } catch (error) {
+    console.error('Error fetching approved offs:', error);
+    return res.status(500).json({ message: 'Lỗi server khi tải lịch nghỉ.' });
+  }
+};
+
+const { validateOffRequest } = require('../services/offRequestValidator');
+
+// PT Get Quota
+exports.getOffRequestQuota = async (req, res) => {
+    try {
+        const trainerUser = await models.Trainers.findOne({ where: { user_id: req.user.userId } });
+        if (!trainerUser) return res.status(403).json({ message: 'Chỉ PT mới xem được.' });
+
+        const existingRequests = await models.PtOffRequests.findAll({
+            where: { trainer_id: trainerUser.trainer_id },
+            attributes: ['request_id', 'off_date', 'status', 'reject_reason', 'created_at']
+        });
+
+        const today = new Date();
+        const currentMonth = today.getMonth();
+        const currentYear = today.getFullYear();
+        const lastDay = new Date(currentYear, currentMonth + 1, 0);
+
+        const firstDayStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+        const lastDayStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+
+        const validRequestsInMonth = existingRequests.filter(r => {
+            if (r.status !== 'Pending' && r.status !== 'Approved') return false;
+            return r.off_date >= firstDayStr && r.off_date <= lastDayStr;
+        });
+
+        const usedCount = validRequestsInMonth.length;
+        const remainingCount = Math.max(0, 4 - usedCount);
+        
+        return res.status(200).json({
+            used: usedCount,
+            remaining: remainingCount,
+            limit: 4,
+            requests: existingRequests
+        });
+    } catch (error) {
+        console.error('Error fetching off requests quota:', error);
+        return res.status(500).json({ message: 'Lỗi server.' });
+    }
+}
+
+// PT Get History
+exports.getTrainerOffRequests = async (req, res) => {
+    try {
+        const trainerUser = await models.Trainers.findOne({ where: { user_id: req.user.userId } });
+        if (!trainerUser) return res.status(403).json({ message: 'Chỉ PT mới xem được.' });
+
+        const requests = await models.PtOffRequests.findAll({
+            where: { trainer_id: trainerUser.trainer_id },
+            order: [['created_at', 'DESC']]
+        });
+        
+        return res.status(200).json({ requests });
+    } catch (error) {
+        console.error('Error fetching off requests history:', error);
+        return res.status(500).json({ message: 'Lỗi server.' });
+    }
+}
+
+// PT Request Time Off
+exports.createOffRequestByDay = async (req, res) => {
+  try {
+    const trainerUser = await models.Trainers.findOne({ where: { user_id: req.user.userId } });
+    if (!trainerUser) return res.status(403).json({ message: 'Chỉ PT mới có thể đặt lịch nghỉ!' });
+
+    let { dates } = req.body;
+    if (req.body.date) {
+      dates = [req.body.date]; // Fallback for old clients
+    }
+    if (!dates || !Array.isArray(dates) || dates.length === 0) {
+      return res.status(400).json({ message: 'Thiếu ngày xin nghỉ.' });
+    }
+
+    const existingRequests = await models.PtOffRequests.findAll({
+        where: { trainer_id: trainerUser.trainer_id },
+        attributes: ['off_date', 'status']
+    });
+
+    const approvedBookings = await models.PtBookings.findAll({
+      where: {
+        trainer_id: trainerUser.trainer_id,
+        session_date: { [require('sequelize').Op.in]: dates },
+        status: 'Approved'
+      },
+      attributes: ['session_date']
+    });
+
+    // Validate using the new rule service
+    const validationResult = validateOffRequest(dates, existingRequests, new Date(), approvedBookings);
+    if (!validationResult.valid) {
+        return res.status(400).json({ message: validationResult.reason });
+    }
+
+    const t = await sequelize.transaction();
+    try {
+        for (const dateStr of dates) {
+            await models.PtOffRequests.create({
+                trainer_id: trainerUser.trainer_id,
+                off_date: dateStr,
+                status: 'Pending'
+            }, { transaction: t });
+
+            // Lock the date by inserting a dummy schedule so members can't book
+            await models.TrainerSchedules.create({
+                trainer_id: trainerUser.trainer_id,
+                working_date: dateStr,
+                start_time: '00:00:00',
+                end_time: '23:59:59',
+                availability_status: 'Pending_Off'
+            }, { transaction: t });
+        }
+        await t.commit();
+    } catch (err) {
+        await t.rollback();
+        throw err;
+    }
+
+    const userRow = await models.Users.findOne({ where: { user_id: req.user.userId } });
+    const ptName = userRow && userRow.full_name ? userRow.full_name : 'Unknown';
+
+    const admins = await models.Users.findAll({ where: { role_id: 3 } });
+    for (const admin of admins) {
+      const newNotif = await models.Notifications.create({
+        user_id: admin.user_id,
+        title: 'Yêu cầu nghỉ phép mới',
+        content: `PT ${ptName} vừa gửi yêu cầu nghỉ phép cho ${dates.length} ngày.`,
+        notification_type: 'OFF_REQUEST_CREATED'
+      });
+      notificationEmitter.emit('notification_created', {
+        user_id: admin.user_id,
+        notification: newNotif
+      });
+    }
+
+    broadcastSSE({ type: 'NEW_OFF_REQUEST', message: `PT ${ptName} vừa xin nghỉ ${dates.length} ngày` });
+
+    return res.status(200).json({ message: 'Gửi yêu cầu xin nghỉ phép thành công!' });
+  } catch (error) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
+       return res.status(400).json({ message: 'Đã có ngày xin nghỉ bị trùng lặp.' });
+    }
+    console.error('Error creating off request:', error);
+    return res.status(500).json({ message: 'Lỗi server khi xin nghỉ phép.' });
+  }
+};
+
+// PT Cancel Request
+exports.cancelOffRequest = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const trainerUser = await models.Trainers.findOne({ where: { user_id: req.user.userId } });
+        if (!trainerUser) return res.status(403).json({ message: 'Chỉ PT mới xem được.' });
+
+        const request = await models.PtOffRequests.findOne({ where: { request_id: id, trainer_id: trainerUser.trainer_id } });
+        if (!request) return res.status(404).json({ message: 'Không tìm thấy yêu cầu.' });
+        if (request.status !== 'Pending') return res.status(400).json({ message: 'Chỉ có thể hủy yêu cầu đang chờ duyệt.' });
+
+        request.status = 'Cancelled';
+        await request.save();
+
+        // Unlock
+        await models.TrainerSchedules.destroy(
+            { where: { trainer_id: request.trainer_id, working_date: request.off_date, availability_status: 'Pending_Off' } }
+        );
+
+        // Notify Admin to reload
+        broadcastSSE({ type: 'OFF_REQUEST_CANCELLED', message: `Yêu cầu xin nghỉ ngày ${request.off_date} đã bị PT hủy.` });
+
+        return res.status(200).json({ message: 'Hủy yêu cầu thành công.' });
+    } catch (error) {
+        console.error('Error cancelling off request:', error);
+        return res.status(500).json({ message: 'Lỗi server.' });
+    }
+}

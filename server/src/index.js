@@ -211,6 +211,10 @@ app.use('/api/checkout', checkoutRoutes);
 const dashboardRoutes = require('./routes/dashboardRoutes');
 app.use('/api/dashboard', dashboardRoutes);
 
+// Mount booking routes
+const bookingRoutes = require('./routes/bookingRoutes');
+app.use('/api/bookings', bookingRoutes);
+
 // Mount workout routes
 const workoutRoutes = require('./routes/workoutRoutes');
 app.use('/api/workout-plans', workoutRoutes);

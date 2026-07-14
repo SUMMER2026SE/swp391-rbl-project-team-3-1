@@ -52,4 +52,18 @@ router.put('/member/appointments/:id/cancel', dashboardController.requestMemberA
 router.put('/member/appointments/:id/cancel-respond', dashboardController.respondMemberAppointmentCancel);
 router.get('/member/my-trainers', dashboardController.getMemberTrainers);
 
+
+// --- SSE & OFF-REQUEST ROUTES ---
+router.get('/notifications/stream', dashboardController.sseNotificationsStream);
+router.get('/admin/off-requests', dashboardController.getAdminOffRequests);
+router.get('/admin/approved-offs', dashboardController.getAdminApprovedOffs);
+router.put('/admin/off-requests/:id/approve', dashboardController.approveOffRequest);
+router.put('/admin/off-requests/:id/reject', dashboardController.rejectOffRequest);
+
+router.get('/trainer/off-requests/quota', dashboardController.getOffRequestQuota);
+router.get('/trainer/off-requests', dashboardController.getTrainerOffRequests);
+router.post('/trainer/off-requests', dashboardController.createOffRequestByDay);
+router.delete('/trainer/off-requests/:id', dashboardController.cancelOffRequest);
+
+
 module.exports = router;

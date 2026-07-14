@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import './TrainerDashboard.css';
+import { SHIFT_DEFINITIONS } from '../../../constants/shifts';
+
+const SHIFT_MAP = {
+  'CA1': '05:00 - 06:30',
+  'CA2': '07:00 - 08:30',
+  'CA3': '09:00 - 10:30',
+  'CA4': '11:00 - 12:30',
+  'CA5': '14:00 - 15:30',
+  'CA6': '16:00 - 17:30',
+  'CA7': '18:00 - 19:30',
+};
 
 // Helper to format Date to YYYY-MM-DD
 const getTodayDateString = (dateObj) => {
@@ -81,6 +92,10 @@ function TrainerDashboard({
   // Booking requests pending PT confirmation
   const [bookingRequests, setBookingRequests] = useState([]);
   const [cancelRequests, setCancelRequests] = useState([]);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [offQuota, setOffQuota] = useState({ used: 0, remaining: 4, limit: 4 });
+  const [myOffRequests, setMyOffRequests] = useState([]);
+  const [selectedOffDate, setSelectedOffDate] = useState('');
   const [selectedCancelRequest, setSelectedCancelRequest] = useState(null);
   const [isCancelRespondLoading, setIsCancelRespondLoading] = useState(false);
   const [trainerCancelModalOpen, setTrainerCancelModalOpen] = useState(false);
@@ -170,6 +185,13 @@ function TrainerDashboard({
           return [newNotif, ...prev];
         });
 
+        // Realtime auto-refresh on booking/schedule events
+        if (['NEW_OFF_REQUEST', 'OFF_REQUEST_CREATED', 'OFF_REQUEST_APPROVED', 'OFF_REQUEST_REJECTED', 'OFF_REQUEST_CANCELLED', 'BOOKING_CREATED', 'BOOKING_APPROVED', 'BOOKING_REJECTED', 'BOOKING_CANCELLED', 'SCHEDULE_SLOT_UPDATED'].includes(data.type || newNotif.type)) {
+          reloadTrainerDashboardData();
+          fetchBusySchedules();
+          setRefreshTrigger(prev => prev + 1);
+        }
+
       } catch (err) {
         console.error('[SSE PT] Error processing stream message:', err);
       }
@@ -216,15 +238,14 @@ function TrainerDashboard({
   const [busyWeekStart, setBusyWeekStart] = useState(new Date());
 
   const TIME_SLOTS = [
-    { start: '05:00:00', end: '06:30:00', label: '05:00 - 06:30' },
-    { start: '07:00:00', end: '08:30:00', label: '07:00 - 08:30' },
-    { start: '09:00:00', end: '10:30:00', label: '09:00 - 10:30' },
-    { start: '11:00:00', end: '12:30:00', label: '11:00 - 12:30' },
-    { start: '14:00:00', end: '15:30:00', label: '14:00 - 15:30' },
-    { start: '16:00:00', end: '17:30:00', label: '16:00 - 17:30' },
-    { start: '18:00:00', end: '19:30:00', label: '18:00 - 19:30' },
-    { start: '20:00:00', end: '21:30:00', label: '20:00 - 21:30' },
-  ];
+  { shiftCode: 'CA1', start: '05:00:00', end: '06:30:00', label: '05:00 - 06:30' },
+  { shiftCode: 'CA2', start: '07:00:00', end: '08:30:00', label: '07:00 - 08:30' },
+  { shiftCode: 'CA3', start: '09:00:00', end: '10:30:00', label: '09:00 - 10:30' },
+  { shiftCode: 'CA4', start: '11:00:00', end: '12:30:00', label: '11:00 - 12:30' },
+  { shiftCode: 'CA5', start: '14:00:00', end: '15:30:00', label: '14:00 - 15:30' },
+  { shiftCode: 'CA6', start: '16:00:00', end: '17:30:00', label: '16:00 - 17:30' },
+  { shiftCode: 'CA7', start: '18:00:00', end: '19:30:00', label: '18:00 - 19:30' }
+];
 
   // Get progress tracking data from localStorage for a selected member
   const getMemberProgress = (member) => {
@@ -308,42 +329,43 @@ function TrainerDashboard({
       })
       .catch(err => console.error('Error fetching trainer members:', err));
 
-    fetch('/api/dashboard/trainer/appointments', {
+    fetch('/api/bookings/pt/pending', {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => res.json())
       .then(data => {
-        if (data && data.appointments) {
-          const pending = data.appointments
-            .filter(a => a.status === 'Pending')
-            .sort((a, b) => {
-              const dateA = a.date || '';
-              const dateB = b.date || '';
-              if (dateA !== dateB) return dateA.localeCompare(dateB);
-              return (a.startTime || '').localeCompare(b.startTime || '');
-            });
-          const cancelPending = data.appointments
-            .filter(a => a.status === 'CancelPending' && a.cancelRequestedBy === 'MEMBER')
-            .sort((a, b) => {
-              const dateA = a.date || '';
-              const dateB = b.date || '';
-              if (dateA !== dateB) return dateA.localeCompare(dateB);
-              return (a.startTime || '').localeCompare(b.startTime || '');
-            });
-          const scheduled = data.appointments
-            .filter(a => a.status === 'Scheduled' || a.status === 'Completed' || (a.status === 'CancelPending' && a.cancelRequestedBy === 'TRAINER'))
-            .sort((a, b) => {
-              const dateA = a.date || '';
-              const dateB = b.date || '';
-              if (dateA !== dateB) return dateA.localeCompare(dateB);
-              return (a.startTime || '').localeCompare(b.startTime || '');
-            });
-          setBookingRequests(pending);
-          setCancelRequests(cancelPending);
-          setScheduleList(scheduled);
+        if (data && data.bookings) {
+          const pendingMapped = data.bookings.map(b => ({
+            id: b.bookingId,
+            name: b.memberName,
+            time: SHIFT_MAP[b.shiftCode] || b.shiftCode,
+            shiftCode: b.shiftCode,
+            date: b.sessionDate,
+            note: b.note,
+            createdAt: b.createdAt
+          }));
+          setBookingRequests(pendingMapped);
         }
       })
-      .catch(err => console.error('Error fetching trainer appointments:', err));
+      .catch(err => console.error('Error fetching PT pending bookings:', err));
+
+    fetch('/api/dashboard/trainer/off-requests/quota', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          setOffQuota({
+            used: data.used || 0,
+            remaining: data.remaining !== undefined ? data.remaining : 4,
+            limit: data.limit || 4
+          });
+          if (data.requests) {
+            setMyOffRequests(data.requests);
+          }
+        }
+      })
+      .catch(err => console.error('Error fetching off quota:', err));
 
     fetch('/api/certifications', {
       headers: { Authorization: `Bearer ${token}` }
@@ -401,34 +423,53 @@ function TrainerDashboard({
 
   const fetchBusySchedules = () => {
     if (!token) return;
+
+    // Normalize busyWeekStart to Monday
     const start = new Date(busyWeekStart);
     const day = start.getDay();
     const diff = start.getDate() - day + (day === 0 ? -6 : 1);
     start.setDate(diff);
+
     const end = new Date(start);
     end.setDate(start.getDate() + 6);
 
     const startStr = getTodayDateString(start);
     const endStr = getTodayDateString(end);
 
-    fetch(`/api/dashboard/trainer/schedule?startDate=${startStr}&endDate=${endStr}`, {
+    fetch(`/api/bookings/trainer/me/schedule?from=${startStr}&to=${endStr}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => res.json())
       .then(data => {
-        if (data && data.schedules) {
-          setBusySchedules(data.schedules);
-          setLocalSchedules(data.schedules);
+        if (data && data.schedule) {
+          setLocalSchedules(data.schedule);
+          
+          const list = [];
+          data.schedule.forEach(day => {
+            day.shifts.forEach(shift => {
+              if (shift.status === 'Approved' || shift.status === 'CancelPending' || shift.status === 'Cancelled') {
+                list.push({
+                  id: shift.bookingId,
+                  date: day.date,
+                  time: `${shift.start} - ${shift.end}`,
+                  member: shift.memberName || 'Hội viên',
+                  type: 'Đặt lịch tập cá nhân',
+                  status: shift.status
+                });
+              }
+            });
+          });
+          setScheduleList(list);
         }
       })
-      .catch(err => console.error('Error fetching busy schedules:', err));
+      .catch(err => console.error('Error fetching combined schedules:', err));
   };
 
   useEffect(() => {
-    if (activeTab === 'quanlylich') {
+    if (activeTab === 'quanlylich' || activeTab === 'lichday') {
       fetchBusySchedules();
     }
-  }, [activeTab, busyWeekStart, token]);
+  }, [activeTab, busyWeekStart, token, refreshTrigger]);
 
   const handleToggleLocalSlot = (dateStr, startTime, endTime) => {
     const [yr, mo, dy] = dateStr.split('-').map(Number);
@@ -658,38 +699,121 @@ function TrainerDashboard({
   };
 
   const handleConfirmAppointment = (reqId) => {
-    fetch(`/api/dashboard/trainer/appointments/${reqId}/confirm`, {
+    if (!window.confirm('Bạn có chắc chắn muốn xác nhận (Approve) yêu cầu đặt lịch này?')) return;
+    fetch(`/api/bookings/pt/${reqId}/approve`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      }
+    })
+      .then(res => {
+        if (!res.ok) return res.json().then(err => { throw new Error(err.message); });
+        return res.json();
+      })
+      .then(data => {
+        alert(data.message || 'Đã xác nhận lịch dạy thành công!');
+        reloadTrainerDashboardData();
+        setRefreshTrigger(prev => prev + 1); // Refresh calendar TKB
+      })
+      .catch(err => alert(err.message || 'Lỗi khi xác nhận lịch dạy!'));
+  };
+
+  const handleRejectAppointment = (reqId) => {
+    const reason = window.prompt('Nhập lý do từ chối yêu cầu đặt lịch này:');
+    if (reason === null) return; // User clicked Cancel
+    
+    fetch(`/api/bookings/pt/${reqId}/reject`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({ action: 'confirm' })
+      body: JSON.stringify({ reason: reason || 'HLV bận ca này' })
     })
-      .then(res => res.json())
-      .then(data => {
-        alert(data.message || 'Đã xác nhận lịch dạy thành công!');
-        reloadTrainerDashboardData();
+      .then(res => {
+        if (!res.ok) return res.json().then(err => { throw new Error(err.message); });
+        return res.json();
       })
-      .catch(err => console.error('Error confirming appointment:', err));
+      .then(data => {
+        alert(data.message || 'Đã từ chối yêu cầu đặt lịch!');
+        reloadTrainerDashboardData();
+        setRefreshTrigger(prev => prev + 1); // Refresh calendar TKB
+      })
+      .catch(err => alert(err.message || 'Lỗi khi từ chối yêu cầu!'));
   };
 
-  const handleRejectAppointment = (reqId) => {
-    if (window.confirm('Bạn có chắc chắn muốn từ chối yêu cầu đặt lịch này?')) {
-      fetch(`/api/dashboard/trainer/appointments/${reqId}/confirm`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ action: 'reject' })
+  const handleRegisterOffRequest = () => {
+    if (!selectedOffDate) {
+      alert('Vui lòng chọn ngày muốn xin nghỉ!');
+      return;
+    }
+    if (offQuota.remaining <= 0) {
+      alert('Bạn đã hết lượt xin nghỉ phép trong tháng này!');
+      return;
+    }
+
+    fetch('/api/dashboard/trainer/off-requests', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ dates: [selectedOffDate] })
+    })
+      .then(res => {
+        if (!res.ok) return res.json().then(err => { throw new Error(err.message); });
+        return res.json();
       })
-        .then(res => res.json())
-        .then(data => {
-          alert(data.message || 'Đã từ chối lịch dạy!');
-          reloadTrainerDashboardData();
+      .then(data => {
+        alert(data.message || 'Đã gửi yêu cầu nghỉ phép thành công!');
+        setSelectedOffDate('');
+        reloadTrainerDashboardData();
+        fetchBusySchedules();
+        setRefreshTrigger(prev => prev + 1);
+      })
+      .catch(err => alert(err.message || 'Lỗi khi gửi yêu cầu nghỉ phép!'));
+  };
+
+  const handleCancelOffRequest = (reqId) => {
+    if (!window.confirm('Bạn có chắc chắn muốn hủy yêu cầu nghỉ phép này?')) return;
+    fetch(`/api/dashboard/trainer/off-requests/${reqId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => {
+        if (!res.ok) return res.json().then(err => { throw new Error(err.message); });
+        return res.json();
+      })
+      .then(data => {
+        alert(data.message || 'Đã hủy yêu cầu thành công!');
+        reloadTrainerDashboardData();
+        fetchBusySchedules();
+        setRefreshTrigger(prev => prev + 1);
+      })
+      .catch(err => alert(err.message || 'Lỗi khi hủy yêu cầu!'));
+  };
+
+  const handleNotificationClick = (n) => {
+    // Mark as read
+    if (n.unread) {
+      fetch(`/api/notifications/${n.id}/read`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(res => {
+          if (res.ok) {
+            setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, unread: false } : item));
+          }
         })
-        .catch(err => console.error('Error rejecting appointment:', err));
+        .catch(err => console.error('Error marking notification read:', err));
+    }
+
+    // Switch tab
+    if (n.type && (n.type.includes('OFF_REQUEST') || n.type.includes('OFF'))) {
+      setActiveTab('quanlylich');
+    } else {
+      setActiveTab('lichday');
     }
   };
 
@@ -1576,12 +1700,26 @@ function TrainerDashboard({
             setBusyWeekStart(newDate);
           };
 
+
           return (
             <div className="trainer-plan-builder">
+              {/* Quota phép card */}
+              <div className="trainer-card-panel" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                <div>
+                  <h3 className="trainer-card-title" style={{ margin: 0, color: '#1e40af' }}>Hạn mức nghỉ phép (Quota)</h3>
+                  <p style={{ margin: '5px 0 0', fontSize: '0.9rem', color: '#1e3a8a' }}>
+                    Đã đăng ký tháng này: <strong>{offQuota.used} / {offQuota.limit} ngày</strong> (Còn lại: <strong>{offQuota.remaining} ngày</strong>)
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.8rem', color: '#2563eb' }}>
+                  <i className="fa-solid fa-umbrella-beach"></i>
+                </div>
+              </div>
+
               <div className="trainer-card-panel">
-                <h3 className="trainer-card-title" style={{ marginBottom: '10px' }}>Quản lý lịch rảnh / bận</h3>
+                <h3 className="trainer-card-title" style={{ marginBottom: '10px' }}>Thời khóa biểu của bạn</h3>
                 <p style={{ fontSize: '0.86rem', color: '#64748b', marginBottom: '20px' }}>
-                  Click vào các ô trống màu xanh để đổi sang trạng thái <strong>Bận</strong> (không cho phép đặt lịch). Click vào ô màu cam để kích hoạt lại trạng thái <strong>Rảnh</strong>.
+                  Lịch trình làm việc tự động hiển thị ca dạy cho Member và ca xin nghỉ (Off). Huấn luyện viên đi làm đủ ca/ngày và không được tự ý đổi trạng thái lịch rảnh ↔ bận.
                 </p>
 
                 {/* Calendar Week Navigation */}
@@ -1605,14 +1743,6 @@ function TrainerDashboard({
                   >
                     Tuần sau <i className="fa-solid fa-chevron-right"></i>
                   </button>
-                  <button
-                    type="button"
-                    className="trainer-link-action"
-                    style={{ fontWeight: 'bold', marginLeft: 'auto', border: 'none', background: 'none', cursor: 'pointer' }}
-                    onClick={() => setBusyWeekStart(new Date())}
-                  >
-                    <i className="fa-solid fa-calendar-day"></i> Về tuần này
-                  </button>
                 </div>
 
                 <div className="trainer-weekly-calendar" style={{ overflowX: 'auto' }}>
@@ -1634,50 +1764,38 @@ function TrainerDashboard({
                           <td style={{ background: '#f8fafc', border: '1px solid #e2e8f0', fontWeight: 'bold', padding: '10px' }}>{slot.label}</td>
                           {days.map((day, dIdx) => {
                             const dateStr = getTodayDateString(day);
-                            const matchingSchedule = localSchedules.find(s =>
-                              s.workingDate === dateStr && s.startTime.startsWith(slot.start.substring(0, 5))
-                            );
+                            const daySchedule = localSchedules.find(s => s.date === dateStr);
 
-                            const status = matchingSchedule ? matchingSchedule.status : 'Available';
-
-                            // Check if there is a teaching schedule (booked appointment) on this slot
-                            const isTeaching = scheduleList.some(s =>
-                              s.date === dateStr && s.time.startsWith(slot.label.substring(0, 5))
-                            );
+                            const shiftInfo = daySchedule?.shifts?.find(sh => sh.shiftCode === slot.shiftCode);
+                            const shiftStatus = shiftInfo ? shiftInfo.status : 'Free';
+                            const memberName = shiftInfo?.memberName;
 
                             const [slotH, slotM, slotS] = slot.start.split(':').map(Number);
                             const slotDate = new Date(day.getFullYear(), day.getMonth(), day.getDate(), slotH, slotM, slotS || 0);
                             const isPast = slotDate < new Date();
 
-                            let bg = '#dcfce7'; // green - Available
-                            let color = '#166534';
+                            let bg = '#ffffff'; // White default - Free
+                            let color = '#1e293b';
                             let text = 'Rảnh';
-                            let cursor = 'pointer';
+                            let cursor = 'default';
 
                             if (isPast) {
-                              bg = '#f1f5f9'; // gray - Passed
-                              color = '#94a3b8';
-                              text = 'Đã qua';
-                              cursor = 'not-allowed';
-                            } else if (isTeaching) {
-                              bg = '#cbd5e1'; // gray - Booked (Teaching)
-                              color = '#475569';
-                              text = 'Đã đặt lịch';
-                              cursor = 'not-allowed';
-                            } else if (status === 'Busy' || status === 'Off') {
-                              bg = '#ffedd5'; // orange - Busy
-                              color = '#c2410c';
-                              text = 'Bận';
+                              bg = '#f1f5f9'; color = '#94a3b8'; text = 'Đã qua';
+                            } else if (shiftStatus === 'Off') {
+                              const isApproved = daySchedule?.offStatus === 'Approved';
+                              bg = '#cbd5e1'; color = '#475569';
+                              text = isApproved ? 'Nghỉ (Đã duyệt)' : 'Nghỉ (Chờ duyệt)';
+                            } else if (shiftStatus === 'Pending') {
+                              bg = '#ffedd5'; color = '#c2410c';
+                              text = `Chờ duyệt: ${memberName || 'Học viên'}`;
+                            } else if (shiftStatus === 'Approved') {
+                              bg = '#dcfce7'; color = '#166534';
+                              text = `Dạy: ${memberName || 'Học viên'}`;
                             }
 
                             return (
                               <td
                                 key={dIdx}
-                                onClick={() => {
-                                  if (!isTeaching && !isPast) {
-                                    handleToggleLocalSlot(dateStr, slot.start, slot.end);
-                                  }
-                                }}
                                 style={{
                                   padding: '12px',
                                   border: '1px solid #e2e8f0',
@@ -1686,12 +1804,6 @@ function TrainerDashboard({
                                   cursor: cursor,
                                   fontWeight: '500',
                                   transition: 'all 0.15s ease'
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (!isTeaching && !isPast) e.target.style.filter = 'brightness(0.95)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (!isTeaching && !isPast) e.target.style.filter = 'none';
                                 }}
                               >
                                 {text}
@@ -1707,31 +1819,113 @@ function TrainerDashboard({
                 <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
                   <div style={{ display: 'flex', gap: '20px', fontSize: '0.85rem', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{ width: '16px', height: '16px', backgroundColor: '#dcfce7', borderRadius: '4px', border: '1px solid #bbf7d0' }}></div>
-                      <span>Ca rảnh (Có thể book)</span>
+                      <div style={{ width: '16px', height: '16px', backgroundColor: '#ffffff', borderRadius: '4px', border: '1px solid #e2e8f0' }}></div>
+                      <span>Ca rảnh</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{ width: '16px', height: '16px', backgroundColor: '#ffedd5', borderRadius: '4px', border: '1px solid #fed7aa' }}></div>
-                      <span>Lịch bận do PT cài đặt (Khóa không cho book)</span>
+                      <span>Đặt ca chờ duyệt</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '16px', height: '16px', backgroundColor: '#dcfce7', borderRadius: '4px', border: '1px solid #bbf7d0' }}></div>
+                      <span>Lịch dạy (Đã duyệt)</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{ width: '16px', height: '16px', backgroundColor: '#cbd5e1', borderRadius: '4px', border: '1px solid #94a3b8' }}></div>
-                      <span>Ca đang có lịch dạy đã lên lịch</span>
+                      <span>PT Nghỉ phép (Đã duyệt/Chờ duyệt)</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{ width: '16px', height: '16px', backgroundColor: '#f1f5f9', borderRadius: '4px', border: '1px solid #cbd5e1' }}></div>
-                      <span>Ca đã qua (Không thể chọn)</span>
+                      <span>Ca đã qua</span>
                     </div>
                   </div>
-                  <button 
-                    onClick={handleSaveSchedules}
-                    className="trainer-btn-submit"
-                    style={{ padding: '10px 24px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', background: 'var(--orange)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}
-                  >
-                    <i className="fa-solid fa-floppy-disk"></i> Lưu thay đổi
-                  </button>
                 </div>
               </div>
+
+              {/* Form Đăng ký ngày nghỉ phép */}
+              <div className="trainer-card-panel" style={{ marginTop: '20px' }}>
+                <h3 className="trainer-card-title" style={{ marginBottom: '15px' }}>Đăng ký ngày nghỉ phép (Day Off)</h3>
+                <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input
+                    type="date"
+                    value={selectedOffDate}
+                    onChange={(e) => setSelectedOffDate(e.target.value)}
+                    style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', minWidth: '200px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRegisterOffRequest}
+                    className="trainer-btn-submit"
+                    style={{ padding: '10px 24px', background: 'var(--orange)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                    disabled={offQuota.remaining <= 0}
+                  >
+                    <i className="fa-solid fa-plane"></i> Gửi yêu cầu nghỉ phép
+                  </button>
+                </div>
+                {offQuota.remaining <= 0 && (
+                  <p style={{ color: '#ef4444', fontSize: '0.84rem', marginTop: '10px', margin: '10px 0 0' }}>
+                    * Bạn đã hết lượt xin nghỉ phép trong tháng này (Hạn mức 4 ngày/tháng).
+                  </p>
+                )}
+              </div>
+
+              {/* Bảng lịch sử đăng ký nghỉ phép */}
+              {myOffRequests.length > 0 && (
+                <div className="trainer-card-panel" style={{ marginTop: '20px' }}>
+                  <h3 className="trainer-card-title" style={{ marginBottom: '15px' }}>Lịch sử yêu cầu nghỉ phép</h3>
+                  <div className="trainer-table-container" style={{ overflowX: 'auto' }}>
+                    <table className="trainer-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                          <th style={{ padding: '12px' }}>Ngày nghỉ</th>
+                          <th style={{ padding: '12px' }}>Trạng thái</th>
+                          <th style={{ padding: '12px' }}>Lý do từ chối</th>
+                          <th style={{ padding: '12px' }}>Thời gian tạo</th>
+                          <th style={{ padding: '12px' }}>Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {myOffRequests.map((req) => (
+                          <tr key={req.request_id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: '12px', fontWeight: 'bold', color: 'var(--orange)' }}>
+                              {req.off_date.includes('-') ? req.off_date.split('-').reverse().join('/') : req.off_date}
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              <span className={`status-badge ${req.status.toLowerCase()}`} style={{
+                                padding: '4px 8px',
+                                borderRadius: '12px',
+                                fontSize: '0.8rem',
+                                fontWeight: 'bold',
+                                backgroundColor: req.status === 'Approved' ? '#dcfce7' : req.status === 'Pending' ? '#ffedd5' : req.status === 'Rejected' ? '#fee2e2' : '#f1f5f9',
+                                color: req.status === 'Approved' ? '#15803d' : req.status === 'Pending' ? '#b45309' : req.status === 'Rejected' ? '#b91c1c' : '#475569'
+                              }}>
+                                {req.status === 'Approved' ? 'Đã duyệt' : req.status === 'Pending' ? 'Chờ duyệt' : req.status === 'Rejected' ? 'Từ chối' : 'Đã hủy'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px', color: '#64748b' }}>
+                              {req.reject_reason || '-'}
+                            </td>
+                            <td style={{ padding: '12px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                              {req.created_at ? new Date(req.created_at).toLocaleString('vi-VN') : '-'}
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              {req.status === 'Pending' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCancelOffRequest(req.request_id)}
+                                  style={{ padding: '6px 12px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                >
+                                  Hủy yêu cầu
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           );
         }
@@ -2054,7 +2248,7 @@ function TrainerDashboard({
             </div>
             <div className="trainer-notif-list" style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {notifications.map((n) => (
-                <div className={`trainer-notif-item ${n.unread ? 'unread' : ''}`} key={n.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', backgroundColor: n.unread ? '#fff8f1' : '#f8fafc', borderRadius: '8px', border: n.unread ? '1px solid #ffedd5' : '1px solid #e2e8f0', transition: 'all 0.2s' }}>
+                <div className={`trainer-notif-item ${n.unread ? 'unread' : ''}`} key={n.id} onClick={() => handleNotificationClick(n)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', backgroundColor: n.unread ? '#fff8f1' : '#f8fafc', borderRadius: '8px', border: n.unread ? '1px solid #ffedd5' : '1px solid #e2e8f0', transition: 'all 0.2s', cursor: 'pointer' }}>
                   <div className="trainer-notif-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', borderRadius: '50%', backgroundColor: n.unread ? '#ffedd5' : '#cbd5e1', color: n.unread ? 'var(--orange)' : '#64748b', fontSize: '1.1rem' }}>
                     <i className={`fa-solid ${n.unread ? 'fa-envelope-open-text' : 'fa-envelope'}`}></i>
                   </div>
@@ -2181,19 +2375,7 @@ function TrainerDashboard({
                 <i className="fa-solid fa-comments"></i> Chat
               </button>
             </li>
-            <li>
-              <button
-                className={`trainer-menu-item ${activeTab === 'thongbao' ? 'active' : ''}`}
-                onClick={() => setActiveTab('thongbao')}
-              >
-                <i className="fa-solid fa-bell"></i> Thông báo
-                {unreadNotifsCount > 0 && (
-                  <span className="trainer-menu-badge" style={{ backgroundColor: 'var(--orange)', color: '#fff', fontSize: '0.75rem', padding: '2px 6px', borderRadius: '10px', marginLeft: 'auto', fontWeight: 'bold' }}>
-                    {unreadNotifsCount}
-                  </span>
-                )}
-              </button>
-            </li>
+
             <li>
               <button
                 className={`trainer-menu-item ${activeTab === 'hoso' ? 'active' : ''}`}

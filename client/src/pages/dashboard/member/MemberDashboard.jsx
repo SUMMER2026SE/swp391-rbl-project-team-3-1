@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import './MemberDashboard.css';
 import WorkoutPlansAndServices from './components/WorkoutPlansAndServices';
+import { SHIFT_DEFINITIONS } from '../../../constants/shifts';
+
+const SHIFT_MAP = {
+  'CA1': '05:00 - 06:30',
+  'CA2': '07:00 - 08:30',
+  'CA3': '09:00 - 10:30',
+  'CA4': '11:00 - 12:30',
+  'CA5': '14:00 - 15:30',
+  'CA6': '16:00 - 17:30',
+  'CA7': '18:00 - 19:30',
+};
 
 const TIME_SLOTS = [
   { start: '05:00:00', end: '06:30:00', label: '05:00 - 06:30' },
@@ -10,7 +21,6 @@ const TIME_SLOTS = [
   { start: '14:00:00', end: '15:30:00', label: '14:00 - 15:30' },
   { start: '16:00:00', end: '17:30:00', label: '16:00 - 17:30' },
   { start: '18:00:00', end: '19:30:00', label: '18:00 - 19:30' },
-  { start: '20:00:00', end: '21:30:00', label: '20:00 - 21:30' },
 ];
 
 const getLocalDateString = (dateObj) => {
@@ -64,6 +74,8 @@ function MemberDashboard({
   const [bookingType, setBookingType] = useState('PT Cá Nhân');
   const [bookingNote, setBookingNote] = useState('');
   const [isBookingLoading, setIsBookingLoading] = useState(false);
+  const [bookingShiftCode, setBookingShiftCode] = useState('');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Active trainers list & chosen trainer state
   const [trainersList, setTrainersList] = useState([]);
@@ -113,7 +125,7 @@ function MemberDashboard({
       };
       fetchSchedules();
     }
-  }, [selectedTrainerId, currentWeekStart, activeTab]);
+  }, [selectedTrainerId, currentWeekStart, activeTab, refreshTrigger]);
 
   // Load completed exercises and meals from localStorage when memberInfo is available
   useEffect(() => {
@@ -152,6 +164,7 @@ function MemberDashboard({
 
   // Notifications state
   const [notifications, setNotifications] = useState([]);
+
 
   const reloadNotifications = () => {
     if (!token || token === 'mock-preview-token') return;
@@ -203,6 +216,12 @@ function MemberDashboard({
           if (prev.some(n => n.id === newNotif.id)) return prev;
           return [newNotif, ...prev];
         });
+
+        // Realtime auto-refresh on booking/schedule events
+        if (['BOOKING_CREATED', 'BOOKING_APPROVED', 'BOOKING_REJECTED', 'BOOKING_CANCELLED', 'BOOKING_CANCEL_REQUESTED', 'BOOKING_CANCEL_ACCEPTED', 'BOOKING_CANCEL_REJECTED', 'SCHEDULE_SLOT_UPDATED'].includes(data.type || newNotif.type)) {
+          reloadMemberAppointments();
+          setRefreshTrigger(prev => prev + 1);
+        }
 
       } catch (err) {
         console.error('[SSE] Error processing stream message:', err);
@@ -808,6 +827,27 @@ function MemberDashboard({
         }
       })
       .catch(err => console.error('Error deleting notification:', err));
+  };
+
+  const handleNotificationClick = (n) => {
+    // Mark as read
+    if (n.unread) {
+      fetch(`/api/notifications/${n.id}/read`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(res => {
+          if (res.ok) {
+            setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, unread: false } : item));
+          }
+        })
+        .catch(err => console.error('Error marking notification read:', err));
+    }
+
+    // Switch tab
+    if (n.type && (n.type.includes('BOOKING') || n.type.includes('APPOINTMENT'))) {
+      setActiveTab('lichhen');
+    }
   };
 
   const doChangePw = async (e) => {
@@ -1736,7 +1776,7 @@ function MemberDashboard({
             </div>
             <div className="member-notif-list" style={{ marginTop: '20px' }}>
               {notifications.map((n) => (
-                <div className={`member-notif-item ${n.unread ? 'unread' : ''}`} key={n.id}>
+                <div className={`member-notif-item ${n.unread ? 'unread' : ''}`} key={n.id} onClick={() => handleNotificationClick(n)} style={{ cursor: 'pointer' }}>
                   <div className="member-notif-icon">
                     <i className={`fa-solid ${n.unread ? 'fa-envelope-open-text' : 'fa-envelope'}`}></i>
                   </div>
@@ -2288,14 +2328,7 @@ function MemberDashboard({
                 <i className="fa-solid fa-robot" style={{ color: 'var(--orange)' }}></i> Tư vấn AI
               </button>
             </li>
-            <li>
-              <button
-                className={`member-menu-item ${activeTab === 'thongbao' ? 'active' : ''}`}
-                onClick={() => setActiveTab('thongbao')}
-              >
-                <i className="fa-solid fa-bell"></i> Thông báo
-              </button>
-            </li>
+
             <li>
               <button
                 className={`member-menu-item ${activeTab === 'hoso' ? 'active' : ''}`}

@@ -151,45 +151,88 @@ exports.getTrainerSchedule = async (req, res) => {
         if (!trainerId) {
             return res.status(400).json({ message: 'Thiếu trainerId!' });
         }
-
-        const whereCondition = { trainer_id: trainerId };
-        if (startDate && endDate) {
-            whereCondition.working_date = {
-                [require('sequelize').Op.between]: [startDate, endDate]
-            };
+        if (!startDate || !endDate) {
+            return res.status(400).json({ message: 'Thiếu startDate hoặc endDate!' });
         }
 
-        const schedules = await models.TrainerSchedules.findAll({
-            where: whereCondition,
-            order: [['working_date', 'ASC'], ['start_time', 'ASC']]
+        const { PtOffRequests, PtBookings } = models;
+        const { Op } = require('sequelize');
+
+        // Fetch off requests (Pending or Approved)
+        const offRequests = await PtOffRequests.findAll({
+            where: {
+                trainer_id: trainerId,
+                off_date: { [Op.between]: [startDate, endDate] },
+                status: { [Op.in]: ['Pending', 'Approved'] }
+            }
         });
 
-        const formatTimeField = (val) => {
-            if (!val) return '00:00:00';
-            if (typeof val === 'string') return val;
-            if (val instanceof Date) {
-                const h = String(val.getUTCHours()).padStart(2, '0');
-                const m = String(val.getUTCMinutes()).padStart(2, '0');
-                const s = String(val.getUTCSeconds()).padStart(2, '0');
-                return `${h}:${m}:${s}`;
+        // Fetch bookings (Pending or Approved)
+        const bookings = await PtBookings.findAll({
+            where: {
+                trainer_id: trainerId,
+                session_date: { [Op.between]: [startDate, endDate] },
+                status: { [Op.in]: ['Pending', 'Approved'] }
             }
-            return '00:00:00';
+        });
+
+        const SHIFT_MAP = {
+            'CA1': { start: '05:00:00', end: '06:30:00' },
+            'CA2': { start: '07:00:00', end: '08:30:00' },
+            'CA3': { start: '09:00:00', end: '10:30:00' },
+            'CA4': { start: '11:00:00', end: '12:30:00' },
+            'CA5': { start: '14:00:00', end: '15:30:00' },
+            'CA6': { start: '16:00:00', end: '17:30:00' },
+            'CA7': { start: '18:00:00', end: '19:30:00' },
         };
 
-        const result = schedules.map(s => ({
-            scheduleId: s.schedule_id,
-            workingDate: s.working_date,
-            startTime: formatTimeField(s.start_time),
-            endTime: formatTimeField(s.end_time),
-            status: s.availability_status
-        }));
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const result = [];
+
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const date = String(d.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${date}`;
+
+            // Check if PT has a day off request on this date
+            const isDayOff = offRequests.some(r => r.off_date === dateStr);
+
+            if (isDayOff) {
+                // All shifts are Busy (member only sees Busy)
+                for (const [shiftCode, times] of Object.entries(SHIFT_MAP)) {
+                    result.push({
+                        scheduleId: `off-${dateStr}-${shiftCode}`,
+                        workingDate: dateStr,
+                        startTime: times.start,
+                        endTime: times.end,
+                        status: 'Busy' // Hide Off-request detail from member
+                    });
+                }
+            } else {
+                // Check bookings for each shift
+                for (const [shiftCode, times] of Object.entries(SHIFT_MAP)) {
+                    const booking = bookings.find(b => b.session_date === dateStr && b.shift_code === shiftCode);
+                    if (booking) {
+                        result.push({
+                            scheduleId: booking.booking_id,
+                            workingDate: dateStr,
+                            startTime: times.start,
+                            endTime: times.end,
+                            status: 'Busy' // Render as Busy/Unavailable
+                        });
+                    }
+                }
+            }
+        }
 
         return res.status(200).json({ schedules: result });
     } catch (error) {
         console.error('❌ Lỗi lấy lịch HLV:', error.message);
         return res.status(500).json({ message: 'Lỗi server khi lấy lịch HLV!', error: error.message });
     }
-};
+};;
 
 // =====================================================
 // 2. LẤY DANH SÁCH GÓI TẬP (PUBLIC)
