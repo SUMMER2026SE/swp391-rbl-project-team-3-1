@@ -944,24 +944,14 @@ function MemberDashboard({
   };
 
   // Filter workout plans
-  const todayWorkoutPlans = dbWorkoutPlans.filter(plan => {
-    if (!plan.created_at) return true;
-    return isToday(plan.created_at);
-  });
-  const historyWorkoutPlans = dbWorkoutPlans.filter(plan => {
-    if (!plan.created_at) return false;
-    return !isToday(plan.created_at);
-  });
+  const latestWorkoutPlan = dbWorkoutPlans.length > 0 ? dbWorkoutPlans[0] : null;
+  const todayWorkoutPlans = latestWorkoutPlan && isToday(latestWorkoutPlan.created_at) ? [latestWorkoutPlan] : [];
+  const historyWorkoutPlans = dbWorkoutPlans.filter(plan => plan !== latestWorkoutPlan || !isToday(plan.created_at));
 
   // Filter meal plans
-  const todayMealPlans = dbMealPlans.filter(plan => {
-    if (!plan.created_at) return true;
-    return isToday(plan.created_at);
-  });
-  const historyMealPlans = dbMealPlans.filter(plan => {
-    if (!plan.created_at) return false;
-    return !isToday(plan.created_at);
-  });
+  const latestMealPlan = dbMealPlans.length > 0 ? dbMealPlans[0] : null;
+  const todayMealPlans = latestMealPlan && isToday(latestMealPlan.created_at) ? [latestMealPlan] : [];
+  const historyMealPlans = dbMealPlans.filter(plan => plan !== latestMealPlan || !isToday(plan.created_at));
 
   // Dynamic exercises count from today's plans
   let totalExs = 0;
