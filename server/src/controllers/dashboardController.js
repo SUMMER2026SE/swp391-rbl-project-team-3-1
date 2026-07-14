@@ -1463,7 +1463,7 @@ exports.finishMemberProgress = async (req, res) => {
       return res.status(400).json({ message: 'Chỉ huấn luyện viên mới được thực hiện thao tác này!' });
     }
 
-    const yesterday = sequelize.literal("DATEADD(day, -1, GETDATE())");
+    const yesterday = sequelize.literal("DATEADD(day, -1, GETUTCDATE())");
 
     // 1. Move all workout plans of this member to history
     await models.WorkoutPlans.update(
