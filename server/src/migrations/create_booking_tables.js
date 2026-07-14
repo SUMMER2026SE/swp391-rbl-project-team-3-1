@@ -120,6 +120,20 @@ async function migrate() {
         PRINT 'Index UQ_Trainer_OffDate already exists';
     `);
 
+    // 6. Update CK_Availability_Status check constraint on TrainerSchedules
+    await sequelize.query(`
+      IF EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_Availability_Status' AND parent_object_id = OBJECT_ID('TrainerSchedules'))
+      BEGIN
+        ALTER TABLE TrainerSchedules DROP CONSTRAINT CK_Availability_Status;
+        PRINT 'Dropped old CK_Availability_Status constraint';
+      END
+
+      ALTER TABLE TrainerSchedules
+      ADD CONSTRAINT CK_Availability_Status
+      CHECK (availability_status IN ('Off', 'Busy', 'Available', 'Pending_Off'));
+      PRINT 'Created new CK_Availability_Status constraint allowing Pending_Off';
+    `);
+
     console.log('✅ Migration completed successfully!');
     process.exit(0);
   } catch (error) {
