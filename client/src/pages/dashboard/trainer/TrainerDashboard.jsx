@@ -834,6 +834,8 @@ function TrainerDashboard({
         alert(data.message || 'Đã xử lý yêu cầu thành công!');
         setSelectedCancelRequest(null);
         reloadTrainerDashboardData();
+        fetchBusySchedules();
+        setRefreshTrigger(prev => prev + 1);
       })
       .catch(err => {
         console.error('Error responding to cancel request:', err);
@@ -874,6 +876,8 @@ function TrainerDashboard({
         setTrainerCancelReason('');
         setTrainerCancelAppointmentId(null);
         reloadTrainerDashboardData();
+        fetchBusySchedules();
+        setRefreshTrigger(prev => prev + 1);
       })
       .catch(err => {
         console.error(err);
