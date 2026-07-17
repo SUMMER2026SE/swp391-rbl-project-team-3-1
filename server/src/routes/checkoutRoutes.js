@@ -12,8 +12,12 @@ router.post('/payos/create-payment', checkoutController.createPayosPayment);
 router.get('/payos/status/:orderCode', checkoutController.getPayosStatus);
 router.post('/check-email', checkoutController.checkEmail);
 router.post('/guest-register-checkout', checkoutController.guestCheckoutAndRegister);
+router.post('/verify-guest-otp', checkoutController.verifyGuestOtp);
+router.post('/resend-otp', checkoutController.resendOtp);
 const dashboardController = require('../controllers/dashboardController');
 router.get('/homepage-config', dashboardController.getHomepageConfig);
+router.post('/public-checkin', dashboardController.performCheckIn);
+router.post('/notify-checkin', dashboardController.notifyCheckInComplete);
 
 // Protected routes – cần token
 router.post('/loggedIn-checkout', authMiddleware, checkoutController.loggedInCheckout);

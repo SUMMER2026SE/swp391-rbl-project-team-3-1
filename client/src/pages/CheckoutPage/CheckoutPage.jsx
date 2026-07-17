@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import './CheckoutPage.css';
 
 // ─── Dữ liệu gói tập mặc định (fallback nếu API chưa có data) ────────────────
@@ -109,6 +109,12 @@ function CheckoutPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
   const [regSuccess, setRegSuccess] = useState(false);
+  
+  // OTP states
+  const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
+  const otpInputs = useRef([]);
+  const [otpCountdown, setOtpCountdown] = useState(0);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
 
   // ── Init: read plan and service from URL / localStorage ─────────────────────────
   useEffect(() => {
@@ -205,6 +211,15 @@ function CheckoutPage() {
       window.removeEventListener('authChange', handleAuthChange);
     };
   }, []);
+
+  // OTP Countdown timer
+  useEffect(() => {
+    if (otpCountdown <= 0) return;
+    const interval = setInterval(() => {
+      setOtpCountdown(c => c - 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [otpCountdown]);
 
   useEffect(() => {
     if (step !== 2 || (!selectedPlan && selectedServices.length === 0)) return;
@@ -370,17 +385,22 @@ function CheckoutPage() {
       const data = await res.json();
       setIsSubmitting(false);
       if (res.ok) {
-        if (data.needsVerification) {
-          // Show email verification required screen
-          setRegSuccess(true);
+        if (data.needsVerification || data.requiresVerification) {
+          // Go to Step 4 for OTP verification!
+          setStep(4);
+          setOtpDigits(['', '', '', '', '', '']);
+          setOtpCountdown(60);
+          setTimeout(() => {
+            otpInputs.current[0]?.focus();
+          }, 100);
         } else {
-          // Legacy: auto-login
+          // Auto-login (fallback if OTP is bypassed on server)
           localStorage.setItem('token', data.token);
           localStorage.setItem('userInfo', JSON.stringify(data.user));
           localStorage.setItem('showProfileSetup', 'true');
           setToken(data.token);
           window.dispatchEvent(new Event('authChange'));
-          setRegSuccess(true);
+          setCheckoutSuccess(true);
         }
       } else {
         setAlert({ show: true, msg: data.message || 'Đăng ký thất bại!', type: 'error' });
@@ -388,6 +408,142 @@ function CheckoutPage() {
     } catch {
       setIsSubmitting(false);
       setAlert({ show: true, msg: 'Không thể kết nối tới server để tạo tài khoản!', type: 'error' });
+    }
+  };
+
+  // ─── OTP GRID HELPER FUNCTIONS ─────────────────────────────────────
+  const handleOtpChange = (index, value) => {
+    const cleaned = value.replace(/\D/g, '');
+    if (!cleaned) {
+      const newDigits = [...otpDigits];
+      newDigits[index] = '';
+      setOtpDigits(newDigits);
+      return;
+    }
+
+    const digit = cleaned.slice(-1);
+    const newDigits = [...otpDigits];
+    newDigits[index] = digit;
+    setOtpDigits(newDigits);
+
+    // Auto-focus next input
+    if (index < 5) {
+      otpInputs.current[index + 1]?.focus();
+    }
+
+    // Auto-submit if all digits are entered
+    if (newDigits.every(d => d !== '') && newDigits.join('').length === 6) {
+      setTimeout(() => {
+        triggerOtpSubmit(newDigits.join(''));
+      }, 50);
+    }
+  };
+
+  const handleOtpKeyDown = (index, e) => {
+    if (e.key === 'Backspace') {
+      if (!otpDigits[index] && index > 0) {
+        const newDigits = [...otpDigits];
+        newDigits[index - 1] = '';
+        setOtpDigits(newDigits);
+        otpInputs.current[index - 1]?.focus();
+      } else {
+        const newDigits = [...otpDigits];
+        newDigits[index] = '';
+        setOtpDigits(newDigits);
+      }
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      otpInputs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      otpInputs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpPaste = (e) => {
+    e.preventDefault();
+    const pasteData = e.clipboardData.getData('text').trim().replace(/\D/g, '').slice(0, 6);
+    if (pasteData.length === 6) {
+      const newDigits = pasteData.split('');
+      setOtpDigits(newDigits);
+      otpInputs.current[5]?.focus();
+      // Auto-submit on paste
+      setTimeout(() => {
+        triggerOtpSubmit(pasteData);
+      }, 50);
+    } else if (pasteData.length > 0) {
+      const newDigits = [...otpDigits];
+      for (let i = 0; i < pasteData.length; i++) {
+        newDigits[i] = pasteData[i];
+      }
+      setOtpDigits(newDigits);
+      otpInputs.current[Math.min(pasteData.length, 5)]?.focus();
+    }
+  };
+
+  const triggerOtpSubmit = async (fullOtp) => {
+    setAlert({ show: false, msg: '', type: 'error' });
+    setIsVerifyingOtp(true);
+    try {
+      const res = await fetch('/api/checkout/verify-guest-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: regEmail.trim(),
+          otp: fullOtp
+        })
+      });
+      const data = await res.json();
+      setIsVerifyingOtp(false);
+
+      if (res.ok) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('userInfo', JSON.stringify(data.user));
+        localStorage.setItem('showProfileSetup', 'true');
+        setToken(data.token);
+        window.dispatchEvent(new Event('authChange'));
+        setCheckoutSuccess(true);
+      } else {
+        setAlert({ show: true, msg: data.message || 'Xác thực OTP thất bại!', type: 'error' });
+      }
+    } catch {
+      setIsVerifyingOtp(false);
+      setAlert({ show: true, msg: 'Không thể kết nối tới server để xác thực OTP!', type: 'error' });
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    const fullOtp = otpDigits.join('');
+    if (fullOtp.length !== 6) {
+      setAlert({ show: true, msg: 'Vui lòng nhập đầy đủ mã OTP gồm 6 chữ số!', type: 'error' });
+      return;
+    }
+    await triggerOtpSubmit(fullOtp);
+  };
+
+  const handleResendOtp = async () => {
+    if (otpCountdown > 0) return;
+    setAlert({ show: false, msg: '', type: 'error' });
+
+    try {
+      const res = await fetch('/api/checkout/resend-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: regEmail.trim() })
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setAlert({ show: true, msg: 'Mã OTP mới đã được gửi thành công!', type: 'success' });
+        setOtpCountdown(60);
+        setOtpDigits(['', '', '', '', '', '']);
+        setTimeout(() => {
+          otpInputs.current[0]?.focus();
+        }, 100);
+      } else {
+        setAlert({ show: true, msg: data.message || 'Không thể gửi lại mã OTP!', type: 'error' });
+      }
+    } catch {
+      setAlert({ show: true, msg: 'Không thể kết nối tới server!', type: 'error' });
     }
   };
 
@@ -507,9 +663,15 @@ function CheckoutPage() {
           <span className="step-label">Thanh Toán QR</span>
         </div>
         {!isLoggedIn && (
-          <div className={`co-step ${step === 3 ? 'active' : ''}`}>
-            <div className="step-bubble">3</div>
+          <div className={`co-step ${step === 3 ? 'active' : step > 3 ? 'done' : ''}`}>
+            <div className="step-bubble">{step > 3 ? <i className="fa-solid fa-check"></i> : 3}</div>
             <span className="step-label">Đăng Ký Tài Khoản</span>
+          </div>
+        )}
+        {!isLoggedIn && (
+          <div className={`co-step ${step === 4 ? 'active' : ''}`}>
+            <div className="step-bubble">4</div>
+            <span className="step-label">Xác Thực OTP</span>
           </div>
         )}
       </div>
@@ -517,14 +679,16 @@ function CheckoutPage() {
       {/* ── PAGE HEADER ── */}
       <div style={{ padding: '28px 40px 0', maxWidth: 1200, margin: '0 auto' }}>
         <h1 style={{ fontSize: '1.6rem', fontWeight: 900, color: 'var(--text)', margin: 0 }}>
-          {step === 1 ? 'Chọn Gói Tập & Huấn Luyện Viên' : step === 2 ? 'Thanh Toán Gói Tập qua PayOS' : 'Đăng Ký Tài Khoản Thành Viên'}
+          {step === 1 ? 'Chọn Gói Tập & Huấn Luyện Viên' : step === 2 ? 'Thanh Toán Gói Tập qua PayOS' : step === 3 ? 'Đăng Ký Tài Khoản Thành Viên' : 'Xác Thực Mã OTP'}
         </h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: 4, marginBottom: 0 }}>
           {step === 1
             ? 'Vui lòng kiểm tra gói tập bạn muốn đăng ký và tùy chọn huấn luyện viên đồng hành.'
             : step === 2
               ? 'Quét mã PayOS dưới đây hoặc mở trang thanh toán PayOS để hoàn tất giao dịch.'
-              : 'Thiết lập mật khẩu và số điện thoại để tạo tài khoản đăng nhập.'}
+              : step === 3
+                ? 'Thiết lập mật khẩu và số điện thoại để tạo tài khoản đăng nhập.'
+                : 'Nhập mã OTP được gửi về Gmail của bạn để xác thực tài khoản.'}
         </p>
       </div>
 
@@ -985,6 +1149,83 @@ function CheckoutPage() {
               </div>
             </div>
           )}
+
+          {/* ── STEP 4: XÁC THỰC MÃ OTP (GUEST ONLY) ── */}
+          {step === 4 && !isLoggedIn && (
+            <div className="co-section">
+              <div className="co-section-header">
+                <div className="co-section-title">
+                  <i className="fa-solid fa-key"></i> Xác Thực OTP Tài Khoản
+                </div>
+              </div>
+              <div className="co-section-body">
+                <form id="guestVerifyOtpForm" onSubmit={handleVerifyOtp}>
+                  <p style={{ fontSize: '0.92rem', color: 'var(--text-mid)', marginBottom: '24px', lineHeight: '1.6', textAlign: 'center' }}>
+                    Một mã xác thực OTP gồm <strong>6 chữ số</strong> đã được gửi về địa chỉ email:<br />
+                    <strong style={{ color: 'var(--orange)', fontSize: '1rem' }}>{regEmail}</strong><br />
+                    Vui lòng nhập mã để hoàn tất đăng ký tài khoản thành viên của bạn.
+                  </p>
+
+                  <div className="otp-container">
+                    <label className="otp-label">Nhập mã xác thực OTP</label>
+                    <div className="otp-grid">
+                      {otpDigits.map((digit, index) => (
+                        <input
+                          key={index}
+                          type="text"
+                          pattern="[0-9]*"
+                          inputMode="numeric"
+                          maxLength="1"
+                          value={digit}
+                          ref={el => otpInputs.current[index] = el}
+                          onChange={e => handleOtpChange(index, e.target.value)}
+                          onKeyDown={e => handleOtpKeyDown(index, e)}
+                          onPaste={handleOtpPaste}
+                          disabled={isVerifyingOtp}
+                          className="otp-input-box"
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'center', margin: '24px 0 12px' }}>
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      disabled={otpCountdown > 0}
+                      className="otp-resend-btn"
+                    >
+                      <i className="fa-solid fa-arrow-rotate-right"></i>
+                      {otpCountdown > 0 ? `Gửi lại mã sau ${otpCountdown}s` : 'Gửi lại mã OTP qua Email'}
+                    </button>
+                  </div>
+
+                  <div className="guest-reg-actions" style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                    <button
+                      className="btn-back-step"
+                      type="button"
+                      onClick={() => { setStep(3); setOtpDigits(['', '', '', '', '', '']); }}
+                      disabled={isVerifyingOtp}
+                      style={{ flex: 1 }}
+                    >
+                      <i className="fa-solid fa-arrow-left"></i> Quay lại
+                    </button>
+                    <button
+                      className="btn-reg-submit"
+                      type="submit"
+                      disabled={isVerifyingOtp}
+                      style={{ flex: 1 }}
+                    >
+                      {isVerifyingOtp
+                        ? <><i className="fa-solid fa-spinner fa-spin"></i> Đang xử lý...</>
+                        : <><i className="fa-solid fa-circle-check"></i> Xác Thực & Hoàn Tất</>
+                      }
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ════════════ RIGHT COLUMN: BILLING SUMMARY ════════════ */}
@@ -1059,6 +1300,20 @@ function CheckoutPage() {
                   {isSubmitting
                     ? <><i className="fa-solid fa-spinner fa-spin"></i> Đang xử lý...</>
                     : <><i className="fa-solid fa-circle-check"></i> Hoàn Tất Đăng Ký</>
+                  }
+                </button>
+              )}
+
+              {step === 4 && !isLoggedIn && (
+                <button
+                  className="btn-confirm-pay"
+                  form="guestVerifyOtpForm"
+                  type="submit"
+                  disabled={isVerifyingOtp}
+                >
+                  {isVerifyingOtp
+                    ? <><i className="fa-solid fa-spinner fa-spin"></i> Đang xác minh...</>
+                    : <><i className="fa-solid fa-circle-check"></i> Xác Thực & Hoàn Tất</>
                   }
                 </button>
               )}

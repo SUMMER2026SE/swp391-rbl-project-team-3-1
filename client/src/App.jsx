@@ -10,6 +10,7 @@ import VerifyEmailPage from './pages/VerifyEmailPage/VerifyEmailPage';
 import GymDetail from './pages/detail/GymDetail';
 import YogaDetail from './pages/detail/YogaDetail';
 import PtDetail from './pages/detail/PtDetail';
+import PublicCheckinPage from './pages/PublicCheckinPage/PublicCheckinPage';
 import Chatbot from './components/Chatbot/Chatbot';
 
 function App() {
@@ -54,6 +55,7 @@ function App() {
     if (currentPath === '/detail/gym') return <GymDetail />;
     if (currentPath === '/detail/yoga') return <YogaDetail />;
     if (currentPath === '/detail/pt') return <PtDetail />;
+    if (currentPath === '/public-checkin') return <PublicCheckinPage />;
     
     // Developer preview routes for dashboards without login
     if (currentPath === '/trainer-dashboard') {

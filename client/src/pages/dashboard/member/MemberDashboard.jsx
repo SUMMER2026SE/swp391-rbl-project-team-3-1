@@ -42,6 +42,15 @@ function MemberDashboard({
   fetchProfile
 }) {
   const [activeTab, setActiveTab] = useState('tongquan');
+
+  // --- Check-in State Variables ---
+  const [checkinModalOpen, setCheckinModalOpen] = useState(false);
+  const [lastCheckinTime, setLastCheckinTime] = useState(null);
+  const [memberCheckinHistory, setMemberCheckinHistory] = useState([]);
+  const [justCheckedIn, setJustCheckedIn] = useState(false);
+  const [isSendingQr, setIsSendingQr] = useState(false);
+  const [qrSendStatus, setQrSendStatus] = useState(null); // null | 'success' | 'error'
+  const [qrSendMessage, setQrSendMessage] = useState('');
   const [expandedPackageId, setExpandedPackageId] = useState(null);
 
   // --- MEMBER DASHBOARD STATE VARIABLES ---
@@ -181,6 +190,58 @@ function MemberDashboard({
   const [notifications, setNotifications] = useState([]);
 
 
+  const fetchCheckinHistory = () => {
+    if (!token || token === 'mock-preview-token') return;
+    fetch('/api/dashboard/member/checkins', {
+      headers: { Authorization: 'Bearer ' + token }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.checkins) {
+          setMemberCheckinHistory(data.checkins);
+          if (data.checkins.length > 0) {
+            setLastCheckinTime(data.checkins[0].checkinTime);
+          }
+        }
+      })
+      .catch(err => console.error('Error fetching checkin history:', err));
+  };
+
+  useEffect(() => {
+    if (activeTab === 'tongquan') {
+      fetchCheckinHistory();
+    }
+  }, [activeTab]);
+
+  const handleSendCheckinQr = async () => {
+    if (!token || token === 'mock-preview-token') return;
+    setIsSendingQr(true);
+    setQrSendStatus(null);
+    setQrSendMessage('');
+    try {
+      const res = await fetch('/api/dashboard/member/checkin/send-qr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setQrSendStatus('success');
+        setQrSendMessage(data.message || 'Mã QR đã được gửi về gmail của bạn!');
+      } else {
+        setQrSendStatus('error');
+        setQrSendMessage(data.message || 'Không thể gửi email. Vui lòng thử lại!');
+      }
+    } catch (err) {
+      setQrSendStatus('error');
+      setQrSendMessage('Lỗi kết nối máy chủ!');
+    } finally {
+      setIsSendingQr(false);
+    }
+  };
+
   const reloadNotifications = () => {
     if (!token || token === 'mock-preview-token') return;
     fetch('/api/notifications', {
@@ -236,6 +297,13 @@ function MemberDashboard({
         if (['BOOKING_CREATED', 'BOOKING_APPROVED', 'BOOKING_REJECTED', 'BOOKING_CANCELLED', 'BOOKING_CANCEL_REQUESTED', 'BOOKING_CANCEL_ACCEPTED', 'BOOKING_CANCEL_REJECTED', 'SCHEDULE_SLOT_UPDATED'].includes(data.type || newNotif.type)) {
           reloadMemberAppointments();
           setRefreshTrigger(prev => prev + 1);
+        }
+
+        if (data.type === 'MEMBER_CHECKED_IN') {
+          setLastCheckinTime(data.checkinTime);
+          setJustCheckedIn(true);
+          setCheckinModalOpen(true);
+          fetchCheckinHistory();
         }
 
       } catch (err) {
@@ -2304,6 +2372,13 @@ function MemberDashboard({
               <div className="member-profile-name" title={userInfo?.fullName}>
                 {userInfo?.fullName || 'Hội viên'}
               </div>
+              <button
+                type="button"
+                className="member-checkin-btn"
+                onClick={() => setCheckinModalOpen(true)}
+              >
+                <i className="fa-solid fa-qrcode"></i> Check-in
+              </button>
             </div>
           </div>
 
@@ -2398,6 +2473,282 @@ function MemberDashboard({
         {/* Render Tab Contents */}
         {renderTabContent()}
       </main>
+            {/* ── MEMBER CHECK-IN MODAL – GỬI QR VỀ GMAIL ── */}
+      {checkinModalOpen && (
+        <div className="member-qr-modal-overlay">
+          <div className="member-qr-modal-container" style={{ maxWidth: '420px' }}>
+            <button
+              type="button"
+              className="member-qr-modal-close"
+              onClick={() => {
+                setCheckinModalOpen(false);
+                setJustCheckedIn(false);
+                setQrSendStatus(null);
+                setQrSendMessage('');
+              }}
+            >
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+
+            {/* Header */}
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <div style={{
+                width: '64px', height: '64px', borderRadius: '50%',
+                background: 'linear-gradient(135deg, #f97316, #ef4444)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 14px auto',
+                boxShadow: '0 8px 20px rgba(249,115,22,0.35)'
+              }}>
+                <i className="fa-solid fa-qrcode" style={{ fontSize: '1.8rem', color: '#fff' }}></i>
+              </div>
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '1.2rem', fontWeight: '800', color: '#0f172a' }}>
+                NHẬN MÃ QR CHECK-IN
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b', lineHeight: '1.5' }}>
+                Nhấn nút bên dưới để nhận mã QR check-in qua email.<br/>
+                Sau đó đưa mã QR cho lễ tân quét khi vào phòng tập.
+              </p>
+            </div>
+
+            {/* Hướng dẫn các bước */}
+            <div style={{
+              backgroundColor: '#f8fafc',
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '20px',
+              border: '1px solid #e2e8f0',
+              fontFamily: '"Be Vietnam Pro", sans-serif'
+            }}>
+              {[
+                { step: '1', icon: 'fa-envelope', text: 'Nhấn "Gửi QR về Gmail" để nhận mã', color: '#f97316' },
+                { step: '2', icon: 'fa-mobile-screen', text: 'Mở email trên điện thoại của bạn', color: '#3b82f6' },
+                { step: '3', icon: 'fa-camera', text: 'Đưa mã QR cho lễ tân admin quét tại quầy', color: '#10b981' }
+              ].map(({ step, icon, text, color }) => (
+                <div key={step} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: step !== '3' ? '12px' : 0 }}>
+                  <div style={{
+                    width: '24px', height: '24px', borderRadius: '50%',
+                    backgroundColor: color, color: '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '0.75rem', fontWeight: '800', flexShrink: 0,
+                    marginTop: '2px'
+                  }}>{step}</div>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', flex: 1, paddingTop: '3px' }}>
+                    <i className={"fa-solid " + icon} style={{ color, width: '18px', fontSize: '0.9rem', marginTop: '3px', flexShrink: 0, textAlign: 'center' }}></i>
+                    <span style={{ fontSize: '0.86rem', color: '#334155', lineHeight: '1.45', textAlign: 'left', fontWeight: '600' }}>
+                      {text}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Nút gửi QR */}
+            <button
+              type="button"
+              disabled={isSendingQr}
+              onClick={handleSendCheckinQr}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: '12px',
+                background: isSendingQr ? '#cbd5e1' : 'linear-gradient(135deg, #f97316, #ef4444)',
+                color: '#ffffff',
+                border: 'none',
+                fontWeight: '800',
+                fontSize: '1rem',
+                cursor: isSendingQr ? 'not-allowed' : 'pointer',
+                boxShadow: isSendingQr ? 'none' : '0 4px 14px rgba(249,115,22,0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                transition: 'all 0.2s',
+                marginBottom: '14px',
+                letterSpacing: '0.03em'
+              }}
+            >
+              {isSendingQr ? (
+                <><i className="fa-solid fa-spinner fa-spin"></i> Đang gửi...</>
+              ) : (
+                <><i className="fa-solid fa-paper-plane"></i> Gửi QR về Gmail</>
+              )}
+            </button>
+
+            {/* Thông báo kết quả gửi */}
+            {qrSendStatus === 'success' && (
+              <div style={{
+                backgroundColor: '#f0fdf4', border: '1px solid #86efac',
+                borderRadius: '10px', padding: '12px 16px', marginBottom: '14px',
+                display: 'flex', alignItems: 'flex-start', gap: '10px'
+              }}>
+                <i className="fa-solid fa-circle-check" style={{ color: '#16a34a', marginTop: '2px' }}></i>
+                <div style={{ fontSize: '0.84rem', color: '#166534', lineHeight: '1.5' }}>
+                  <strong>Gửi thành công!</strong><br/>{qrSendMessage}
+                </div>
+              </div>
+            )}
+            {qrSendStatus === 'error' && (
+              <div style={{
+                backgroundColor: '#fef2f2', border: '1px solid #fca5a5',
+                borderRadius: '10px', padding: '12px 16px', marginBottom: '14px',
+                display: 'flex', alignItems: 'flex-start', gap: '10px'
+              }}>
+                <i className="fa-solid fa-circle-exclamation" style={{ color: '#dc2626', marginTop: '2px' }}></i>
+                <div style={{ fontSize: '0.84rem', color: '#991b1b', lineHeight: '1.5' }}>
+                  <strong>Gửi thất bại!</strong><br/>{qrSendMessage}
+                </div>
+              </div>
+            )}
+
+            {/* Lịch sử check-in */}
+            <div style={{ textAlign: 'left' }}>
+              <h4 style={{ fontSize: '0.82rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                <i className="fa-solid fa-clock-rotate-left" style={{ marginRight: '6px' }}></i> Lịch sử vào phòng tập
+              </h4>
+              <div style={{ maxHeight: '110px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {memberCheckinHistory.slice(0, 3).map((h, index) => {
+                  const checkinDate = new Date(h.checkinTime);
+                  return (
+                    <div key={h.checkinId || index} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#334155', padding: '6px 10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <span style={{ fontWeight: '600' }}><i className="fa-regular fa-calendar-check" style={{ color: '#10b981', marginRight: '6px' }}></i> Ngày {checkinDate.toLocaleDateString('vi-VN')}</span>
+                      <span style={{ fontWeight: '700', color: 'var(--orange)' }}>Giờ: {checkinDate.toLocaleTimeString('vi-VN')}</span>
+                    </div>
+                  );
+                })}
+                {memberCheckinHistory.length === 0 && (
+                  <div style={{ fontSize: '0.82rem', color: '#94a3b8', textAlign: 'center', padding: '10px' }}>Chưa có lịch sử check-in</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SUCCESS MODAL KHI CHECK-IN THÀNH CÔNG ── */}
+      {justCheckedIn && (
+        <div className="member-qr-modal-overlay" style={{ zIndex: 999999 }}>
+          <div className="animate-scale-in" style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '24px',
+            width: '95%',
+            maxWidth: '560px',
+            boxShadow: '0 25px 60px rgba(0,0,0,0.2)',
+            padding: '40px',
+            position: 'relative',
+            textAlign: 'center',
+            border: '2.5px solid #10b981',
+            boxSizing: 'border-box',
+            overflow: 'hidden'
+          }}>
+            {/* Decorative background gradients */}
+            <div style={{
+              position: 'absolute',
+              top: '-150px',
+              left: '-150px',
+              width: '300px',
+              height: '300px',
+              background: 'radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%)',
+              pointerEvents: 'none'
+            }} />
+            <div style={{
+              position: 'absolute',
+              bottom: '-150px',
+              right: '-150px',
+              width: '300px',
+              height: '300px',
+              background: 'radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%)',
+              pointerEvents: 'none'
+            }} />
+
+            {/* Checkmark circle */}
+            <div style={{
+              width: '90px',
+              height: '90px',
+              borderRadius: '50%',
+              backgroundColor: '#ecfdf5',
+              border: '4px solid #10b981',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#10b981',
+              fontSize: '3rem',
+              margin: '0 auto 24px auto',
+              boxShadow: '0 10px 25px rgba(16,185,129,0.2)'
+            }}>
+              <i className="fa-solid fa-circle-check"></i>
+            </div>
+
+            <h3 style={{ 
+              color: '#065f46', 
+              fontWeight: '900', 
+              fontSize: '1.75rem', 
+              margin: '0 0 12px 0', 
+              letterSpacing: '0.5px' 
+            }}>
+              CHECK-IN THÀNH CÔNG!
+            </h3>
+            
+            <p style={{ 
+              fontSize: '1.05rem', 
+              color: '#334155', 
+              margin: '0 0 16px 0', 
+              fontWeight: '600', 
+              lineHeight: '1.6',
+              fontFamily: '"Be Vietnam Pro", sans-serif' 
+            }}>
+              Hệ thống đã xác nhận bạn vào phòng tập.<br/>
+              Cảm ơn và chúc bạn có một buổi tập luyện thật tuyệt vời! 💪
+            </p>
+
+            {lastCheckinTime && (
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                backgroundColor: '#f0fdf4',
+                border: '1.5px solid #d1fae5',
+                padding: '10px 20px',
+                borderRadius: '30px',
+                fontSize: '0.92rem',
+                color: '#166534',
+                fontWeight: '700',
+                marginBottom: '30px'
+              }}>
+                <i className="fa-solid fa-clock"></i>
+                Thời gian vào: {new Date(lastCheckinTime).toLocaleTimeString('vi-VN')} - {new Date(lastCheckinTime).toLocaleDateString('vi-VN')}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setJustCheckedIn(false);
+                  setCheckinModalOpen(false);
+                }}
+                style={{
+                  padding: '14px 60px',
+                  borderRadius: '14px',
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontWeight: '800',
+                  fontSize: '1.1rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 8px 20px rgba(16,185,129,0.3)',
+                  letterSpacing: '0.05em',
+                  transition: 'transform 0.15s, box-shadow 0.15s'
+                }}
+                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 10px 24px rgba(16,185,129,0.4)'; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(16,185,129,0.3)'; }}
+              >
+                XÁC NHẬN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {cancellationModalOpen && (
         <div style={{
           position: 'fixed',

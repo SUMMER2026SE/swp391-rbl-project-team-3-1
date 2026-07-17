@@ -5,8 +5,8 @@ const createTransporter = () => {
     return nodemailer.createTransport({
         service: process.env.EMAIL_SERVICE || 'gmail',
         auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS
+            user: process.env.EMAIL_USER || process.env.SMTP_USER,
+            pass: process.env.EMAIL_PASS || process.env.SMTP_PASS
         }
     });
 };
@@ -17,7 +17,7 @@ const createTransporter = () => {
 const sendEmail = async (to, subject, html) => {
     const transporter = createTransporter();
     const mailOptions = {
-        from: `"FX Fitness Center" <${process.env.EMAIL_USER}>`,
+        from: `"FX Fitness Center" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
         to,
         subject,
         html
@@ -73,6 +73,55 @@ const sendVerificationEmail = async (email, fullName, verificationLink) => {
             <div style="background: rgba(249,115,22,0.1); border-left: 4px solid #f97316; padding: 15px 20px; margin: 25px 0; border-radius: 0 8px 8px 0;">
                 <p style="margin: 0; font-size: 13px; color: #ccc;">
                     ⏰ Lưu ý: Link xác thực này có hiệu lực trong vòng <strong style="color: #f97316;">24 giờ</strong>.
+                </p>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <div style="background: #0a0a0a; padding: 25px 30px; text-align: center; border-top: 1px solid #222;">
+            <p style="margin: 0; font-size: 12px; color: #666;">© 2026 FX Fitness Center. All rights reserved.</p>
+            <p style="margin: 8px 0 0; font-size: 11px; color: #555;">Nếu bạn không tạo tài khoản này, vui lòng bỏ qua email này.</p>
+        </div>
+    </div>`;
+
+    return sendEmail(email, subject, html);
+};
+
+// =====================================================
+// 1b. EMAIL GỬI MÃ OTP XÁC MINH ĐĂNG KÝ GUEST (OTP Verification)
+// =====================================================
+const sendOtpEmail = async (email, fullName, otp) => {
+    const subject = '🔐 Mã OTP xác minh tài khoản FX Fitness Center';
+    const html = `
+    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%); border-radius: 16px; overflow: hidden; border: 1px solid #333;">
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #f97316 0%, #ef4444 100%); padding: 40px 30px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 800; letter-spacing: 2px;">FX FITNESS</h1>
+            <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 14px; letter-spacing: 1px;">MÃ XÁC THỰC TÀI KHOẢN</p>
+        </div>
+        
+        <!-- Body -->
+        <div style="padding: 40px 30px; color: #e0e0e0;">
+            <h2 style="color: #f97316; margin: 0 0 20px; font-size: 22px;">Xin chào, ${fullName}! 🎉</h2>
+            <p style="line-height: 1.8; font-size: 15px; margin: 0 0 15px;">
+                Cảm ơn bạn đã đăng ký tài khoản tại <strong style="color: #f97316;">FX Fitness Center</strong>. 
+                Vui lòng sử dụng mã OTP dưới đây để hoàn tất việc xác minh tài khoản của bạn:
+            </p>
+            
+            <!-- OTP Box -->
+            <div style="text-align: center; margin: 35px 0;">
+                <div style="display: inline-block; background: rgba(249,115,22,0.1); border: 2.5px dashed #f97316; border-radius: 12px; padding: 15px 40px;">
+                    <span style="font-size: 38px; font-weight: 900; letter-spacing: 8px; color: #ffffff; font-family: 'Courier New', Courier, monospace;">${otp}</span>
+                </div>
+            </div>
+            
+            <p style="line-height: 1.8; font-size: 15px; margin: 0 0 30px; text-align: center; color: #aaa;">
+                Mã xác thực này có hiệu lực trong vòng <strong style="color: #f97316;">10 phút</strong>.
+            </p>
+            
+            <div style="background: rgba(239,68,68,0.1); border-left: 4px solid #ef4444; padding: 15px 20px; margin: 25px 0; border-radius: 0 8px 8px 0;">
+                <p style="margin: 0; font-size: 13px; color: #f87171;">
+                    ⚠️ Tuyệt đối không chia sẻ mã OTP này với bất kỳ ai để bảo mật thông tin cá nhân.
                 </p>
             </div>
         </div>
@@ -270,10 +319,69 @@ const sendAccountGrantedEmail = async (email, fullName, roleName, tempPassword) 
     return sendEmail(email, subject, html);
 };
 
+// =====================================================
+// 5. EMAIL GỬI MÃ QR CHECK-IN CHO MEMBER
+// =====================================================
+const sendCheckinQrEmail = async (email, fullName, memberId, qrDataUrl, checkinUrl) => {
+    const subject = '🏋️ FX Fitness Center – Mã QR Check-in của bạn';
+    const html = `
+    <div style="font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #0f0f15; background: linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%); border-radius: 16px; overflow: hidden; border: 1px solid #333344;">
+        <!-- Header -->
+        <div style="background-color: #e65100; background: linear-gradient(135deg, #f97316 0%, #ef4444 100%); padding: 35px 24px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: 2px; font-family: 'Segoe UI', Roboto, Arial, sans-serif;">FX FITNESS</h1>
+            <p style="color: rgba(255,255,255,0.9); margin: 6px 0 0; font-size: 13px; letter-spacing: 1px; font-family: 'Segoe UI', Roboto, Arial, sans-serif;">MÃ QR CHECK-IN VÀO PHÒNG TẬP</p>
+        </div>
+        
+        <!-- Body -->
+        <div style="padding: 35px 24px; color: #e2e8f0; text-align: center; font-family: 'Segoe UI', Roboto, Arial, sans-serif;">
+            <h2 style="color: #f97316; margin: 0 0 12px; font-size: 22px; font-weight: 700;">Xin chào, ${fullName}! 💪</h2>
+            <p style="line-height: 1.6; font-size: 15px; margin: 0 0 24px; color: #cbd5e1;">
+                Đây là mã QR check-in của bạn tại <strong style="color: #f97316;">FX Fitness Center</strong>.<br>
+                Hãy đưa mã QR này cho lễ tân quét khi vào phòng tập.
+            </p>
+            
+            <!-- QR Code Image -->
+            <div style="background-color: #ffffff; display: inline-block; padding: 16px; border-radius: 12px; margin: 5px 0 20px 0; box-shadow: 0 8px 30px rgba(0,0,0,0.4);">
+                <img src="${qrDataUrl}" alt="QR Check-in Code" width="220" height="220" style="display: block; border: 0;" />
+            </div>
+            
+            <br>
+            
+            <!-- Member ID Info -->
+            <div style="background-color: #271a15; border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 24px; margin: 0 0 24px 0; display: inline-block; min-width: 180px; text-align: center;">
+                <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; font-weight: bold;">MÃ HỘI VIÊN</div>
+                <div style="font-size: 24px; font-weight: 800; color: #f97316; letter-spacing: 1px;">#${memberId}</div>
+            </div>
+            
+            <div style="background-color: #13271d; border-left: 4px solid #10b981; padding: 14px 20px; margin: 0 0 20px 0; border-radius: 0 8px 8px 0; text-align: left;">
+                <p style="margin: 0; font-size: 13px; color: #6ee7b7; line-height: 1.5;">
+                    ✅ <strong>Hướng dẫn sử dụng:</strong> Mở email này trên điện thoại của bạn, đưa mã QR ở trên cho lễ tân tại quầy để quét xác nhận vào phòng tập.
+                </p>
+            </div>
+            
+            <div style="background-color: #2b1717; border-left: 4px solid #ef4444; padding: 12px 20px; margin: 0; border-radius: 0 8px 8px 0; text-align: left;">
+                <p style="margin: 0; font-size: 12px; color: #fca5a5; line-height: 1.5;">
+                    ⚠️ Mã QR này chỉ dành cho tài khoản của bạn. Vui lòng không chia sẻ cho người khác để tránh sai lệch lịch sử luyện tập.
+                </p>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <div style="background-color: #0c0c12; padding: 25px 24px; text-align: center; border-top: 1px solid #222233; font-family: 'Segoe UI', Roboto, Arial, sans-serif;">
+            <p style="margin: 0; font-size: 12px; color: #64748b;">© 2026 FX Fitness Center. All rights reserved.</p>
+            <p style="margin: 6px 0 0; font-size: 11px; color: #475569;">Email này được gửi tự động, vui lòng không trả lời.</p>
+        </div>
+    </div>`;
+ 
+    return sendEmail(email, subject, html);
+};
+
 module.exports = {
     sendEmail,
     sendVerificationEmail,
+    sendOtpEmail,
     sendWelcomeEmail,
     sendTrainerAccountEmail,
-    sendAccountGrantedEmail
+    sendAccountGrantedEmail,
+    sendCheckinQrEmail
 };

@@ -10,7 +10,14 @@ const notifyAuthChange = () => window.dispatchEvent(new Event('authChange'));
 function LoginPage() {
   // Navigation & Authentication states
   const [token, setToken] = useState(localStorage.getItem('token') || '');
-  const [userInfo, setUserInfo] = useState(JSON.parse(localStorage.getItem('userInfo') || 'null'));
+  const [userInfo, setUserInfo] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('userInfo') || 'null');
+    } catch (e) {
+      console.error('Error parsing userInfo:', e);
+      return null;
+    }
+  });
   const [currentCard, setCurrentCard] = useState('login'); // 'login', 'forgot', 'reset'
 
   // Input states

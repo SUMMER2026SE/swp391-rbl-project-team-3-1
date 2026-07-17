@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './AdminDashboard.css';
+import jsQR from 'jsqr';
+
 
 function AdminDashboard({ token, userInfo, logout }) {
   // Navigation State
@@ -7,6 +9,8 @@ function AdminDashboard({ token, userInfo, logout }) {
 
   // Selected chart year
   const [selectedYear, setSelectedYear] = useState('2025');
+  const [timeRangeType, setTimeRangeType] = useState('month');
+  const [selectedPeriod, setSelectedPeriod] = useState('ALL');
 
   // --- Live API Sync States ---
   const [stats, setStats] = useState({
@@ -29,6 +33,23 @@ function AdminDashboard({ token, userInfo, logout }) {
   const [offRequestsList, setOffRequestsList] = useState([]);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [notifications, setNotifications] = useState([]);
+
+  // --- Check-in State Variables ---
+  const [checkinsList, setCheckinsList] = useState([]);
+  const [checkinSearchQuery, setCheckinSearchQuery] = useState('');
+  const [manualMemberId, setManualMemberId] = useState('');
+  const [isCheckinSubmitting, setIsCheckinSubmitting] = useState(false);
+  const [selectedCheckin, setSelectedCheckin] = useState(null);
+
+  // --- QR Camera Scanner States ---
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [qrScanStatus, setQrScanStatus] = useState('idle'); // idle | scanning | processing | success | error
+  const [qrScanMessage, setQrScanMessage] = useState('');
+  const [qrScanResult, setQrScanResult] = useState(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const animFrameRef = useRef(null);
 
   const isAppointmentPast = (ap) => {
     if (!ap) return false;
@@ -156,6 +177,172 @@ function AdminDashboard({ token, userInfo, logout }) {
       .catch(err => console.error('Error fetching off requests:', err));
   };
 
+  const fetchCheckinsList = () => {
+    if (!token || token === 'mock-preview-token') return;
+    fetch('/api/dashboard/admin/checkins', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.checkins) setCheckinsList(data.checkins);
+      })
+      .catch(err => console.error('Error fetching checkins:', err));
+  };
+
+  const handlePerformCheckIn = (memberId) => {
+    if (!memberId) return;
+    setIsCheckinSubmitting(true);
+    fetch('/api/dashboard/admin/checkin/perform', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ memberId })
+    })
+      .then(res => {
+        if (!res.ok) return res.json().then(err => { throw new Error(err.message); });
+        return res.json();
+      })
+      .then(data => {
+        showToast(data.message || 'Check-in thành công!');
+        setManualMemberId('');
+        fetchCheckinsList();
+        setIsCheckinSubmitting(false);
+      })
+      .catch(err => {
+        setIsCheckinSubmitting(false);
+        alert(err.message || 'Lỗi khi thực hiện check-in!');
+      });
+  };
+
+  // Hàm thực hiện check-in sau khi quét được QR (bỏ qua broadcast lập tức)
+  const performCheckinFromQr = async (memberId) => {
+    setQrScanStatus('processing');
+    setQrScanMessage('Đang xác nhận check-in...');
+    try {
+      const res = await fetch('/api/checkout/public-checkin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId, skipBroadcast: true })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setQrScanStatus('success');
+        setQrScanResult(data.checkIn);
+        setQrScanMessage('CHECK-IN THÀNH CÔNG!');
+        fetchCheckinsList();
+      } else {
+        setQrScanStatus('error');
+        setQrScanMessage(data.message || 'Check-in thất bại!');
+      }
+    } catch (err) {
+      setQrScanStatus('error');
+      setQrScanMessage('Lỗi kết nối máy chủ!');
+    }
+  };
+
+  // Hàm gửi yêu cầu phát thông báo hoàn thành check-in tới member
+  const notifyCheckinComplete = async (memberId) => {
+    try {
+      await fetch('/api/checkout/notify-checkin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId })
+      });
+    } catch (err) {
+      console.error('Error notifying checkin complete:', err);
+    }
+  };
+
+
+  // Dừng camera
+  const stopQrScanner = () => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
+
+  // Mở camera và bắt đầu quét QR
+  const startQrScanner = async () => {
+    setQrScannerOpen(true);
+    setQrScanStatus('scanning');
+    setQrScanMessage('');
+    setQrScanResult(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+
+      const scanFrame = () => {
+        if (!videoRef.current || !canvasRef.current) return;
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'dontInvert'
+          });
+          if (code && code.data) {
+            // Đã detect được QR, parse lấy memberId
+            stopQrScanner();
+            let memberId = null;
+            try {
+              const url = new URL(code.data);
+              memberId = url.searchParams.get('memberId');
+            } catch {
+              // Nếu không phải URL, thử parse trực tiếp như số memberId
+              if (/^\d+$/.test(code.data.trim())) {
+                memberId = code.data.trim();
+              }
+            }
+            if (memberId) {
+              performCheckinFromQr(memberId);
+            } else {
+              setQrScanStatus('error');
+              setQrScanMessage('Mã QR không hợp lệ! Vui lòng thử lại.');
+            }
+            return;
+          }
+        }
+        animFrameRef.current = requestAnimationFrame(scanFrame);
+      };
+      animFrameRef.current = requestAnimationFrame(scanFrame);
+    } catch (err) {
+      setQrScanStatus('error');
+      setQrScanMessage('Không thể mở camera! Vui lòng cấp quyền truy cập camera cho trình duyệt.');
+    }
+  };
+
+  const closeQrScanner = () => {
+    // Nếu quét thành công mà đóng scanner, tự động phát thông báo check-in cho hội viên
+    if (qrScanStatus === 'success' && qrScanResult && qrScanResult.memberId) {
+      notifyCheckinComplete(qrScanResult.memberId);
+    }
+    stopQrScanner();
+    setQrScannerOpen(false);
+    setQrScanStatus('idle');
+    setQrScanMessage('');
+    setQrScanResult(null);
+  };
+
   const reloadNotifications = () => {
     if (!token || token === 'mock-preview-token') return;
     fetch('/api/notifications', {
@@ -272,13 +459,6 @@ function AdminDashboard({ token, userInfo, logout }) {
       .then(data => { if (data && data.services) setServicesList(data.services); })
       .catch(err => console.error('Error fetching admin services:', err));
 
-    fetch('/api/dashboard/admin/complaints', {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => { if (data && data.complaints) setComplaintsList(data.complaints); })
-      .catch(err => console.error('Error fetching admin complaints:', err));
-
     fetch('/api/dashboard/admin/homepage-config', {
       headers: { Authorization: `Bearer ${token}` }
     })
@@ -315,6 +495,7 @@ function AdminDashboard({ token, userInfo, logout }) {
 
     fetchOffRequests();
     reloadNotifications();
+    fetchCheckinsList();
   };
   useEffect(() => {
     reloadAllAdminData();
@@ -351,6 +532,10 @@ function AdminDashboard({ token, userInfo, logout }) {
         // Realtime auto-refresh on Off request / booking events
         if (['OFF_REQUEST_CREATED', 'OFF_REQUEST_APPROVED', 'OFF_REQUEST_REJECTED', 'OFF_REQUEST_CANCELLED', 'NEW_OFF_REQUEST'].includes(data.type || newNotif.type)) {
           fetchOffRequests();
+        }
+
+        if (data.type === 'MEMBER_CHECKED_IN') {
+          fetchCheckinsList();
         }
 
       } catch (err) {
@@ -610,23 +795,6 @@ function AdminDashboard({ token, userInfo, logout }) {
       .catch(err => console.error('Error toggling service:', err));
   };
 
-  const resolveComplaint = (complaintId, actionType = 'Resolved') => {
-    fetch(`/api/dashboard/admin/complaints/${complaintId}/resolve`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({ status: actionType })
-    })
-      .then(res => res.json())
-      .then(data => {
-        showToast(data.message || 'Cập nhật khiếu nại thành công!');
-        reloadAllAdminData();
-      })
-      .catch(err => console.error('Error resolving complaint:', err));
-  };
-
   const openEditPkgModal = (pkg) => {
     setShowEditPackage(pkg.id);
     setShowAddPackage(false);
@@ -780,194 +948,260 @@ function AdminDashboard({ token, userInfo, logout }) {
 
   // Render tab contents
   const renderTabContent = () => {
+    const rev = analyticsData?.revenue || { total: 48500000, membership: 35000000, service: 13500000 };
+    const pkgs = analyticsData?.packages || [];
+    const srvs = analyticsData?.services || [];
+    const tns = analyticsData?.trainers || [];
+    const monthlyAnalytics = analyticsData?.monthlyAnalytics || [];
+    const weeklyAnalytics = analyticsData?.weeklyAnalytics || [];
+
+    let currentRev = { ...rev };
+    if (selectedPeriod !== 'ALL') {
+      if (timeRangeType === 'month') {
+        const found = monthlyAnalytics.find(m => m.monthKey === selectedPeriod);
+        if (found) {
+          currentRev = {
+            total: found.total,
+            membership: found.membership,
+            service: found.service
+          };
+        }
+      } else {
+        const found = weeklyAnalytics.find(w => w.weekStart === selectedPeriod);
+        if (found) {
+          currentRev = {
+            total: found.total,
+            membership: found.membership,
+            service: found.service
+          };
+        }
+      }
+    }
+
+    // Calculate split percentages
+    const membershipPct = currentRev.total > 0 ? Math.round((currentRev.membership / currentRev.total) * 100) : 0;
+    const servicePct = currentRev.total > 0 ? Math.round((currentRev.service / currentRev.total) * 100) : 0;
+
     switch (activeTab) {
       case 'tongquan':
         return (
-          <>
-            {/* Stat Cards Row */}
-            <div className="admin-stats-grid">
-              <div 
-                className="admin-stat-card orange" 
-                onClick={() => setActiveTab('nguoidung')} 
-                style={{ cursor: 'pointer' }}
-              >
-                <div className="admin-stat-label">Tổng học viên</div>
-                <div className="admin-stat-value">{stats.totalMembers?.toLocaleString('vi-VN')}</div>
-                <div className="admin-stat-subtext">
-                  <span className="trend-up">+12%</span> so với tháng trước
+          <div className="admin-analytics-container">
+            {/* Header Description */}
+            <div className="admin-card-panel analytics-header-panel">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+                <div>
+                  <h3 className="admin-card-title">Tổng quan hoạt động hệ thống</h3>
+                  <p className="admin-card-desc">Dữ liệu doanh thu thực tế từ cổng thanh toán PayOS và thống kê hoạt động hệ thống.</p>
                 </div>
-                <div className="admin-stat-icon-wrap">
-                  <i className="fa-solid fa-users"></i>
-                </div>
-              </div>
-
-              <div 
-                className="admin-stat-card green" 
-                onClick={() => setActiveTab('baocao')} 
-                style={{ cursor: 'pointer' }}
-              >
-                <div className="admin-stat-label">Doanh thu tháng</div>
-                <div className="admin-stat-value">{stats.totalRevenue?.toLocaleString('vi-VN')}đ</div>
-                <div className="admin-stat-subtext">
-                  <span className="trend-up">+8%</span> chỉ tiêu đề ra
-                </div>
-                <div className="admin-stat-icon-wrap">
-                  <i className="fa-solid fa-wallet"></i>
-                </div>
-              </div>
-
-              <div 
-                className="admin-stat-card purple" 
-                onClick={() => setActiveTab('hlv')} 
-                style={{ cursor: 'pointer' }}
-              >
-                <div className="admin-stat-label">Huấn luyện viên đang hoạt động</div>
-                <div className="admin-stat-value">{stats.activeTrainers?.toLocaleString('vi-VN')}</div>
-                <div className="admin-stat-subtext">
-                  <span className="trend-neutral">Ổn định</span> nhân lực
-                </div>
-                <div className="admin-stat-icon-wrap">
-                  <i className="fa-solid fa-person-running"></i>
-                </div>
-              </div>
-
-              <div 
-                className="admin-stat-card rose" 
-                onClick={() => setActiveTab('lichhen')} 
-                style={{ cursor: 'pointer' }}
-              >
-                <div className="admin-stat-label">Lịch hẹn hôm nay</div>
-                <div className="admin-stat-value">{stats.appointmentsToday?.toLocaleString('vi-VN')}</div>
-                <div className="admin-stat-subtext">
-                  <span className="trend-alert">3 slot trống</span> phòng hướng dẫn
-                </div>
-                <div className="admin-stat-icon-wrap">
-                  <i className="fa-solid fa-calendar-check"></i>
-                </div>
-              </div>
-            </div>
-
-            {/* Middle Grid: Revenue chart and Campaign card */}
-            <div className="admin-overview-grid">
-              <div className="admin-card-panel">
-                <div className="admin-card-header">
-                  <div>
-                    <h3 className="admin-card-title">Doanh thu bán gói tập</h3>
-                    <p className="admin-card-desc">Thống kê doanh số theo đơn vị Triệu VNĐ</p>
-                  </div>
-                  <div className="admin-toggle-years">
-                    <button 
-                      className={`admin-toggle-btn ${selectedYear === '2024' ? 'active' : ''}`}
-                      onClick={() => setSelectedYear('2024')}
-                    >
-                      2024
-                    </button>
-                    <button 
-                      className={`admin-toggle-btn ${selectedYear === '2025' ? 'active' : ''}`}
-                      onClick={() => setSelectedYear('2025')}
-                    >
-                      2025
-                    </button>
-                  </div>
-                </div>
-
-                {/* CSS Bar Chart */}
-                <div className="admin-chart-wrapper">
-                  <div className="admin-chart-bars">
-                    {chartData[selectedYear].map((item, idx) => {
-                      const pct = Math.round((item.val / 70) * 100);
-                      return (
-                        <div key={idx} className="admin-chart-col">
-                          <div 
-                            className={`admin-chart-bar ${idx === 11 ? 'active' : ''}`} 
-                            style={{ height: `${pct}%` }}
-                            data-value={`${item.val}M`}
-                          ></div>
-                          <span className="admin-chart-label">{item.month}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div className="admin-campaign-card">
-                  <div className="admin-campaign-header">
-                    <span className="admin-campaign-tag">Chiến dịch mới</span>
-                    <h3 className="admin-campaign-title">THÁNG VÀNG ƯU ĐÃI</h3>
-                    <p className="admin-campaign-desc">
-                      Chiến dịch tập trung đẩy mạnh phân khúc gói **Premium Platinum** mang lại hiệu suất chuyển đổi tăng vọt 15% trong tuần đầu kích hoạt.
-                    </p>
-                  </div>
-                  <button className="admin-campaign-btn" onClick={() => setActiveTab('baocao')}>
-                    Xem báo cáo <i className="fa-solid fa-arrow-right-long"></i>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button className="admin-btn-submit" onClick={() => setActiveTab('baocao')}>
+                    <i className="fa-solid fa-chart-line" style={{ marginRight: '8px' }}></i> Xem Báo Cáo Tài Chính
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Bottom Preview: Quick Users List */}
-            <div className="admin-card-panel">
-              <div className="admin-card-header">
-                <h3 className="admin-card-title">Xem nhanh tài khoản người dùng</h3>
-                <span className="admin-link-action" onClick={() => setActiveTab('nguoidung')}>Xem tất cả</span>
+            {/* Financial Overview Row */}
+            <div className="admin-stats-grid analytics-stats-grid">
+              <div className="admin-stat-card orange">
+                <div className="admin-stat-label">Tổng doanh thu hệ thống</div>
+                <div className="admin-stat-value">{rev.total?.toLocaleString('vi-VN')} đ</div>
+                <div className="admin-stat-subtext">
+                  Tổng tiền thực thu từ giao dịch <span style={{ fontWeight: 'bold' }}>Thành công</span>
+                </div>
+                <div className="admin-stat-icon-wrap">
+                  <i className="fa-solid fa-sack-dollar"></i>
+                </div>
               </div>
-              <div className="admin-table-container">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Người dùng</th>
-                      <th>Email</th>
-                      <th>Vai trò</th>
-                      <th>Ngày gia nhập</th>
-                      <th>Trạng thái</th>
-                      <th>Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usersList.slice(0, 4).map((user) => (
-                      <tr key={user.id}>
-                        <td>
-                          <div className="admin-table-user-cell">
-                            <div className={`admin-table-avatar ${user.role === 'TRAINER' ? 'trainer' : user.role === 'GUEST' ? 'guest' : ''}`}>
-                              {user.name.charAt(0)}
-                            </div>
-                            <span className="admin-table-name">{user.name}</span>
-                          </div>
-                        </td>
-                        <td>{user.email}</td>
-                        <td>
-                          <span className={`admin-role-badge-cell ${user.role.toLowerCase()}`}>
-                            {user.role}
-                          </span>
-                        </td>
-                        <td>{user.joinDate}</td>
-                        <td>
-                          {user.status !== '—' ? (
-                            <span className={`admin-status-dot-wrap ${user.status.toLowerCase()}`}>
-                              <span className={`admin-status-dot ${user.status.toLowerCase()}`}></span>
-                              {user.status}
-                            </span>
-                          ) : '—'}
-                        </td>
-                        <td>
-                          {user.role !== 'GUEST' ? (
-                            <button 
-                              className={`admin-action-link ${user.status === 'Inactive' ? 'unlock' : ''}`}
-                              onClick={() => toggleUserStatus(user.id)}
-                            >
-                              {user.status === 'Inactive' ? 'Mở khóa' : 'Khóa'}
-                            </button>
-                          ) : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+              <div className="admin-stat-card green">
+                <div className="admin-stat-label">Doanh thu Gói tập thành viên</div>
+                <div className="admin-stat-value">{rev.membership?.toLocaleString('vi-VN')} đ</div>
+                <div className="admin-stat-subtext">
+                  Chiếm <span style={{ fontWeight: 'bold' }}>{membershipPct}%</span> tổng cơ cấu doanh số
+                </div>
+                <div className="admin-stat-icon-wrap">
+                  <i className="fa-solid fa-id-card"></i>
+                </div>
+              </div>
+
+              <div className="admin-stat-card purple">
+                <div className="admin-stat-label">Doanh thu Dịch vụ & Tiện ích</div>
+                <div className="admin-stat-value">{rev.service?.toLocaleString('vi-VN')} đ</div>
+                <div className="admin-stat-subtext">
+                  Chiếm <span style={{ fontWeight: 'bold' }}>{servicePct}%</span> tổng cơ cấu doanh số
+                </div>
+                <div className="admin-stat-icon-wrap">
+                  <i className="fa-solid fa-bell-concierge"></i>
+                </div>
               </div>
             </div>
-          </>
+
+            {/* Revenue Split Chart */}
+            <div className="admin-card-panel split-chart-panel">
+              <h4 className="analytics-section-title">Cơ cấu nguồn doanh thu</h4>
+              <div className="split-progress-wrapper">
+                <div className="split-progress-bar">
+                  <div className="split-bar-membership" style={{ width: `${membershipPct}%` }}></div>
+                  <div className="split-bar-service" style={{ width: `${servicePct}%` }}></div>
+                </div>
+                <div className="split-legends">
+                  <div className="split-legend-item">
+                    <span className="legend-dot membership"></span>
+                    <span className="legend-label">Gói tập hội viên:</span>
+                    <span className="legend-value">{rev.membership?.toLocaleString('vi-VN')}đ ({membershipPct}%)</span>
+                  </div>
+                  <div className="split-legend-item">
+                    <span className="legend-dot service"></span>
+                    <span className="legend-label">Dịch vụ bổ sung:</span>
+                    <span className="legend-value">{rev.service?.toLocaleString('vi-VN')}đ ({servicePct}%)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Two-Column Analytics Layout */}
+            <div className="analytics-details-grid">
+              {/* Left Column: Popular Packages and Services */}
+              <div className="analytics-left-col">
+                {/* Popular Packages Card */}
+                <div className="admin-card-panel analytics-table-panel">
+                  <h4 className="analytics-section-title"><i className="fa-solid fa-tags" style={{ color: 'var(--orange)', marginRight: '8px' }}></i> Gói tập bán chạy nhất</h4>
+                  <div className="admin-table-container">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Tên gói tập</th>
+                          <th style={{ textAlign: 'right' }}>Đơn giá</th>
+                          <th style={{ textAlign: 'center' }}>Số lượt mua</th>
+                          <th style={{ textAlign: 'right' }}>Doanh số</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pkgs.map((pkg, idx) => (
+                          <tr key={pkg.id}>
+                            <td className="admin-table-name">
+                              <span className="analytics-table-index">{idx + 1}</span> {pkg.name}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>{pkg.price?.toLocaleString('vi-VN')}đ</td>
+                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{pkg.count}</td>
+                            <td style={{ textAlign: 'right', color: '#10b981', fontWeight: 'bold' }}>{pkg.totalRevenue?.toLocaleString('vi-VN')}đ</td>
+                          </tr>
+                        ))}
+                        {pkgs.length === 0 && (
+                          <tr>
+                            <td colSpan="4" style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>Chưa có dữ liệu giao dịch gói tập.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Popular Services Card */}
+                <div className="admin-card-panel analytics-table-panel" style={{ marginTop: '30px' }}>
+                  <h4 className="analytics-section-title"><i className="fa-solid fa-gem" style={{ color: '#10b981', marginRight: '8px' }}></i> Dịch vụ đi kèm bán chạy nhất</h4>
+                  <div className="admin-table-container">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Tên dịch vụ</th>
+                          <th style={{ textAlign: 'right' }}>Đơn giá</th>
+                          <th style={{ textAlign: 'center' }}>Số lượt mua</th>
+                          <th style={{ textAlign: 'right' }}>Doanh số</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {srvs.map((srv, idx) => (
+                          <tr key={srv.id}>
+                            <td className="admin-table-name">
+                              <span className="analytics-table-index service-idx">{idx + 1}</span> {srv.name}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>{srv.price?.toLocaleString('vi-VN')}đ</td>
+                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{srv.count}</td>
+                            <td style={{ textAlign: 'right', color: '#10b981', fontWeight: 'bold' }}>{srv.totalRevenue?.toLocaleString('vi-VN')}đ</td>
+                          </tr>
+                        ))}
+                        {srvs.length === 0 && (
+                          <tr>
+                            <td colSpan="4" style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>Chưa có dữ liệu giao dịch dịch vụ.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Trainers Leaderboard */}
+              <div className="analytics-right-col">
+                <div className="admin-card-panel trainer-leaderboard-panel">
+                  <h4 className="analytics-section-title"><i className="fa-solid fa-crown" style={{ color: '#f59e0b', marginRight: '8px' }}></i> Xếp hạng HLV (PT) được thuê nhiều nhất</h4>
+                  <p className="admin-card-desc" style={{ marginBottom: '20px' }}>Xếp hạng dựa trên tổng số lượng học viên trực thuộc lộ trình luyện tập.</p>
+
+                  <div className="leaderboard-list">
+                    {tns.map((trainer, idx) => {
+                      let medalClass = "";
+                      let medalIcon = null;
+                      if (idx === 0) {
+                        medalClass = "gold";
+                        medalIcon = <i className="fa-solid fa-medal gold-medal"></i>;
+                      } else if (idx === 1) {
+                        medalClass = "silver";
+                        medalIcon = <i className="fa-solid fa-medal silver-medal"></i>;
+                      } else if (idx === 2) {
+                        medalClass = "bronze";
+                        medalIcon = <i className="fa-solid fa-medal bronze-medal"></i>;
+                      }
+
+                      return (
+                        <div key={trainer.id} className={`leaderboard-item ${medalClass}`}>
+                          <div className="leaderboard-left">
+                            <div className="leaderboard-position">
+                              {medalIcon || <span className="leaderboard-num">{idx + 1}</span>}
+                            </div>
+                            <div className="leaderboard-avatar-circle">
+                              {trainer.name?.charAt(0)}
+                            </div>
+                            <div className="leaderboard-info">
+                              <span className="leaderboard-name">{trainer.name}</span>
+                              <span className="leaderboard-specialty">{trainer.specialty} • Kinh nghiệm: {trainer.experienceYears} năm</span>
+                            </div>
+                          </div>
+                          <div className="leaderboard-right">
+                            <div className="leaderboard-stat">
+                              <span className="stat-num">{trainer.hiredCount}</span>
+                              <span className="stat-label">Học viên</span>
+                            </div>
+                            <div className="leaderboard-divider"></div>
+                            <div className="leaderboard-stat">
+                              <span className="stat-num">{trainer.sessionCount}</span>
+                              <span className="stat-label">Buổi dạy</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {tns.length === 0 && (
+                      <div style={{ textAlign: 'center', color: '#64748b', padding: '30px' }}>
+                        Chưa ghi nhận hoạt động HLV.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="admin-card-panel" style={{ marginTop: '30px', backgroundColor: '#f8fafc', border: '1px dashed #cbd5e1' }}>
+                  <h4 className="analytics-section-title" style={{ fontSize: '0.95rem', marginBottom: '8px' }}>Chỉ số sức khỏe hệ thống</h4>
+                  <p style={{ fontSize: '0.82rem', color: '#64748b', lineHeight: '1.5', margin: '0 0 16px 0' }}>
+                    Tỷ lệ hài lòng của học viên đối với chất lượng HLV đạt <strong>★ {tns.length > 0 ? (tns.reduce((acc, t) => acc + Number(t.rating), 0) / tns.length).toFixed(1) : "5.0"} / 5.0</strong>.
+                  </p>
+                  <button className="admin-btn-submit" style={{ width: '100%', backgroundColor: '#0f172a' }} onClick={() => setActiveTab('checkin')}>
+                    Xem lịch sử Check-in
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         );
 
       case 'nguoidung':
@@ -1472,83 +1706,113 @@ function AdminDashboard({ token, userInfo, logout }) {
             </div>
           </div>
         );
-
-      case 'khieunai':
-        return (
-          <div className="admin-card-panel">
-            <h3 className="admin-card-title" style={{ marginBottom: '24px' }}>Báo cáo phản hồi & Khiếu nại từ Hội viên</h3>
-            
-            <div className="admin-complaint-list">
-              {complaintsList.map((c) => (
-                <div key={c.id} className="admin-complaint-card">
-                  <div className="admin-complaint-main">
-                    <div className="admin-complaint-user">Hội viên: {c.memberName}</div>
-                    <div className="admin-complaint-date">Ngày báo cáo: {c.date}</div>
-                    <div className="admin-complaint-text">"{c.content}"</div>
-                  </div>
-                  <div className="admin-complaint-actions">
-                    <span className={`admin-complaint-status-badge ${c.status === 'Pending' ? 'pending' : c.status === 'Resolved' ? 'resolved' : 'cancelled'}`}>
-                      {c.status === 'Pending' ? 'Đang chờ xử lý' : c.status === 'Resolved' ? 'Đã giải quyết xong' : 'Đã hủy bỏ'}
-                    </span>
-                    {c.status === 'Pending' && (
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button 
-                          className="admin-btn-submit" 
-                          style={{ padding: '6px 12px', fontSize: '0.78rem' }}
-                          onClick={() => resolveComplaint(c.id, 'Resolved')}
-                        >
-                          Giải Quyết
-                        </button>
-                        <button 
-                          className="admin-btn-cancel" 
-                          style={{ padding: '6px 12px', fontSize: '0.78rem' }}
-                          onClick={() => resolveComplaint(c.id, 'Cancelled')}
-                        >
-                          Bỏ Qua
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-
       case 'baocao':
-        const rev = analyticsData?.revenue || { total: 48500000, membership: 35000000, service: 13500000 };
-        const pkgs = analyticsData?.packages || [];
-        const srvs = analyticsData?.services || [];
-        const tns = analyticsData?.trainers || [];
+        const selectedPeriodData = selectedPeriod === 'ALL'
+          ? (timeRangeType === 'month' ? monthlyAnalytics : weeklyAnalytics)
+          : (timeRangeType === 'month'
+              ? monthlyAnalytics.filter(m => m.monthKey === selectedPeriod)
+              : weeklyAnalytics.filter(w => w.weekStart === selectedPeriod));
 
-        // Calculate split percentages
-        const membershipPct = rev.total > 0 ? Math.round((rev.membership / rev.total) * 100) : 0;
-        const servicePct = rev.total > 0 ? Math.round((rev.service / rev.total) * 100) : 0;
+        // Max values for bar charts
+        const maxVal = Math.max(...selectedPeriodData.map(x => x.total), 1);
 
         return (
           <div className="admin-analytics-container">
-            {/* Header Description */}
+            {/* Header Description & Main Toolbar */}
             <div className="admin-card-panel analytics-header-panel">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
                 <div>
-                  <h3 className="admin-card-title">Báo cáo hiệu quả kinh doanh</h3>
-                  <p className="admin-card-desc">Dữ liệu doanh thu thực tế từ cổng thanh toán PayOS và thống kê hoạt động hệ thống.</p>
+                  <h3 className="admin-card-title">Báo cáo tài chính & Biểu đồ phân tích</h3>
+                  <p className="admin-card-desc">Thống kê chi tiết doanh số bán gói tập, cơ cấu doanh thu và phân bổ chi phí hoạt động từ dữ liệu thực tế.</p>
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button className="admin-btn-submit" onClick={() => alert('Đang xuất toàn bộ dữ liệu báo cáo phân tích ra file Excel...')}>
-                    <i className="fa-solid fa-file-excel" style={{ marginRight: '8px' }}></i> Xuất Báo Cáo Tổng Hợp
+                
+                {/* Export & Toolbar Actions */}
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {/* Time Range Selector: Month vs Week */}
+                  <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                    <button
+                      onClick={() => { setTimeRangeType('month'); setSelectedPeriod('ALL'); }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                        fontSize: '0.82rem',
+                        transition: 'all 0.2s',
+                        backgroundColor: timeRangeType === 'month' ? '#ffffff' : 'transparent',
+                        color: timeRangeType === 'month' ? 'var(--orange)' : '#64748b',
+                        boxShadow: timeRangeType === 'month' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                      }}
+                    >
+                      Theo Tháng
+                    </button>
+                    <button
+                      onClick={() => { setTimeRangeType('week'); setSelectedPeriod('ALL'); }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                        fontSize: '0.82rem',
+                        transition: 'all 0.2s',
+                        backgroundColor: timeRangeType === 'week' ? '#ffffff' : 'transparent',
+                        color: timeRangeType === 'week' ? 'var(--orange)' : '#64748b',
+                        boxShadow: timeRangeType === 'week' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                      }}
+                    >
+                      Theo Tuần
+                    </button>
+                  </div>
+
+                  {/* Dropdown for Period Selection */}
+                  <select
+                    value={selectedPeriod}
+                    onChange={(e) => setSelectedPeriod(e.target.value)}
+                    style={{
+                      height: '36px',
+                      padding: '0 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '0.85rem',
+                      fontWeight: '600',
+                      color: '#334155',
+                      backgroundColor: '#ffffff',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {timeRangeType === 'month' ? (
+                      <>
+                        <option value="ALL">Tất cả các tháng</option>
+                        {monthlyAnalytics.map(m => (
+                          <option key={m.monthKey} value={m.monthKey}>Tháng {m.monthKey.slice(5)}/{m.monthKey.slice(0,4)}</option>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        <option value="ALL">Tất cả các tuần</option>
+                        {weeklyAnalytics.map(w => (
+                          <option key={w.weekStart} value={w.weekStart}>Tuần từ {new Date(w.weekStart).toLocaleDateString('vi-VN')}</option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+
+                  <button className="admin-btn-submit" style={{ height: '36px', display: 'flex', alignItems: 'center' }} onClick={() => alert('Đang xuất báo cáo tài chính...')}>
+                    <i className="fa-solid fa-file-excel" style={{ marginRight: '8px' }}></i> Xuất Excel
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Financial Overview Row */}
+            {/* Row 1: Cards Row */}
             <div className="admin-stats-grid analytics-stats-grid">
               <div className="admin-stat-card orange">
-                <div className="admin-stat-label">Tổng doanh thu hệ thống</div>
-                <div className="admin-stat-value">{rev.total?.toLocaleString('vi-VN')} đ</div>
+                <div className="admin-stat-label">Doanh thu thời kỳ</div>
+                <div className="admin-stat-value">{currentRev.total?.toLocaleString('vi-VN')} đ</div>
                 <div className="admin-stat-subtext">
-                  Tổng tiền thực thu từ giao dịch <span style={{ fontWeight: 'bold' }}>Thành công</span>
+                  Tổng thu từ giao dịch <span style={{ fontWeight: 'bold' }}>Thành công</span>
                 </div>
                 <div className="admin-stat-icon-wrap">
                   <i className="fa-solid fa-sack-dollar"></i>
@@ -1556,10 +1820,10 @@ function AdminDashboard({ token, userInfo, logout }) {
               </div>
 
               <div className="admin-stat-card green">
-                <div className="admin-stat-label">Doanh thu Gói tập thành viên</div>
-                <div className="admin-stat-value">{rev.membership?.toLocaleString('vi-VN')} đ</div>
+                <div className="admin-stat-label">Doanh thu Gói tập</div>
+                <div className="admin-stat-value">{currentRev.membership?.toLocaleString('vi-VN')} đ</div>
                 <div className="admin-stat-subtext">
-                  Chiếm <span style={{ fontWeight: 'bold' }}>{membershipPct}%</span> tổng cơ cấu doanh số
+                  Chiếm <span style={{ fontWeight: 'bold' }}>{membershipPct}%</span> cơ cấu doanh số
                 </div>
                 <div className="admin-stat-icon-wrap">
                   <i className="fa-solid fa-id-card"></i>
@@ -1567,10 +1831,10 @@ function AdminDashboard({ token, userInfo, logout }) {
               </div>
 
               <div className="admin-stat-card purple">
-                <div className="admin-stat-label">Doanh thu Dịch vụ & Tiện ích</div>
-                <div className="admin-stat-value">{rev.service?.toLocaleString('vi-VN')} đ</div>
+                <div className="admin-stat-label">Doanh thu Dịch vụ & PT</div>
+                <div className="admin-stat-value">{currentRev.service?.toLocaleString('vi-VN')} đ</div>
                 <div className="admin-stat-subtext">
-                  Chiếm <span style={{ fontWeight: 'bold' }}>{servicePct}%</span> tổng cơ cấu doanh số
+                  Chiếm <span style={{ fontWeight: 'bold' }}>{servicePct}%</span> cơ cấu doanh số
                 </div>
                 <div className="admin-stat-icon-wrap">
                   <i className="fa-solid fa-bell-concierge"></i>
@@ -1578,171 +1842,248 @@ function AdminDashboard({ token, userInfo, logout }) {
               </div>
             </div>
 
-            {/* Revenue Split Chart */}
-            <div className="admin-card-panel split-chart-panel">
-              <h4 className="analytics-section-title">Cơ cấu nguồn doanh thu</h4>
-              <div className="split-progress-wrapper">
-                <div className="split-progress-bar">
-                  <div className="split-bar-membership" style={{ width: `${membershipPct}%` }}></div>
-                  <div className="split-bar-service" style={{ width: `${servicePct}%` }}></div>
-                </div>
-                <div className="split-legends">
-                  <div className="split-legend-item">
-                    <span className="legend-dot membership"></span>
-                    <span className="legend-label">Gói tập hội viên:</span>
-                    <span className="legend-value">{rev.membership?.toLocaleString('vi-VN')}đ ({membershipPct}%)</span>
+            {/* Row 2: Donut Charts */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '30px' }}>
+              
+              {/* Donut Chart 1: Cơ cấu doanh thu */}
+              <div className="admin-card-panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', padding: '30px', minHeight: '320px' }}>
+                <h4 className="analytics-section-title" style={{ width: '100%', textAlign: 'left', marginBottom: '24px' }}>
+                  <i className="fa-solid fa-chart-pie" style={{ color: 'var(--orange)', marginRight: '8px' }}></i> Cơ cấu doanh thu thời kỳ
+                </h4>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '40px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {/* Conic Gradient Donut */}
+                  <div style={{
+                    width: '160px',
+                    height: '160px',
+                    borderRadius: '50%',
+                    background: currentRev.total > 0
+                      ? `conic-gradient(var(--orange) 0% ${membershipPct}%, #10b981 ${membershipPct}% 100%)`
+                      : '#e2e8f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.06)',
+                    position: 'relative'
+                  }}>
+                    <div style={{
+                      width: '110px',
+                      height: '110px',
+                      borderRadius: '50%',
+                      backgroundColor: '#ffffff',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase' }}>Tổng thu</span>
+                      <span style={{ fontSize: '1.05rem', fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>{currentRev.total?.toLocaleString('vi-VN')}đ</span>
+                    </div>
                   </div>
-                  <div className="split-legend-item">
-                    <span className="legend-dot service"></span>
-                    <span className="legend-label">Dịch vụ bổ sung:</span>
-                    <span className="legend-value">{rev.service?.toLocaleString('vi-VN')}đ ({servicePct}%)</span>
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Two-Column Analytics Layout */}
-            <div className="analytics-details-grid">
-              {/* Left Column: Popular Packages and Services */}
-              <div className="analytics-left-col">
-                {/* Popular Packages Card */}
-                <div className="admin-card-panel analytics-table-panel">
-                  <h4 className="analytics-section-title"><i className="fa-solid fa-tags" style={{ color: 'var(--orange)', marginRight: '8px' }}></i> Gói tập bán chạy nhất</h4>
-                  <div className="admin-table-container">
-                    <table className="admin-table">
-                      <thead>
-                        <tr>
-                          <th>Tên gói tập</th>
-                          <th style={{ textAlign: 'right' }}>Đơn giá</th>
-                          <th style={{ textAlign: 'center' }}>Số lượt mua</th>
-                          <th style={{ textAlign: 'right' }}>Doanh số</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pkgs.map((pkg, idx) => (
-                          <tr key={pkg.id}>
-                            <td className="admin-table-name">
-                              <span className="analytics-table-index">{idx + 1}</span> {pkg.name}
-                            </td>
-                            <td style={{ textAlign: 'right' }}>{pkg.price?.toLocaleString('vi-VN')}đ</td>
-                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{pkg.count}</td>
-                            <td style={{ textAlign: 'right', color: '#10b981', fontWeight: 'bold' }}>{pkg.totalRevenue?.toLocaleString('vi-VN')}đ</td>
-                          </tr>
-                        ))}
-                        {pkgs.length === 0 && (
-                          <tr>
-                            <td colSpan="4" style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>Chưa có dữ liệu giao dịch gói tập.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Popular Services Card */}
-                <div className="admin-card-panel analytics-table-panel" style={{ marginTop: '30px' }}>
-                  <h4 className="analytics-section-title"><i className="fa-solid fa-gem" style={{ color: '#10b981', marginRight: '8px' }}></i> Dịch vụ đi kèm bán chạy nhất</h4>
-                  <div className="admin-table-container">
-                    <table className="admin-table">
-                      <thead>
-                        <tr>
-                          <th>Tên dịch vụ</th>
-                          <th style={{ textAlign: 'right' }}>Đơn giá</th>
-                          <th style={{ textAlign: 'center' }}>Số lượt mua</th>
-                          <th style={{ textAlign: 'right' }}>Doanh số</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {srvs.map((srv, idx) => (
-                          <tr key={srv.id}>
-                            <td className="admin-table-name">
-                              <span className="analytics-table-index service-idx">{idx + 1}</span> {srv.name}
-                            </td>
-                            <td style={{ textAlign: 'right' }}>{srv.price?.toLocaleString('vi-VN')}đ</td>
-                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{srv.count}</td>
-                            <td style={{ textAlign: 'right', color: '#10b981', fontWeight: 'bold' }}>{srv.totalRevenue?.toLocaleString('vi-VN')}đ</td>
-                          </tr>
-                        ))}
-                        {srvs.length === 0 && (
-                          <tr>
-                            <td colSpan="4" style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>Chưa có dữ liệu giao dịch dịch vụ.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Column: Trainers Leaderboard */}
-              <div className="analytics-right-col">
-                <div className="admin-card-panel trainer-leaderboard-panel">
-                  <h4 className="analytics-section-title"><i className="fa-solid fa-crown" style={{ color: '#f59e0b', marginRight: '8px' }}></i> Xếp hạng HLV (PT) được thuê nhiều nhất</h4>
-                  <p className="admin-card-desc" style={{ marginBottom: '20px' }}>Xếp hạng dựa trên tổng số lượng học viên trực thuộc lộ trình luyện tập.</p>
-
-                  <div className="leaderboard-list">
-                    {tns.map((trainer, idx) => {
-                      let medalClass = "";
-                      let medalIcon = null;
-                      if (idx === 0) {
-                        medalClass = "gold";
-                        medalIcon = <i className="fa-solid fa-medal gold-medal"></i>;
-                      } else if (idx === 1) {
-                        medalClass = "silver";
-                        medalIcon = <i className="fa-solid fa-medal silver-medal"></i>;
-                      } else if (idx === 2) {
-                        medalClass = "bronze";
-                        medalIcon = <i className="fa-solid fa-medal bronze-medal"></i>;
-                      }
-
-                      return (
-                        <div key={trainer.id} className={`leaderboard-item ${medalClass}`}>
-                          <div className="leaderboard-left">
-                            <div className="leaderboard-position">
-                              {medalIcon || <span className="leaderboard-num">{idx + 1}</span>}
-                            </div>
-                            <div className="leaderboard-avatar-circle">
-                              {trainer.name?.charAt(0)}
-                            </div>
-                            <div className="leaderboard-info">
-                              <span className="leaderboard-name">{trainer.name}</span>
-                              <span className="leaderboard-specialty">{trainer.specialty} • Kinh nghiệm: {trainer.experienceYears} năm</span>
-                            </div>
-                          </div>
-                          <div className="leaderboard-right">
-                            <div className="leaderboard-stat">
-                              <span className="stat-num">{trainer.hiredCount}</span>
-                              <span className="stat-label">Học viên</span>
-                            </div>
-                            <div className="leaderboard-divider"></div>
-                            <div className="leaderboard-stat">
-                              <span className="stat-num">{trainer.sessionCount}</span>
-                              <span className="stat-label">Buổi dạy</span>
-                            </div>
-                          </div>
+                  {/* Legends */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'var(--orange)', display: 'inline-block' }}></span>
+                      <div>
+                        <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '600' }}>Gói tập hội viên</div>
+                        <div style={{ fontSize: '0.95rem', fontWeight: '750', color: '#1e293b' }}>
+                          {currentRev.membership?.toLocaleString('vi-VN')}đ ({membershipPct}%)
                         </div>
-                      );
-                    })}
-                    {tns.length === 0 && (
-                      <div style={{ textAlign: 'center', color: '#64748b', padding: '30px' }}>
-                        Chưa ghi nhận hoạt động HLV.
                       </div>
-                    )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }}></span>
+                      <div>
+                        <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '600' }}>Dịch vụ & PT</div>
+                        <div style={{ fontSize: '0.95rem', fontWeight: '750', color: '#1e293b' }}>
+                          {currentRev.service?.toLocaleString('vi-VN')}đ ({servicePct}%)
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
+              </div>
 
-                {/* Quick actions panel */}
-                <div className="admin-card-panel" style={{ marginTop: '30px', backgroundColor: '#f8fafc', border: '1px dashed #cbd5e1' }}>
-                  <h4 className="analytics-section-title" style={{ fontSize: '0.95rem', marginBottom: '8px' }}>Chỉ số sức khỏe hệ thống</h4>
-                  <p style={{ fontSize: '0.82rem', color: '#64748b', lineHeight: '1.5', margin: '0 0 16px 0' }}>
-                    Tỷ lệ hài lòng của học viên đối với chất lượng HLV đạt <strong>★ {tns.length > 0 ? (tns.reduce((acc, t) => acc + Number(t.rating), 0) / tns.length).toFixed(1) : "5.0"} / 5.0</strong>. Số lượng phản hồi chưa giải quyết: <strong>{complaintsList.filter(c => c.status === 'Pending').length} khiếu nại</strong>.
+              {/* Donut Chart 2: Cơ cấu chi tiêu */}
+              <div className="admin-card-panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', padding: '30px', minHeight: '320px' }}>
+                <h4 className="analytics-section-title" style={{ width: '100%', textAlign: 'left', marginBottom: '24px' }}>
+                  <i className="fa-solid fa-chart-pie" style={{ color: '#3b82f6', marginRight: '8px' }}></i> Phân bổ chi phí thời kỳ
+                </h4>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '40px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {/* Conic Gradient Donut (Lương PT 64% - Vận hành 25% - Marketing 11%) */}
+                  <div style={{
+                    width: '160px',
+                    height: '160px',
+                    borderRadius: '50%',
+                    background: currentRev.total > 0
+                      ? `conic-gradient(#3b82f6 0% 64%, #ec4899 64% 89%, #eab308 89% 100%)`
+                      : '#e2e8f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.06)',
+                    position: 'relative'
+                  }}>
+                    <div style={{
+                      width: '110px',
+                      height: '110px',
+                      borderRadius: '50%',
+                      backgroundColor: '#ffffff',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase' }}>Tổng chi</span>
+                      <span style={{ fontSize: '1.05rem', fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>{Math.round(currentRev.total * 0.6).toLocaleString('vi-VN')}đ</span>
+                    </div>
+                  </div>
+
+                  {/* Legends */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#3b82f6', display: 'inline-block' }}></span>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>Lương HLV / PT (64%)</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: '750', color: '#1e293b' }}>
+                          {Math.round(currentRev.total * 0.6 * 0.64).toLocaleString('vi-VN')}đ
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ec4899', display: 'inline-block' }}></span>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>Chi phí vận hành (25%)</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: '750', color: '#1e293b' }}>
+                          {Math.round(currentRev.total * 0.6 * 0.25).toLocaleString('vi-VN')}đ
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#eab308', display: 'inline-block' }}></span>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>Quảng cáo & MKT (11%)</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: '750', color: '#1e293b' }}>
+                          {Math.round(currentRev.total * 0.6 * 0.11).toLocaleString('vi-VN')}đ
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Row 3: CSS Bar Chart */}
+            <div className="admin-card-panel" style={{ marginBottom: '30px' }}>
+              <div className="admin-card-header">
+                <div>
+                  <h3 className="admin-card-title">
+                    <i className="fa-solid fa-chart-column" style={{ color: 'var(--orange)', marginRight: '8px' }}></i> Biểu đồ doanh thu chi tiết
+                  </h3>
+                  <p className="admin-card-desc">
+                    {timeRangeType === 'month' ? 'Phân tích tổng doanh số phát sinh theo từng tháng (Đơn vị: VNĐ)' : 'Phân tích tổng doanh số phát sinh theo từng tuần (Đơn vị: VNĐ)'}
                   </p>
-                  <button className="admin-btn-submit" style={{ width: '100%', backgroundColor: '#0f172a' }} onClick={() => setActiveTab('khieunai')}>
-                    Xử lý khiếu nại ngay
-                  </button>
+                </div>
+              </div>
+
+              {/* CSS Bar Chart */}
+              <div className="admin-chart-wrapper" style={{ marginTop: '20px' }}>
+                <div className="admin-chart-bars" style={{ height: '240px' }}>
+                  {selectedPeriodData.map((item, idx) => {
+                    const pct = Math.round((item.total / maxVal) * 100);
+                    const labelStr = timeRangeType === 'month'
+                      ? `Tháng ${item.monthKey.slice(5)}/${item.monthKey.slice(0,4)}`
+                      : `Tuần ${new Date(item.weekStart).toLocaleDateString('vi-VN').slice(0, 5)}`;
+                    
+                    return (
+                      <div key={idx} className="admin-chart-col">
+                        <div 
+                          className="admin-chart-bar active" 
+                          style={{ height: `${pct}%` }}
+                          data-value={`${(item.total / 1000000).toFixed(2)}M`}
+                        ></div>
+                        <span className="admin-chart-label" style={{ fontSize: '0.7rem' }}>{labelStr}</span>
+                      </div>
+                    );
+                  })}
+                  {selectedPeriodData.length === 0 && (
+                    <div style={{ display: 'flex', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontWeight: '600' }}>
+                      Không có dữ liệu doanh thu trong khoảng thời gian này.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
+
+            {/* Row 4: Doanh thu vs Lợi nhuận ròng */}
+            <div className="admin-card-panel">
+              <h4 className="analytics-section-title" style={{ marginBottom: '10px' }}>
+                <i className="fa-solid fa-chart-line" style={{ color: '#10b981', marginRight: '8px' }}></i> So sánh Doanh thu & Lợi nhuận ròng thực tế
+              </h4>
+              <p className="admin-card-desc" style={{ marginBottom: '24px' }}>Dữ liệu đối chiếu doanh thu tổng và lợi nhuận thực thu sau khi khấu trừ 60% chi phí vận hành.</p>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(selectedPeriodData.length, 1)}, 1fr)`, gap: '15px', height: '220px', alignItems: 'end', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>
+                  {selectedPeriodData.map((item, idx) => {
+                    const revPct = Math.round((item.total / maxVal) * 100);
+                    const profitPct = Math.round((item.profit / maxVal) * 100);
+                    const labelStr = timeRangeType === 'month'
+                      ? `Tháng ${item.monthKey.slice(5)}/${item.monthKey.slice(0,4)}`
+                      : `Tuần ${new Date(item.weekStart).toLocaleDateString('vi-VN').slice(0, 5)}`;
+                    
+                    return (
+                      <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'end', gap: '4px' }}>
+                        {/* Dual Bars */}
+                        <div style={{ display: 'flex', alignItems: 'end', gap: '4px', height: '80%', width: '100%', justifyContent: 'center' }}>
+                          {/* Revenue Bar */}
+                          <div 
+                            style={{ 
+                              width: '12px', 
+                              height: `${revPct}%`, 
+                              backgroundColor: '#ffe8d6', 
+                              borderTopLeftRadius: '3px', 
+                              borderTopRightRadius: '3px'
+                            }}
+                            title={`Doanh thu: ${item.total.toLocaleString('vi-VN')}đ`}
+                          />
+                          {/* Profit Bar */}
+                          <div 
+                            style={{ 
+                              width: '12px', 
+                              height: `${profitPct}%`, 
+                              backgroundColor: '#10b981', 
+                              borderTopLeftRadius: '3px', 
+                              borderTopRightRadius: '3px'
+                            }}
+                            title={`Lợi nhuận: ${item.profit.toLocaleString('vi-VN')}đ`}
+                          />
+                        </div>
+                        <span style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b' }}>{labelStr}</span>
+                      </div>
+                    );
+                  })}
+                  {selectedPeriodData.length === 0 && (
+                    <div style={{ display: 'flex', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontWeight: '600' }}>
+                      Không có dữ liệu phân tích trong khoảng thời gian này.
+                    </div>
+                  )}
+                </div>
+
+                {/* Legend for Row 4 */}
+                <div style={{ display: 'flex', gap: '20px', fontSize: '0.82rem', fontWeight: 'bold', justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '12px', height: '12px', backgroundColor: '#ffe8d6', borderRadius: '3px', display: 'inline-block' }}></span>
+                    <span style={{ color: '#64748b' }}>Doanh thu (VNĐ)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '12px', height: '12px', backgroundColor: '#10b981', borderRadius: '3px', display: 'inline-block' }}></span>
+                    <span style={{ color: '#64748b' }}>Lợi nhuận ròng (VNĐ)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
         );
 
@@ -1877,11 +2218,309 @@ function AdminDashboard({ token, userInfo, logout }) {
           </div>
         );
 
+      case 'checkin':
+        return (
+          <>
+            <div className="admin-card-panel" style={{ padding: '30px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '15px' }}>
+                <div>
+                  <h3 className="admin-card-title" style={{ fontSize: '1.4rem', margin: 0, color: '#1e293b' }}>
+                    QUẢN LÝ VÀO PHÒNG TẬP (CHECK-IN)
+                  </h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.88rem', color: '#64748b' }}>
+                    Quét mã QR từ email của hội viên để thực hiện check-in.
+                  </p>
+                </div>
+                {/* Nút Quét QR lớn nổi bật */}
+                <button
+                  type="button"
+                  onClick={startQrScanner}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '14px 28px', borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #f97316, #ef4444)',
+                    color: '#ffffff', border: 'none',
+                    fontWeight: '800', fontSize: '1.05rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 6px 20px rgba(249,115,22,0.45)',
+                    transition: 'transform 0.15s, box-shadow 0.15s',
+                    letterSpacing: '0.02em'
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(249,115,22,0.55)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(249,115,22,0.45)'; }}
+                >
+                  <i className="fa-solid fa-camera" style={{ fontSize: '1.15rem' }}></i>
+                  Quét mã Check-in
+                </button>
+              </div>
+
+              {/* Checkin History Table */}
+              <div style={{
+                backgroundColor: '#ffffff', border: '1.5px solid #e2e8f0',
+                borderRadius: '16px', padding: '24px',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+                display: 'flex', flexDirection: 'column', minHeight: '400px',
+                marginBottom: '30px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px' }}>
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800', color: '#1e293b' }}>
+                    <i className="fa-solid fa-list-check" style={{ color: 'var(--orange)', marginRight: '8px' }}></i> Lịch Sử Check-in Hôm Nay
+                  </h4>
+                  <div className="admin-search-wrap" style={{ width: '220px', height: '36px', padding: '0 10px' }}>
+                    <i className="fa-solid fa-magnifying-glass" style={{ fontSize: '0.8rem' }}></i>
+                    <input
+                      type="text" className="admin-search-input" placeholder="Tìm hội viên..."
+                      value={checkinSearchQuery}
+                      onChange={(e) => setCheckinSearchQuery(e.target.value)}
+                      style={{ fontSize: '0.85rem' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ overflowY: 'auto', flex: 1, maxHeight: '500px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <th style={{ padding: '12px 8px', fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Hội viên</th>
+                        <th style={{ padding: '12px 8px', fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>ID Hội viên</th>
+                        <th style={{ padding: '12px 8px', fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Thời gian vào</th>
+                        <th style={{ padding: '12px 8px', fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', textAlign: 'center' }}>Hành động</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {checkinsList
+                        .filter(c => {
+                          const query = checkinSearchQuery.toLowerCase();
+                          return c.memberName.toLowerCase().includes(query) ||
+                                 c.email.toLowerCase().includes(query) ||
+                                 c.phone.toLowerCase().includes(query) ||
+                                 String(c.memberId).includes(query);
+                        })
+                        .map((c, index) => {
+                          const checkinDate = new Date(c.checkinTime);
+                          return (
+                            <tr key={c.checkinId || index} style={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.88rem' }}>
+                              <td style={{ padding: '12px 8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#ffedd5', color: 'var(--orange)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                                    {c.memberName.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div style={{ fontWeight: '700', color: '#1e293b' }}>{c.memberName}</div>
+                                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{c.phone}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td style={{ padding: '12px 8px', fontWeight: '600', color: '#475569' }}>#{c.memberId}</td>
+                              <td style={{ padding: '12px 8px', color: '#334155' }}>
+                                <div><strong style={{ color: 'var(--orange)' }}>{checkinDate.toLocaleTimeString('vi-VN')}</strong></div>
+                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{checkinDate.toLocaleDateString('vi-VN')}</div>
+                              </td>
+                              <td style={{ padding: '12px 8px', textAlign: 'center' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedCheckin(c)}
+                                  style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#ffffff', color: '#475569', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}
+                                  onMouseOver={(e) => e.target.style.borderColor = 'var(--orange)'}
+                                  onMouseOut={(e) => e.target.style.borderColor = '#cbd5e1'}
+                                >
+                                  Xem chi tiết
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      {checkinsList.length === 0 && (
+                        <tr>
+                          <td colSpan="4" style={{ textAlign: 'center', padding: '40px 10px', color: '#94a3b8', fontSize: '0.9rem' }}>
+                            Chưa có dữ liệu check-in trong ngày hôm nay.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* ── QR CAMERA SCANNER MODAL ── */}
+            {qrScannerOpen && (
+              <div style={{
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                backdropFilter: 'blur(6px)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                zIndex: 9999, padding: '20px'
+              }}>
+                <div style={{
+                  backgroundColor: '#ffffff', borderRadius: '20px',
+                  width: '100%', maxWidth: '500px',
+                  boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
+                  overflow: 'hidden', position: 'relative'
+                }}>
+                  {/* Header */}
+                  <div style={{
+                    background: 'linear-gradient(135deg, #f97316, #ef4444)',
+                    padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <i className="fa-solid fa-camera" style={{ color: '#fff', fontSize: '1.2rem' }}></i>
+                      <div>
+                        <div style={{ color: '#fff', fontWeight: '800', fontSize: '1.1rem' }}>Quét mã QR Check-in</div>
+                        <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.8rem', marginTop: '2px' }}>Đưa mã QR từ email của hội viên vào khung quét</div>
+                      </div>
+                    </div>
+                    <button onClick={closeQrScanner} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <i className="fa-solid fa-xmark"></i>
+                    </button>
+                  </div>
+
+                  {/* Camera area */}
+                  <div style={{ padding: '24px', position: 'relative' }}>
+                    {/* Video + khung ngắm */}
+                    {qrScanStatus === 'scanning' && (
+                      <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#0f172a' }}>
+                        <video
+                          ref={videoRef}
+                          style={{ width: '100%', display: 'block', maxHeight: '300px', objectFit: 'cover' }}
+                          playsInline
+                          muted
+                        />
+                        <canvas ref={canvasRef} style={{ display: 'none' }} />
+                        {/* Khung ngắm QR */}
+                        <div style={{
+                          position: 'absolute', top: '50%', left: '50%',
+                          transform: 'translate(-50%, -50%)',
+                          width: '180px', height: '180px',
+                          border: '3px solid #f97316',
+                          borderRadius: '12px',
+                          boxShadow: '0 0 0 9999px rgba(0,0,0,0.4)'
+                        }}>
+                          {/* Góc khung */}
+                          {[
+                            { top: '-3px', left: '-3px', borderRight: 'none', borderBottom: 'none' },
+                            { top: '-3px', right: '-3px', borderLeft: 'none', borderBottom: 'none' },
+                            { bottom: '-3px', left: '-3px', borderRight: 'none', borderTop: 'none' },
+                            { bottom: '-3px', right: '-3px', borderLeft: 'none', borderTop: 'none' }
+                          ].map((corner, i) => (
+                            <div key={i} style={{
+                              position: 'absolute', width: '24px', height: '24px',
+                              border: '3px solid #f97316', borderRadius: '3px',
+                              ...corner
+                            }} />
+                          ))}
+                          {/* Scanning line animation */}
+                          <div style={{
+                            position: 'absolute', left: 0, right: 0, height: '2px',
+                            background: 'linear-gradient(90deg, transparent, #f97316, transparent)',
+                            animation: 'scanLine 1.5s linear infinite'
+                          }} />
+                        </div>
+                        <div style={{ position: 'absolute', bottom: '12px', left: 0, right: 0, textAlign: 'center' }}>
+                          <span style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: '#fff', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem' }}>
+                            <i className="fa-solid fa-circle-notch fa-spin" style={{ marginRight: '6px', color: '#f97316' }}></i>
+                            Đang quét...
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Processing */}
+                    {qrScanStatus === 'processing' && (
+                      <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                        <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: '3rem', color: '#f97316', marginBottom: '16px' }}></i>
+                        <p style={{ color: '#475569', fontWeight: '600', margin: 0 }}>{qrScanMessage}</p>
+                      </div>
+                    )}
+
+                    {/* Success */}
+                    {qrScanStatus === 'success' && (
+                      <div style={{ textAlign: 'center', padding: '30px 20px' }}>
+                        <div style={{
+                          width: '80px', height: '80px', borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #10b981, #059669)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          margin: '0 auto 16px auto',
+                          boxShadow: '0 8px 24px rgba(16,185,129,0.4)'
+                        }}>
+                          <i className="fa-solid fa-circle-check" style={{ fontSize: '2.5rem', color: '#fff' }}></i>
+                        </div>
+                        <h3 style={{ color: '#059669', fontWeight: '800', fontSize: '1.4rem', margin: '0 0 8px 0' }}>CHECK-IN THÀNH CÔNG!</h3>
+                        {qrScanResult && (
+                          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '14px', margin: '12px 0', textAlign: 'left' }}>
+                            <div style={{ fontSize: '0.85rem', color: '#166534', fontWeight: '600' }}>
+                              <div><i className="fa-solid fa-user" style={{ width: '16px', marginRight: '8px' }}></i>{qrScanResult.memberName || 'Hội viên'}</div>
+                              <div style={{ marginTop: '6px' }}><i className="fa-solid fa-clock" style={{ width: '16px', marginRight: '8px' }}></i>
+                                {new Date(qrScanResult.checkinTime).toLocaleTimeString('vi-VN')} - {new Date(qrScanResult.checkinTime).toLocaleDateString('vi-VN')}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                          <button onClick={() => {
+                            if (qrScanResult && qrScanResult.memberId) {
+                              notifyCheckinComplete(qrScanResult.memberId);
+                            }
+                            setQrScanStatus('scanning');
+                            setQrScanResult(null);
+                            startQrScanner();
+                          }}
+                            style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '2px solid #f97316', backgroundColor: '#fff', color: '#f97316', fontWeight: '700', cursor: 'pointer' }}>
+                            <i className="fa-solid fa-rotate-right" style={{ marginRight: '6px' }}></i>Quét tiếp
+                          </button>
+                          <button onClick={closeQrScanner}
+                            style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', fontWeight: '700', cursor: 'pointer' }}>
+                            Xác nhận
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Error */}
+                    {qrScanStatus === 'error' && (
+                      <div style={{ textAlign: 'center', padding: '30px 20px' }}>
+                        <div style={{
+                          width: '80px', height: '80px', borderRadius: '50%',
+                          backgroundColor: '#fef2f2', border: '3px solid #f87171',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          margin: '0 auto 16px auto'
+                        }}>
+                          <i className="fa-solid fa-circle-exclamation" style={{ fontSize: '2.5rem', color: '#ef4444' }}></i>
+                        </div>
+                        <h3 style={{ color: '#dc2626', fontWeight: '700', fontSize: '1.15rem', margin: '0 0 8px 0' }}>Có lỗi xảy ra!</h3>
+                        <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '0 0 20px 0' }}>{qrScanMessage}</p>
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                          <button onClick={() => { closeQrScanner(); startQrScanner(); }}
+                            style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #f97316, #ef4444)', color: '#fff', fontWeight: '700', cursor: 'pointer' }}>
+                            <i className="fa-solid fa-rotate-right" style={{ marginRight: '6px' }}></i>Thử lại
+                          </button>
+                          <button onClick={closeQrScanner}
+                            style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1.5px solid #e2e8f0', backgroundColor: '#fff', color: '#475569', fontWeight: '600', cursor: 'pointer' }}>
+                            Đóng
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* CSS for scan line animation */}
+            <style>{`
+              @keyframes scanLine {
+                0% { top: 0; }
+                50% { top: calc(100% - 2px); }
+                100% { top: 0; }
+              }
+            `}</style>
+          </>
+        );
+
       default:
         return <div>Vui lòng chọn tab hợp lệ.</div>;
     }
   };
-
   return (
     <div className="admin-dashboard-container">
       {/* Toast Notification */}
@@ -1997,10 +2636,10 @@ function AdminDashboard({ token, userInfo, logout }) {
             </li>
             <li>
               <button 
-                className={`admin-menu-item ${activeTab === 'khieunai' ? 'active' : ''}`}
-                onClick={() => setActiveTab('khieunai')}
+                className={`admin-menu-item ${activeTab === 'checkin' ? 'active' : ''}`}
+                onClick={() => setActiveTab('checkin')}
               >
-                <i className="fa-solid fa-circle-exclamation"></i> Khiếu nại
+                <i className="fa-solid fa-qrcode"></i> Quản lý Check-in
               </button>
             </li>
             <li>
@@ -2660,6 +3299,246 @@ function AdminDashboard({ token, userInfo, logout }) {
           </div>
         </div>
       )}
+
+      {/* MODAL: CHECK-IN DETAILS (BẢNG MẪU CHI TIẾT LƯỢT CHECK-IN) */}
+      {selectedCheckin && (() => {
+        const checkinDate = new Date(selectedCheckin.checkinTime);
+        return (
+          <div className="admin-modal-overlay" style={{ zIndex: 9999 }}>
+            <div className="admin-modal-box" style={{ maxWidth: '650px', width: '90%', padding: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '24px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+              
+              {/* Header */}
+              <div style={{ 
+                background: 'linear-gradient(135deg, #1e293b, #0f172a)', 
+                padding: '24px 30px', 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                borderBottom: '2px solid var(--orange)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ 
+                    width: '45px', 
+                    height: '45px', 
+                    borderRadius: '12px', 
+                    backgroundColor: 'rgba(249, 115, 22, 0.15)', 
+                    color: 'var(--orange)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    fontSize: '1.25rem' 
+                  }}>
+                    <i className="fa-solid fa-address-card"></i>
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '850', color: '#ffffff', letterSpacing: '0.5px' }}>
+                      CHI TIẾT LƯỢT CHECK-IN
+                    </h3>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
+                      Thông tin xác thực lượt vào phòng tập của hội viên
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setSelectedCheckin(null)}
+                  style={{ 
+                    background: 'rgba(255, 255, 255, 0.1)', 
+                    border: 'none', 
+                    fontSize: '1.15rem', 
+                    cursor: 'pointer', 
+                    color: '#94a3b8',
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; e.currentTarget.style.color = '#fff'; }}
+                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; e.currentTarget.style.color = '#94a3b8'; }}
+                >
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+
+              {/* Body */}
+              <div style={{ padding: '30px', backgroundColor: '#f8fafc', overflowY: 'auto' }}>
+                
+                {/* Member Card Header */}
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '20px', 
+                  backgroundColor: '#ffffff', 
+                  padding: '20px', 
+                  borderRadius: '16px', 
+                  border: '1px solid #e2e8f0',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+                  marginBottom: '24px'
+                }}>
+                  <div style={{ 
+                    width: '70px', 
+                    height: '70px', 
+                    borderRadius: '50%', 
+                    backgroundColor: '#fff7ed', 
+                    border: '2px solid #ffedd5',
+                    color: 'var(--orange)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    fontWeight: '800', 
+                    fontSize: '1.75rem',
+                    boxShadow: '0 4px 10px rgba(249, 115, 22, 0.1)'
+                  }}>
+                    {selectedCheckin.memberName.charAt(0).toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#1e293b' }}>
+                      {selectedCheckin.memberName}
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                      <span style={{ 
+                        fontSize: '0.75rem', 
+                        fontWeight: '700', 
+                        padding: '3px 10px', 
+                        borderRadius: '20px', 
+                        backgroundColor: '#eff6ff', 
+                        color: '#3b82f6',
+                        border: '1px solid #dbeafe'
+                      }}>
+                        Member ID: #{selectedCheckin.memberId}
+                      </span>
+                      <span style={{ 
+                        fontSize: '0.75rem', 
+                        fontWeight: '700', 
+                        padding: '3px 10px', 
+                        borderRadius: '20px', 
+                        backgroundColor: '#ecfdf5', 
+                        color: '#10b981',
+                        border: '1px solid #d1fae5',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }}></span>
+                        Check-in Thành công
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Details Table */}
+                <div style={{ 
+                  backgroundColor: '#ffffff', 
+                  borderRadius: '16px', 
+                  border: '1px solid #e2e8f0', 
+                  overflow: 'hidden',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+                }}>
+                  <div style={{ padding: '16px 20px', backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0', fontWeight: 'bold', fontSize: '0.85rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <i className="fa-solid fa-clipboard-list" style={{ marginRight: '8px', color: 'var(--orange)' }}></i> Bảng thông tin chi tiết
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.95rem' }}>
+                    <tbody>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600', width: '35%' }}>Hội viên</td>
+                        <td style={{ padding: '14px 20px', color: '#1e293b', fontWeight: '700' }}>{selectedCheckin.memberName}</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600' }}>ID Hội viên</td>
+                        <td style={{ padding: '14px 20px', color: '#0f172a', fontWeight: '800', fontFamily: 'monospace', fontSize: '1.05rem' }}>#{selectedCheckin.memberId}</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600' }}>Địa chỉ Email</td>
+                        <td style={{ padding: '14px 20px', color: '#1e293b', fontWeight: '500' }}>{selectedCheckin.email}</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600' }}>Số điện thoại</td>
+                        <td style={{ padding: '14px 20px', color: '#1e293b', fontWeight: '600' }}>{selectedCheckin.phone}</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600' }}>Thời gian vào</td>
+                        <td style={{ padding: '14px 20px', color: 'var(--orange)', fontWeight: '800', fontSize: '1.05rem' }}>
+                          {checkinDate.toLocaleTimeString('vi-VN')}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600' }}>Ngày Check-in</td>
+                        <td style={{ padding: '14px 20px', color: '#1e293b', fontWeight: '700' }}>
+                          {checkinDate.toLocaleDateString('vi-VN')}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Decorative Ticket Stub */}
+                <div style={{
+                  marginTop: '24px',
+                  borderTop: '2px dashed #cbd5e1',
+                  paddingTop: '20px',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center'
+                }}>
+                  <div style={{
+                    backgroundColor: '#ffffff',
+                    padding: '16px 24px',
+                    borderRadius: '12px',
+                    border: '1.5px solid #e2e8f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    width: '100%',
+                    maxWidth: '400px',
+                    position: 'relative'
+                  }}>
+                    <i className="fa-solid fa-ticket" style={{ fontSize: '2.5rem', color: '#cbd5e1' }}></i>
+                    <div>
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 'bold', textTransform: 'uppercase' }}>FX FITNESS PASS</div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#475569', marginTop: '2px' }}>Cửa vào: PHÒNG TẬP CHÍNH (MAIN GYM)</div>
+                      <div style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                        <i className="fa-solid fa-circle-check"></i> Xác nhận bởi hệ thống
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Footer */}
+              <div style={{ 
+                padding: '20px 30px', 
+                borderTop: '1px solid #e2e8f0', 
+                display: 'flex', 
+                justifyContent: 'flex-end', 
+                backgroundColor: '#ffffff' 
+              }}>
+                <button 
+                  type="button" 
+                  className="admin-btn-submit"
+                  onClick={() => setSelectedCheckin(null)}
+                  style={{ 
+                    padding: '10px 30px', 
+                    borderRadius: '10px',
+                    fontWeight: 'bold',
+                    fontSize: '0.9rem',
+                    background: 'linear-gradient(135deg, #f97316, #ef4444)',
+                    border: 'none',
+                    boxShadow: '0 4px 12px rgba(249, 115, 22, 0.25)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Đóng chi tiết
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

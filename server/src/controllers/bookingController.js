@@ -32,51 +32,7 @@ exports.getMemberTrainerPackages = async (req, res) => {
       ]
     });
 
-    // Auto-seed package records if empty (backward compatibility & testability)
-    if (packages.length === 0) {
-      const workoutPlans = await models.WorkoutPlans.findAll({
-        where: { member_id: member.member_id },
-        attributes: ['trainer_id']
-      });
-      const mealPlans = await models.MealPlans.findAll({
-        where: { member_id: member.member_id },
-        attributes: ['trainer_id']
-      });
-
-      const trainerIds = new Set();
-      workoutPlans.forEach(wp => { if (wp.trainer_id) trainerIds.add(wp.trainer_id); });
-      mealPlans.forEach(mp => { if (mp.trainer_id) trainerIds.add(mp.trainer_id); });
-
-      // Fallback to first active trainer if no previous interaction
-      if (trainerIds.size === 0) {
-        const firstTrainer = await models.Trainers.findOne();
-        if (firstTrainer) {
-          trainerIds.add(firstTrainer.trainer_id);
-        }
-      }
-
-      for (const tId of trainerIds) {
-        await models.MemberTrainerPackages.create({
-          member_id: member.member_id,
-          trainer_id: tId,
-          total_sessions: 12,
-          used_sessions: 0,
-          is_active: true
-        });
-      }
-
-      // Re-fetch packages after auto-seeding
-      packages = await models.MemberTrainerPackages.findAll({
-        where: { member_id: member.member_id, is_active: true },
-        include: [
-          {
-            model: models.Trainers,
-            as: 'trainer',
-            include: [{ model: models.Users, as: 'user', attributes: ['full_name', 'avatar_url'] }]
-          }
-        ]
-      });
-    }
+    // Auto-seed package records disabled so members only have packages they paid for
 
     const mapped = packages.map(pkg => ({
       packageId: pkg.package_id,

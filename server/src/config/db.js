@@ -34,6 +34,22 @@ try {
     const initModels = require('../models/init-models');
     models = initModels(sequelize);
     console.log('✅ Đã nạp danh sách Models thành công!');
+
+    // Tự động tạo bảng CheckIns nếu chưa tồn tại
+    sequelize.query(`
+      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='CheckIns' and xtype='U')
+      BEGIN
+        CREATE TABLE CheckIns (
+          checkin_id INT IDENTITY(1,1) PRIMARY KEY,
+          member_id INT NOT NULL FOREIGN KEY REFERENCES Members(member_id),
+          checkin_time DATETIME NOT NULL DEFAULT GETDATE()
+        )
+      END
+    `).then(() => {
+        console.log('✅ Đã kiểm tra/tạo bảng CheckIns thành công!');
+    }).catch(err => {
+        console.error('❌ Lỗi khi tự động tạo bảng CheckIns:', err.message);
+    });
 } catch (error) {
     console.error('❌ Lỗi khi khởi tạo Models:', error.message);
 }

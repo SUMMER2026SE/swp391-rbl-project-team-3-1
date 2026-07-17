@@ -31,11 +31,11 @@ exports.register = async (req, res) => {
             phone_number: phoneNumber,
             gender: gender,
             role_id: 1, // Mặc định là Member
-            status: 'Inactive'
+            status: 'Active'
         });
 
         return res.status(201).json({
-            message: 'Đăng ký tài khoản thành công! Trạng thái: Chờ kích hoạt.'
+            message: 'Đăng ký tài khoản thành công! Trạng thái: Đang hoạt động.'
         });
 
     } catch (error) {

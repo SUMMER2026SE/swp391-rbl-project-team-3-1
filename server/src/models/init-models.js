@@ -25,6 +25,7 @@ var _AppConfigs = require("./AppConfigs");
 var _PtOffRequests = require("./PtOffRequests");
 var _PtBookings = require("./PtBookings");
 var _MemberTrainerPackages = require("./MemberTrainerPackages");
+var _CheckIns = require("./CheckIns");
 
 function initModels(sequelize) {
   var AIConsultations = _AIConsultations(sequelize, DataTypes);
@@ -53,9 +54,12 @@ function initModels(sequelize) {
   var PtOffRequests = _PtOffRequests(sequelize, DataTypes);
   var PtBookings = _PtBookings(sequelize, DataTypes);
   var MemberTrainerPackages = _MemberTrainerPackages(sequelize, DataTypes);
+  var CheckIns = _CheckIns(sequelize, DataTypes);
 
   AIConsultations.belongsTo(Members, { as: "member", foreignKey: "member_id"});
   Members.hasMany(AIConsultations, { as: "AIConsultations", foreignKey: "member_id"});
+  CheckIns.belongsTo(Members, { as: "member", foreignKey: "member_id"});
+  Members.hasMany(CheckIns, { as: "CheckIns", foreignKey: "member_id"});
   Appointments.belongsTo(Members, { as: "member", foreignKey: "member_id"});
   Members.hasMany(Appointments, { as: "Appointments", foreignKey: "member_id"});
   MealPlans.belongsTo(Members, { as: "member", foreignKey: "member_id"});
@@ -154,6 +158,7 @@ function initModels(sequelize) {
     PtOffRequests,
     PtBookings,
     MemberTrainerPackages,
+    CheckIns,
   };
 }
 module.exports = initModels;

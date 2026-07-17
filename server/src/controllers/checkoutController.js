@@ -2,7 +2,7 @@ const { models, sequelize } = require('../config/db');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const { sendVerificationEmail } = require('../utils/emailService');
+const { sendVerificationEmail, sendWelcomeEmail, sendOtpEmail } = require('../utils/emailService');
 
 const PAYOS_CONFIG = {
     clientId: process.env.PAYOS_CLIENT_ID || '9dee94bc-3ae5-4281-b1b2-68d9a92ba510',
@@ -445,10 +445,76 @@ exports.guestCheckoutAndRegister = async (req, res) => {
 
         // 2. Check if email exists
         const existingUser = await models.Users.findOne({ where: { email } });
+        
+        // Generate OTP Code (6 digits)
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+        const otpToken = `${otp}:${otpExpiry}`;
+        
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(password, salt);
+        const derivedName = fullName || (email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1));
+        
+        let newUser;
         if (existingUser) {
-            await t.rollback();
-            return res.status(400).json({ message: 'Email này đã được sử dụng!' });
+            if (existingUser.status === 'Active') {
+                await t.rollback();
+                return res.status(400).json({ message: 'Email này đã được sử dụng!' });
+            }
+            // Update the inactive user
+            existingUser.full_name = derivedName;
+            existingUser.password_hash = passwordHash;
+            existingUser.phone_number = phoneNumber || null;
+            existingUser.email_verification_token = otpToken;
+            await existingUser.save({ transaction: t });
+            newUser = existingUser;
+        } else {
+            // Create new User with status 'Inactive'
+            newUser = await models.Users.create({
+                full_name: derivedName,
+                email: email,
+                password_hash: passwordHash,
+                phone_number: phoneNumber || null,
+                role_id: 1,
+                status: 'Inactive',
+                must_change_password: false,
+                email_verification_token: otpToken
+            }, { transaction: t });
         }
+
+        // 7. Create or update Member profile
+        let newMember = await models.Members.findOne({ where: { user_id: newUser.user_id }, transaction: t });
+        if (newMember) {
+            newMember.joined_date = formatDateToYYYYMMDD(new Date());
+            newMember.height = height || null;
+            newMember.weight = weight || null;
+            newMember.bmi = bmi || null;
+            newMember.fitness_goal = fitnessGoal || null;
+            await newMember.save({ transaction: t });
+        } else {
+            newMember = await models.Members.create({
+                user_id: newUser.user_id,
+                joined_date: formatDateToYYYYMMDD(new Date()),
+                height: height || null,
+                weight: weight || null,
+                bmi: bmi,
+                fitness_goal: fitnessGoal || null
+            }, { transaction: t });
+        }
+
+        // Clean up previous active membership/service records for this unverified user so we don't stack/duplicate
+        await models.MemberMemberships.destroy({
+            where: { member_id: newMember.member_id, membership_status: 'Active' },
+            transaction: t
+        });
+        await models.MemberServices.destroy({
+            where: { member_id: newMember.member_id, service_status: 'Active' },
+            transaction: t
+        });
+        await models.MemberTrainerPackages.destroy({
+            where: { member_id: newMember.member_id, is_active: false },
+            transaction: t
+        });
 
         // 3. Find plan details (if provided)
         let plan = null;
@@ -499,48 +565,6 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             }
         }
 
-        // 5. Create verification token
-        const verificationToken = jwt.sign(
-            { userId: null, email: email, purpose: 'email-verification' },
-            process.env.JWT_SECRET || 'BiMatSieuCap_SWP391',
-            { expiresIn: '24h' }
-        );
-
-        // 6. Create new User with status 'PendingVerification'
-        const salt = await bcrypt.genSalt(10);
-        const passwordHash = await bcrypt.hash(password, salt);
-
-        const derivedName = fullName || (email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1));
-
-        const newUser = await models.Users.create({
-            full_name: derivedName,
-            email: email,
-            password_hash: passwordHash,
-            phone_number: phoneNumber || null,
-            role_id: 1,
-            status: 'Inactive',
-            must_change_password: false,
-            email_verification_token: verificationToken
-        }, { transaction: t });
-
-        // Update verification token with real userId
-        const realToken = jwt.sign(
-            { userId: newUser.user_id, email: email, purpose: 'email-verification' },
-            process.env.JWT_SECRET || 'BiMatSieuCap_SWP391',
-            { expiresIn: '24h' }
-        );
-        await newUser.update({ email_verification_token: realToken }, { transaction: t });
-
-        // 7. Create Member profile
-        const newMember = await models.Members.create({
-            user_id: newUser.user_id,
-            joined_date: formatDateToYYYYMMDD(new Date()),
-            height: height || null,
-            weight: weight || null,
-            bmi: bmi,
-            fitness_goal: fitnessGoal || null
-        }, { transaction: t });
-
         // 8. Calculate membership dates & Create MemberMembership (if plan is selected)
         const startDate = new Date();
         let endDate = new Date();
@@ -551,7 +575,7 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             endDate = new Date();
             endDate.setMonth(endDate.getMonth() + durationMonths);
 
-            // 9. Create MemberMembership
+             // 9. Create MemberMembership (Inactive until OTP verified)
             await models.MemberMemberships.create({
                 member_id: newMember.member_id,
                 membership_plan_id: plan.membership_plan_id,
@@ -561,7 +585,7 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             }, { transaction: t });
         }
 
-        // 8.5 Save services
+        // 8.5 Save services (Inactive until OTP verified)
         if (finalServices && finalServices.length > 0) {
             for (const srvId of finalServices) {
                 await models.MemberServices.create({
@@ -575,102 +599,70 @@ exports.guestCheckoutAndRegister = async (req, res) => {
         }
 
         // 9. Record Payment
-        const transactionCode = payosPayment.orderCode || payosOrderCode || `FXGUEST-${Date.now()}`;
-        await models.Payments.create({
-            member_id: newMember.member_id,
-            amount: amount,
-            payment_type: plan ? 'Membership' : 'Service',
-            payment_method: 'PayOS',
-            payment_status: 'Paid',
-            transaction_code: transactionCode
-        }, { transaction: t });
+        const transactionCode = String(payosPayment.orderCode || payosOrderCode || `FXGUEST-${Date.now()}`);
+        const existingPayment = await models.Payments.findOne({ where: { transaction_code: transactionCode }, transaction: t });
+        if (!existingPayment) {
+            await models.Payments.create({
+                member_id: newMember.member_id,
+                amount: amount,
+                payment_type: plan ? 'Membership' : 'Service',
+                payment_method: 'PayOS',
+                payment_status: 'Paid',
+                transaction_code: transactionCode
+            }, { transaction: t });
+        }
 
         // 11. Link trainer
         if (trainerRecord) {
-            await models.WorkoutPlans.create({
-                trainer_id: trainerRecord.trainer_id,
-                member_id: newMember.member_id,
-                title: `Lộ trình luyện tập với HLV ${trainerRecord.trainer_id}`,
-                description: `Lộ trình được tạo tự động sau khi đăng ký gói tập cùng HLV.`
-            }, { transaction: t });
-
-            // Notify Trainer
-            try {
-                const ptUser = await models.Users.findByPk(trainerRecord.user_id);
-                if (ptUser && ptUser.email) {
-                    const emailService = require('../utils/emailService');
-                    await emailService.sendEmail(
-                        ptUser.email,
-                        'FxFitness - Bạn có học viên mới',
-                        `<h3>Xin chào ${ptUser.full_name},</h3>
-                         <p>Hệ thống vừa ghi nhận học viên mới <strong>${fullName}</strong> đã đăng ký tập luyện cùng bạn.</p>
-                         <p>Mục tiêu: ${fitnessGoal || 'Không xác định'}, BMI: ${bmi || 'Chưa cập nhật'}.</p>
-                         <p>Vui lòng đăng nhập vào Dashboard để kiểm tra thông tin và lên giáo án.</p>`
-                    );
-                }
-            } catch (emailErr) {
-                console.error('Error sending email to PT:', emailErr);
+            // Check and update/create Workout Plan
+            const existingWorkoutPlan = await models.WorkoutPlans.findOne({
+                where: { member_id: newMember.member_id, trainer_id: trainerRecord.trainer_id },
+                transaction: t
+            });
+            if (!existingWorkoutPlan) {
+                await models.WorkoutPlans.create({
+                    trainer_id: trainerRecord.trainer_id,
+                    member_id: newMember.member_id,
+                    title: `Lộ trình luyện tập với HLV ${trainerRecord.trainer_id}`,
+                    description: `Lộ trình được tạo tự động sau khi đăng ký gói tập cùng HLV.`
+                }, { transaction: t });
             }
+
+            await models.MemberTrainerPackages.create({
+                member_id: newMember.member_id,
+                trainer_id: trainerRecord.trainer_id,
+                total_sessions: 12,
+                used_sessions: 0,
+                is_active: false // Inactive until OTP verified
+            }, { transaction: t });
         }
 
         // Commit transaction
         await t.commit();
 
-        // Generate Verify Token
-        const secret = (process.env.JWT_SECRET || 'BiMatSieuCap_SWP391') + newUser.password_hash;
-        const verifyToken = jwt.sign(
-            { userId: newUser.user_id, email: newUser.email },
-            secret,
-            { expiresIn: '24h' }
-        );
+        // Print OTP code to console logs for local developer testing
+        console.log('\n=====================================================');
+        console.log('🔐 [OTP VERIFICATION CODE DETECTED - DEV ONLY]');
+        console.log(`Email: ${email}`);
+        console.log(`OTP Code: ${otp}`);
+        console.log('=====================================================\n');
 
-        // Send Email
-        const clientUrl = req.headers.origin || 'http://localhost:5173';
-        const verifyLink = `${clientUrl}/login?action=verify-email&token=${verifyToken}&userId=${newUser.user_id}`;
-
-        const nodemailer = require('nodemailer');
-        if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        // Send OTP Email
+        const emailUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+        const emailPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+        if (emailUser && emailPass) {
             try {
-                const transporter = nodemailer.createTransport({
-                    service: process.env.EMAIL_SERVICE || 'gmail',
-                    auth: {
-                        user: process.env.EMAIL_USER,
-                        pass: process.env.EMAIL_PASS
-                    }
-                });
-
-                await transporter.sendMail({
-                    from: `"FxFitness Center" <${process.env.EMAIL_USER}>`,
-                    to: email,
-                    subject: 'Kích hoạt tài khoản FxFitness Center',
-                    html: `
-                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-                            <h2 style="color: #28a745; text-align: center;">FxFitness Center</h2>
-                            <p>Xin chào ${fullName},</p>
-                            <p>Cảm ơn bạn đã đăng ký tài khoản và mua gói tập tại FxFitness Center. Vui lòng bấm vào liên kết dưới đây để kích hoạt tài khoản của bạn (Liên kết này có hiệu lực trong vòng 24 giờ):</p>
-                            <div style="text-align: center; margin: 30px 0;">
-                                <a href="${verifyLink}" style="background-color: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 16px; display: inline-block;">KÍCH HOẠT TÀI KHOẢN</a>
-                            </div>
-                            <p>Hoặc bạn có thể sao chép liên kết này và dán vào trình duyệt:</p>
-                            <p style="word-break: break-all; color: #007bff; font-size: 13px;">${verifyLink}</p>
-                        </div>
-                    `
-                });
+                await sendOtpEmail(email, derivedName, otp);
             } catch (emailErr) {
-                console.error('Lỗi gửi email kích hoạt:', emailErr.message);
+                console.error('Lỗi gửi email OTP:', emailErr.message);
             }
         }
 
-        console.log('\n=====================================================');
-        console.log('🔑 [EMAIL VERIFY LINK DETECTED - DEV ONLY]');
-        console.log(`Email: ${email}`);
-        console.log(`Verify Link: ${verifyLink}`);
-        console.log('=====================================================\n');
-
         return res.status(201).json({
-            message: 'Đăng ký và thanh toán thành công! Vui lòng kiểm tra email để kích hoạt tài khoản.',
+            message: 'Đăng ký bước đầu thành công! Mã OTP đã được gửi đến email.',
             success: true,
-            requiresVerification: true
+            needsVerification: true,
+            email: email
         });
 
     } catch (error) {
@@ -681,6 +673,247 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             console.error('⚠️ Lỗi khi rollback transaction:', rollbackError.message);
         }
         return res.status(500).json({ message: 'Lỗi server khi xử lý checkout guest!', error: error.message });
+    }
+};
+
+// =====================================================
+// 3b. XÁC MINH MÃ OTP CHO GUEST CHECKOUT (PUBLIC)
+// POST /api/checkout/verify-guest-otp
+// =====================================================
+exports.verifyGuestOtp = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const { email, otp } = req.body;
+
+        if (!email || !otp) {
+            await t.rollback();
+            return res.status(400).json({ message: 'Vui lòng cung cấp email và mã OTP!' });
+        }
+
+        // 1. Find user
+        const user = await models.Users.findOne({ where: { email } });
+        if (!user) {
+            await t.rollback();
+            return res.status(404).json({ message: 'Không tìm thấy thông tin tài khoản người dùng!' });
+        }
+
+        if (user.status === 'Active') {
+            await t.rollback();
+            return res.status(200).json({
+                message: 'Tài khoản này đã được xác thực trước đó!',
+                alreadyVerified: true
+            });
+        }
+
+        // 2. Parse OTP token
+        const tokenVal = user.email_verification_token;
+        if (!tokenVal || !tokenVal.includes(':')) {
+            await t.rollback();
+            return res.status(400).json({ message: 'Mã xác thực không hợp lệ hoặc đã hết hạn!' });
+        }
+
+        const [savedOtp, expiryStr] = tokenVal.split(':');
+        const expiry = parseInt(expiryStr, 10);
+
+        if (Date.now() > expiry) {
+            await t.rollback();
+            return res.status(400).json({ message: 'Mã OTP đã hết hạn! Vui lòng yêu cầu mã mới.' });
+        }
+
+        if (savedOtp !== otp) {
+            await t.rollback();
+            return res.status(400).json({ message: 'Mã OTP nhập vào không chính xác!' });
+        }
+
+        // 3. OTP matches and is valid! Activate user and related records
+        user.status = 'Active';
+        user.email_verification_token = null;
+        await user.save({ transaction: t });
+
+        // Get Member profile
+        const member = await models.Members.findOne({
+            where: { user_id: user.user_id },
+            transaction: t
+        });
+
+        if (member) {
+            // Activate trainer packages
+            await models.MemberTrainerPackages.update(
+                { is_active: true },
+                { where: { member_id: member.member_id, is_active: false }, transaction: t }
+            );
+        }
+
+        // Commit transaction
+        await t.commit();
+
+        // 4. Generate JWT Login Token
+        const token = jwt.sign(
+            { userId: user.user_id, roleId: user.role_id },
+            process.env.JWT_SECRET || 'BiMatSieuCap_SWP391',
+            { expiresIn: '1d' }
+        );
+
+        // 5. Send Welcome Email and Notify Trainer (Asynchronously outside the transaction)
+        const emailUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+        const emailPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+        if (emailUser && emailPass) {
+            try {
+                // Get active membership details to display in the Welcome email
+                const activeMembership = await models.MemberMemberships.findOne({
+                    where: { member_id: member.member_id, membership_status: 'Active' },
+                    include: [{ model: models.MembershipPlans, as: 'membership_plan' }]
+                });
+
+                const activeServices = await models.MemberServices.findAll({
+                    where: { member_id: member.member_id, service_status: 'Active' },
+                    include: [{ model: models.Services, as: 'service' }]
+                });
+
+                const ptPkg = await models.MemberTrainerPackages.findOne({
+                    where: { member_id: member.member_id, is_active: true }
+                });
+
+                let trainerName = null;
+                if (ptPkg) {
+                    const trainerUser = await models.Users.findOne({
+                        include: [{
+                            model: models.Trainers,
+                            as: 'Trainer',
+                            where: { trainer_id: ptPkg.trainer_id }
+                        }]
+                    });
+                    if (trainerUser) {
+                        trainerName = trainerUser.full_name;
+                    }
+                }
+
+                const formatDate = (date) => {
+                    const d = new Date(date);
+                    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                };
+                const formatPrice = (p) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p);
+
+                // Fetch total payment amount
+                const payment = await models.Payments.findOne({
+                    where: { member_id: member.member_id },
+                    order: [['payment_id', 'DESC']]
+                });
+                const totalAmount = payment ? parseFloat(payment.amount) : 0;
+
+                const welcomeDetails = {
+                    duration: activeMembership?.membership_plan ? activeMembership.membership_plan.duration_months : 1,
+                    price: formatPrice(totalAmount),
+                    startDate: activeMembership ? formatDate(activeMembership.start_date) : formatDate(new Date()),
+                    endDate: activeMembership ? formatDate(activeMembership.end_date) : formatDate(new Date()),
+                    trainerName: trainerName,
+                    services: activeServices.map(s => s.service?.service_name).join(', ') || null
+                };
+
+                await sendWelcomeEmail(user.email, user.full_name, activeMembership?.membership_plan ? activeMembership.membership_plan.plan_name : 'Các dịch vụ bổ sung', welcomeDetails);
+
+                // Notify PT
+                if (ptPkg) {
+                    const ptUser = await models.Users.findOne({
+                        include: [{
+                            model: models.Trainers,
+                            as: 'Trainer',
+                            where: { trainer_id: ptPkg.trainer_id }
+                        }]
+                    });
+                    if (ptUser && ptUser.email) {
+                        const { sendEmail } = require('../utils/emailService');
+                        await sendEmail(
+                            ptUser.email,
+                            'FxFitness - Bạn có học viên mới',
+                            `<h3>Xin chào HLV ${ptUser.full_name},</h3>
+                             <p>Hệ thống vừa kích hoạt thành công học viên mới <strong>${user.full_name}</strong> đăng ký tập luyện cùng bạn.</p>
+                             <p>Vui lòng đăng nhập vào Dashboard để kiểm tra thông tin và lên giáo án.</p>`
+                        );
+                    }
+                }
+            } catch (emailErr) {
+                console.error('Lỗi khi gửi email chào mừng/PT sau OTP:', emailErr.message);
+            }
+        }
+
+        return res.status(200).json({
+            message: 'Xác thực OTP thành công! Tài khoản của bạn đã được kích hoạt.',
+            success: true,
+            token,
+            user: {
+                userId: user.user_id,
+                fullName: user.full_name,
+                email: user.email,
+                roleId: user.role_id,
+                status: user.status
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Lỗi chi tiết khi verify OTP:', error);
+        try {
+            await t.rollback();
+        } catch (rErr) {
+            console.error('Lỗi rollback verify OTP:', rErr.message);
+        }
+        return res.status(500).json({ message: 'Lỗi server khi xác thực OTP!', error: error.message });
+    }
+};
+
+// =====================================================
+// 3c. GỬI LẠI MÃ OTP CHO GUEST CHECKOUT (PUBLIC)
+// POST /api/checkout/resend-otp
+// =====================================================
+exports.resendOtp = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ message: 'Vui lòng cung cấp email!' });
+        }
+
+        const user = await models.Users.findOne({ where: { email } });
+        if (!user) {
+            return res.status(404).json({ message: 'Không tìm thấy người dùng này!' });
+        }
+
+        if (user.status === 'Active') {
+            return res.status(400).json({ message: 'Tài khoản này đã hoạt động và được xác thực!' });
+        }
+
+        // Generate new OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+        user.email_verification_token = `${otp}:${otpExpiry}`;
+        await user.save();
+
+        // Print to server logs
+        console.log('\n=====================================================');
+        console.log('🔄 [NEW OTP VERIFICATION CODE RESENT - DEV ONLY]');
+        console.log(`Email: ${email}`);
+        console.log(`New OTP Code: ${otp}`);
+        console.log('=====================================================\n');
+
+        // Send OTP email
+        const emailUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+        const emailPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+        if (emailUser && emailPass) {
+            try {
+                await sendOtpEmail(user.email, user.full_name, otp);
+            } catch (emailErr) {
+                console.error('Lỗi gửi email OTP mới:', emailErr.message);
+            }
+        }
+
+        return res.status(200).json({
+            message: 'Mã OTP mới đã được gửi đến email của bạn!',
+            success: true
+        });
+
+    } catch (error) {
+        console.error('❌ Lỗi khi gửi lại OTP:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi gửi lại mã OTP!', error: error.message });
     }
 };
 
@@ -852,6 +1085,24 @@ exports.loggedInCheckout = async (req, res) => {
                 title: `Lộ trình luyện tập với HLV ${trainerRecord.trainer_id}`,
                 description: `Lộ trình được tạo tự động sau khi đăng ký gói tập cùng HLV.`
             }, { transaction: t });
+
+            const existingPkg = await models.MemberTrainerPackages.findOne({
+                where: { member_id: member.member_id, trainer_id: trainerRecord.trainer_id, is_active: true },
+                transaction: t
+            });
+            if (existingPkg) {
+                await existingPkg.update({
+                    total_sessions: existingPkg.total_sessions + 12
+                }, { transaction: t });
+            } else {
+                await models.MemberTrainerPackages.create({
+                    member_id: member.member_id,
+                    trainer_id: trainerRecord.trainer_id,
+                    total_sessions: 12,
+                    used_sessions: 0,
+                    is_active: true
+                }, { transaction: t });
+            }
 
             // Notify Trainer
             try {

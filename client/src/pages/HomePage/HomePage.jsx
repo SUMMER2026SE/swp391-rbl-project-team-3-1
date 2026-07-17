@@ -4,7 +4,14 @@ import './HomePage.css';
 function HomePage() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [token, setToken] = useState(localStorage.getItem('token') || '');
-  const [userInfo, setUserInfo] = useState(JSON.parse(localStorage.getItem('userInfo') || 'null'));
+  const [userInfo, setUserInfo] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('userInfo') || 'null');
+    } catch (e) {
+      console.error('Error parsing userInfo:', e);
+      return null;
+    }
+  });
 
   const [plans, setPlans] = useState([]);
   const [services, setServices] = useState([]);
@@ -36,7 +43,12 @@ function HomePage() {
   useEffect(() => {
     const handleAuthChange = () => {
       setToken(localStorage.getItem('token') || '');
-      setUserInfo(JSON.parse(localStorage.getItem('userInfo') || 'null'));
+      try {
+        setUserInfo(JSON.parse(localStorage.getItem('userInfo') || 'null'));
+      } catch (e) {
+        console.error('Error parsing userInfo:', e);
+        setUserInfo(null);
+      }
       setShowSetupModal(localStorage.getItem('showProfileSetup') === 'true');
     };
     window.addEventListener('authChange', handleAuthChange);
