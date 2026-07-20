@@ -369,7 +369,7 @@
 }
 
 .detail-cta h2 {
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Barlow', sans-serif;
     font-size: clamp(1.8rem, 4vw, 2.6rem);
     font-weight: 900;
     letter-spacing: 1px;

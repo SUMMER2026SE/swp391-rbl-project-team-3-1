@@ -583,7 +583,7 @@ function HomePage() {
             if (isAPT !== isBPT) return isAPT - isBPT;
             return a.price - b.price;
           }).map((srv, index) => (
-            <div key={srv.serviceId} className={`pricing-card reveal reveal-delay-${(index % 3) + 1}`} style={{ borderTop: `4px solid ${srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6'}` }}>
+            <div key={srv.serviceId} className={`pricing-card reveal reveal-delay-${(index % 3) + 1}`} style={{ display: 'flex', flexDirection: 'column', borderTop: `4px solid ${srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6'}` }}>
               <p className="plan-name" style={{ color: srv.serviceName.includes('PT') ? '#f59e0b' : '#3b82f6', fontSize: '1.2rem' }}>{srv.serviceName}</p>
               <div className="plan-price" style={{ marginTop: '10px' }}>
                 <div className="price-amount" style={{ fontSize: '1.6rem' }}>
@@ -613,7 +613,7 @@ function HomePage() {
                     window.dispatchEvent(new Event('popstate'));
                   }}
                   className="btn-plan"
-                  style={{ marginTop: '20px', borderColor: '#f59e0b', color: '#f59e0b' }}
+                  style={{ marginTop: 'auto', borderColor: '#f59e0b', color: '#f59e0b' }}
                   onMouseEnter={(e) => { e.target.style.backgroundColor = '#f59e0b'; e.target.style.color = 'white'; }}
                   onMouseLeave={(e) => { e.target.style.backgroundColor = 'transparent'; e.target.style.color = '#f59e0b'; }}
                 >
@@ -623,7 +623,7 @@ function HomePage() {
                 <button
                   onClick={() => goToServiceCheckout(srv.serviceId)}
                   className="btn-plan"
-                  style={{ marginTop: '20px', borderColor: '#3b82f6', color: '#3b82f6' }}
+                  style={{ marginTop: 'auto', borderColor: '#3b82f6', color: '#3b82f6' }}
                   onMouseEnter={(e) => { e.target.style.backgroundColor = '#3b82f6'; e.target.style.color = 'white'; }}
                   onMouseLeave={(e) => { e.target.style.backgroundColor = 'transparent'; e.target.style.color = '#3b82f6'; }}
                 >

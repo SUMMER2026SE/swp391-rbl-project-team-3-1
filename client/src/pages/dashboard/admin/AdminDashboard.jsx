@@ -279,7 +279,7 @@ function AdminDashboard({ token, userInfo, logout }) {
     setQrScanResult(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+        video: { facingMode: 'environment', width: { ideal: 1280, min: 640 }, height: { ideal: 720, min: 480 } }
       });
       streamRef.current = stream;
       if (videoRef.current) {
@@ -2353,24 +2353,30 @@ function AdminDashboard({ token, userInfo, logout }) {
                 zIndex: 9999, padding: '20px'
               }}>
                 <div style={{
-                  backgroundColor: '#ffffff', borderRadius: '20px',
-                  width: '100%', maxWidth: '500px',
+                  backgroundColor: '#ffffff', borderRadius: '24px',
+                  width: '95%', maxWidth: '720px',
                   boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
                   overflow: 'hidden', position: 'relative'
                 }}>
                   {/* Header */}
                   <div style={{
                     background: 'linear-gradient(135deg, #f97316, #ef4444)',
-                    padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                    padding: '22px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <i className="fa-solid fa-camera" style={{ color: '#fff', fontSize: '1.2rem' }}></i>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{
+                        width: '42px', height: '42px', borderRadius: '50%',
+                        backgroundColor: 'rgba(255,255,255,0.2)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}>
+                        <i className="fa-solid fa-camera" style={{ color: '#fff', fontSize: '1.3rem' }}></i>
+                      </div>
                       <div>
-                        <div style={{ color: '#fff', fontWeight: '800', fontSize: '1.1rem' }}>Quét mã QR Check-in</div>
-                        <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.8rem', marginTop: '2px' }}>Đưa mã QR từ email của hội viên vào khung quét</div>
+                        <div style={{ color: '#fff', fontWeight: '800', fontSize: '1.25rem', letterSpacing: '0.3px' }}>Quét mã QR Check-in</div>
+                        <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.88rem', marginTop: '2px' }}>Đưa mã QR từ điện thoại của hội viên vào giữa khung camera lớn dưới đây</div>
                       </div>
                     </div>
-                    <button onClick={closeQrScanner} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <button onClick={closeQrScanner} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }}>
                       <i className="fa-solid fa-xmark"></i>
                     </button>
                   </div>
@@ -2379,47 +2385,49 @@ function AdminDashboard({ token, userInfo, logout }) {
                   <div style={{ padding: '24px', position: 'relative' }}>
                     {/* Video + khung ngắm */}
                     {qrScanStatus === 'scanning' && (
-                      <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#0f172a' }}>
+                      <div style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', backgroundColor: '#0f172a', boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}>
                         <video
                           ref={videoRef}
-                          style={{ width: '100%', display: 'block', maxHeight: '300px', objectFit: 'cover' }}
+                          style={{ width: '100%', display: 'block', height: '460px', maxHeight: '70vh', objectFit: 'cover' }}
                           playsInline
                           muted
                         />
                         <canvas ref={canvasRef} style={{ display: 'none' }} />
-                        {/* Khung ngắm QR */}
+                        {/* Khung ngắm QR LỚN (290px x 290px) */}
                         <div style={{
                           position: 'absolute', top: '50%', left: '50%',
                           transform: 'translate(-50%, -50%)',
-                          width: '180px', height: '180px',
-                          border: '3px solid #f97316',
-                          borderRadius: '12px',
-                          boxShadow: '0 0 0 9999px rgba(0,0,0,0.4)'
+                          width: '290px', height: '290px',
+                          border: '2px solid rgba(249, 115, 22, 0.6)',
+                          borderRadius: '20px',
+                          boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.65)'
                         }}>
-                          {/* Góc khung */}
+                          {/* Góc khung nổi bật */}
                           {[
-                            { top: '-3px', left: '-3px', borderRight: 'none', borderBottom: 'none' },
-                            { top: '-3px', right: '-3px', borderLeft: 'none', borderBottom: 'none' },
-                            { bottom: '-3px', left: '-3px', borderRight: 'none', borderTop: 'none' },
-                            { bottom: '-3px', right: '-3px', borderLeft: 'none', borderTop: 'none' }
+                            { top: '-4px', left: '-4px', borderRight: 'none', borderBottom: 'none' },
+                            { top: '-4px', right: '-4px', borderLeft: 'none', borderBottom: 'none' },
+                            { bottom: '-4px', left: '-4px', borderRight: 'none', borderTop: 'none' },
+                            { bottom: '-4px', right: '-4px', borderLeft: 'none', borderTop: 'none' }
                           ].map((corner, i) => (
                             <div key={i} style={{
-                              position: 'absolute', width: '24px', height: '24px',
-                              border: '3px solid #f97316', borderRadius: '3px',
+                              position: 'absolute', width: '36px', height: '36px',
+                              border: '4px solid #f97316', borderRadius: '6px',
+                              boxShadow: '0 0 10px rgba(249, 115, 22, 0.8)',
                               ...corner
                             }} />
                           ))}
                           {/* Scanning line animation */}
                           <div style={{
-                            position: 'absolute', left: 0, right: 0, height: '2px',
-                            background: 'linear-gradient(90deg, transparent, #f97316, transparent)',
-                            animation: 'scanLine 1.5s linear infinite'
+                            position: 'absolute', left: 0, right: 0, height: '3px',
+                            background: 'linear-gradient(90deg, transparent, #f97316, #ef4444, transparent)',
+                            boxShadow: '0 0 12px #f97316',
+                            animation: 'scanLine 1.6s linear infinite'
                           }} />
                         </div>
-                        <div style={{ position: 'absolute', bottom: '12px', left: 0, right: 0, textAlign: 'center' }}>
-                          <span style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: '#fff', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem' }}>
-                            <i className="fa-solid fa-circle-notch fa-spin" style={{ marginRight: '6px', color: '#f97316' }}></i>
-                            Đang quét...
+                        <div style={{ position: 'absolute', bottom: '16px', left: 0, right: 0, textAlign: 'center' }}>
+                          <span style={{ backgroundColor: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(4px)', color: '#fff', padding: '8px 20px', borderRadius: '30px', fontSize: '0.9rem', fontWeight: '700', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
+                            <i className="fa-solid fa-circle-notch fa-spin" style={{ marginRight: '8px', color: '#f97316' }}></i>
+                            Đang quét mã QR... Căn giữa mã vào ô ngắm
                           </span>
                         </div>
                       </div>

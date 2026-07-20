@@ -1406,6 +1406,11 @@
   position: relative;
   text-align: center;
   box-sizing: border-box;
+  font-family: "Be Vietnam Pro", sans-serif !important;
+}
+
+.member-qr-modal-container * {
+  font-family: "Be Vietnam Pro", sans-serif !important;
 }
 
 .member-qr-modal-close {

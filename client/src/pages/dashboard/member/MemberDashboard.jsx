@@ -2476,7 +2476,7 @@ function MemberDashboard({
             {/* ── MEMBER CHECK-IN MODAL – GỬI QR VỀ GMAIL ── */}
       {checkinModalOpen && (
         <div className="member-qr-modal-overlay">
-          <div className="member-qr-modal-container" style={{ maxWidth: '420px' }}>
+          <div className="member-qr-modal-container" style={{ maxWidth: '420px', fontFamily: '"Be Vietnam Pro", sans-serif' }}>
             <button
               type="button"
               className="member-qr-modal-close"
@@ -2564,7 +2564,8 @@ function MemberDashboard({
                 gap: '10px',
                 transition: 'all 0.2s',
                 marginBottom: '14px',
-                letterSpacing: '0.03em'
+                letterSpacing: '0.03em',
+                fontFamily: '"Be Vietnam Pro", sans-serif'
               }}
             >
               {isSendingQr ? (
