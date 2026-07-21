@@ -1,10 +1,10 @@
 const { models } = require('../config/db');
 const jwt = require('jsonwebtoken');
+const geminiConfig = require('../config/geminiConfig');
 
 // Native fetch helper to request Gemini API
 async function generateGeminiAdvice({ guestName, age, gender, height, weight, bmi, fitnessGoal, consultationType }) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
+  if (!geminiConfig.isConfigured()) {
     console.log('⚠️ GEMINI_API_KEY is not defined in environment variables. Activating rule-based fallback.');
     return null;
   }
@@ -30,25 +30,7 @@ Hãy trả về kết quả định dạng JSON duy nhất, KHÔNG chứa các k
 }`;
 
   try {
-    const apiURL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    const response = await fetch(apiURL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: promptText }] }]
-      }),
-    });
-
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      console.error('❌ Gemini API response error:', response.status, errData);
-      return null;
-    }
-
-    const data = await response.json();
-    let textResult = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    let textResult = await geminiConfig.generateContent(promptText);
     if (!textResult) return null;
 
     // Clean up potential markdown wrapper from model output
@@ -252,67 +234,322 @@ exports.chat = async (req, res) => {
       return res.status(400).json({ message: 'Vui lòng cung cấp nội dung tin nhắn!' });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey) {
-      const apiURL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-      
-      const promptText = `Bạn là một trợ lý ảo thông minh của trung tâm FX Fitness. Hãy trả lời câu hỏi của khách hàng một cách ngắn gọn, chuyên nghiệp, thân thiện bằng tiếng Việt.
-Thông tin chính xác về FX Fitness:
-- Các gói tập: 
-  + Gói Tháng: 5.000đ/tháng (Truy cập đầy đủ thiết bị, Tủ đồ cá nhân, Miễn phí giữ xe).
-  + Gói 3 Tháng: 10.000đ/3 tháng (Phổ biến nhất, Tủ đồ VIP, Miễn phí giữ xe, Tham gia lớp Yoga, Đo Inbody miễn phí 1 lần).
-  + Gói Năm: 15.000đ/năm (Mọi quyền lợi của Gói 3 Tháng, Tặng thêm 1 tháng tập, Tặng 2 buổi cùng PT cá nhân, Đo Inbody định kỳ).
-- Các dịch vụ cung cấp:
-  + Gym: Trang thiết bị hiện đại, không gian rộng rãi đáp ứng mọi nhu cầu tập luyện.
-  + Yoga: Lớp học đa dạng từ cơ bản đến nâng cao, giúp cân bằng thân - tâm - trí.
-  + PT Cá Nhân: Lộ trình tập luyện thiết kế riêng biệt, đồng hành cùng huấn luyện viên chuyên nghiệp.
-- Người dùng có thể xem chi tiết dịch vụ tại trang web, hoặc nhấn vào "Mua Ngay" ở phần Gói Tập.
+    // 1. Decode optional Authorization JWT token to get current logged-in Member
+    let memberId = null;
+    let memberInfo = null;
+    const authHeader = req.headers['authorization'];
+    if (authHeader) {
+      const token = authHeader.split(' ')[1];
+      if (token && token !== 'mock-preview-token') {
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET || 'BiMatSieuCap_SWP391');
+          if (decoded && decoded.userId) {
+            const user = await models.Users.findByPk(decoded.userId);
+            const member = await models.Members.findOne({ where: { user_id: decoded.userId } });
+            if (member) {
+              memberId = member.member_id;
+              memberInfo = {
+                member_id: member.member_id,
+                full_name: user?.full_name || 'Hội viên',
+                email: user?.email,
+                phone: user?.phone_number
+              };
+            }
+          }
+        } catch (err) {
+          console.log('Optional chat token decode failed:', err.message);
+        }
+      }
+    }
+
+    // 2. Fetch System Database Data
+    // a. Membership Plans
+    const membershipPlans = await models.MembershipPlans.findAll({
+      where: { status: 'Active' }
+    });
+
+    // b. Services
+    const services = await models.Services.findAll({
+      where: { status: 'Available' }
+    });
+
+    // c. Member specific memberships, PT packages, and PT available schedules
+    let memberMemberships = [];
+    let memberTrainerPackages = [];
+    let trainerSchedulesData = [];
+
+    const { Op } = require('sequelize');
+    const { SHIFT_DEFINITIONS } = require('../constants/shifts');
+
+    if (memberId) {
+      memberMemberships = await models.MemberMemberships.findAll({
+        where: { member_id: memberId, membership_status: 'Active' },
+        include: [{ model: models.MembershipPlans, as: 'membership_plan' }]
+      });
+
+      memberTrainerPackages = await models.MemberTrainerPackages.findAll({
+        where: { member_id: memberId, is_active: true },
+        include: [
+          {
+            model: models.Trainers,
+            as: 'trainer',
+            include: [{ model: models.Users, as: 'user', attributes: ['full_name', 'email', 'phone_number'] }]
+          }
+        ]
+      });
+
+      // Calculate upcoming 7 days date strings (YYYY-MM-DD)
+      const today = new Date();
+      const next7Days = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(today);
+        d.setDate(d.getDate() + i);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        next7Days.push(`${year}-${month}-${day}`);
+      }
+
+      for (const pkg of memberTrainerPackages) {
+        if (!pkg.trainer) continue;
+        const trainerId = pkg.trainer_id;
+        const trainerName = pkg.trainer?.user?.full_name || `HLV ID ${trainerId}`;
+
+        // Fetch off requests for trainer
+        const offReqs = await models.PtOffRequests.findAll({
+          where: {
+            trainer_id: trainerId,
+            off_date: { [Op.in]: next7Days },
+            status: { [Op.in]: ['Pending', 'Approved'] }
+          }
+        });
+
+        // Fetch bookings for trainer
+        const bookings = await models.PtBookings.findAll({
+          where: {
+            trainer_id: trainerId,
+            session_date: { [Op.in]: next7Days },
+            status: { [Op.in]: ['Pending', 'Approved', 'CancelPending'] }
+          }
+        });
+
+        const dailySchedules = next7Days.map(dateStr => {
+          const isOff = offReqs.some(r => r.off_date === dateStr);
+          if (isOff) {
+            return { date: dateStr, freeShifts: [], note: 'HLV nghỉ làm' };
+          }
+          const freeShifts = SHIFT_DEFINITIONS.filter(shift => {
+            const hasBooking = bookings.some(b => b.session_date === dateStr && b.shift_code === shift.shiftCode);
+            return !hasBooking;
+          }).map(s => `${s.shiftCode} (${s.start}-${s.end})`);
+
+          return { date: dateStr, freeShifts };
+        });
+
+        trainerSchedulesData.push({
+          trainerId,
+          trainerName,
+          specialization: pkg.trainer.specialization || 'Fitness & Thể hình',
+          experienceYears: pkg.trainer.experience_years || 1,
+          phone: pkg.trainer.user?.phone_number || 'Chưa cập nhật',
+          schedules: dailySchedules
+        });
+      }
+    }
+
+    // 3. Build Database Context Text for Grounding Prompt
+    const todayStr = new Date().toISOString().split('T')[0];
+    let dbContextText = `--- BẮT ĐẦU DỮ LIỆU THỰC TẾ TRONG HỆ THỐNG DATABASE FX FITNESS (NGÀY HÔM NAY: ${todayStr}) ---\n\n`;
+
+    dbContextText += `1. DANH SÁCH GÓI TẬP (MEMBERSHIP PLANS) TRONG DATABASE:\n`;
+    if (membershipPlans.length > 0) {
+      membershipPlans.forEach(p => {
+        const formattedPrice = Number(p.price).toLocaleString('vi-VN') + ' VNĐ';
+        dbContextText += `- Gói tập: "${p.plan_name}" | Môn tập: ${p.sport_type} | Thời hạn: ${p.duration_months} tháng | Giá: ${formattedPrice} | Mô tả: ${p.description || 'Không có'}\n`;
+      });
+    } else {
+      dbContextText += `(Hiện chưa có gói tập nào trong database)\n`;
+    }
+
+    dbContextText += `\n2. DANH SÁCH GÓI DỊCH VỤ (SERVICES) TRONG DATABASE:\n`;
+    if (services.length > 0) {
+      services.forEach(s => {
+        const formattedPrice = s.price ? Number(s.price).toLocaleString('vi-VN') + ' VNĐ' : 'Liên hệ';
+        dbContextText += `- Dịch vụ: "${s.service_name}" | Loại dịch vụ: ${s.service_type || 'Tổng hợp'} | Giá: ${formattedPrice} | Mô tả: ${s.description || 'Không có'}\n`;
+      });
+    } else {
+      dbContextText += `(Hiện chưa có gói dịch vụ nào trong database)\n`;
+    }
+
+    dbContextText += `\n3. THÔNG TIN HỘI VIÊN VÀ CÁC GÓI / HLV CÁ NHÂN CỦA HỘI VIÊN ĐANG HỎI:\n`;
+    if (memberInfo) {
+      dbContextText += `Trạng thái đăng nhập: Đã xác thực người dùng.\n`;
+      dbContextText += `Tên hội viên: ${memberInfo.full_name}\n`;
+
+      dbContextText += `Gói tập hội viên đang sở hữu (MemberMemberships):\n`;
+      if (memberMemberships.length > 0) {
+        memberMemberships.forEach(m => {
+          const planName = m.membership_plan?.plan_name || 'Gói tập';
+          const startDate = m.start_date;
+          const endDate = m.end_date;
+          const endDateObj = new Date(endDate);
+          const nowObj = new Date();
+          const diffTime = endDateObj - nowObj;
+          const remainingDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+          dbContextText += `  + Gói: "${planName}" | Từ: ${startDate} đến: ${endDate} | Trạng thái: ${m.membership_status} | Thời hạn còn lại: ${remainingDays} ngày.\n`;
+        });
+      } else {
+        dbContextText += `  + Hội viên hiện chưa đăng ký gói tập membership nào hoặc gói tập đã hết hạn.\n`;
+      }
+
+      dbContextText += `Huấn luyện viên cá nhân (PT) đang quản lý hội viên (MemberTrainerPackages):\n`;
+      if (memberTrainerPackages.length > 0) {
+        memberTrainerPackages.forEach(pkg => {
+          const trainerName = pkg.trainer?.user?.full_name || 'HLV';
+          const total = pkg.total_sessions;
+          const used = pkg.used_sessions;
+          const remaining = total - used;
+          dbContextText += `  + HLV quản lý: "${trainerName}" | Tổng số buổi: ${total} | Đã tập: ${used} buổi | Số buổi còn lại: ${remaining} buổi.\n`;
+        });
+      } else {
+        dbContextText += `  + Hội viên hiện chưa đăng ký hoặc chưa phân công HLV cá nhân (PT) nào.\n`;
+      }
+
+      if (trainerSchedulesData.length > 0) {
+        dbContextText += `Giờ rảnh / Ca rảnh của HLV đang quản lý hội viên trong 7 ngày tới:\n`;
+        trainerSchedulesData.forEach(t => {
+          dbContextText += `  * HLV ${t.trainerName} (Chuyên môn: ${t.specialization}, SĐT: ${t.phone}):\n`;
+          t.schedules.forEach(s => {
+            if (s.note) {
+              dbContextText += `    - Ngày ${s.date}: PT xin nghỉ (${s.note})\n`;
+            } else if (s.freeShifts.length > 0) {
+              dbContextText += `    - Ngày ${s.date}: Ca rảnh: [${s.freeShifts.join(', ')}]\n`;
+            } else {
+              dbContextText += `    - Ngày ${s.date}: Đã kín tất cả ca tập\n`;
+            }
+          });
+        });
+      }
+    } else {
+      dbContextText += `Trạng thái đăng nhập: Chưa đăng nhập (Khách hàng vãng lai).\n`;
+      dbContextText += `Lưu ý: Nếu khách hàng hỏi về thời hạn gói tập còn lại của tôi, HLV nào đang quản lý tôi, hoặc giờ rảnh của PT quản lý tôi, hãy thông báo rằng người dùng cần ĐĂNG NHẬP vào tài khoản hội viên để hệ thống kiểm tra thông tin cá nhân.\n`;
+    }
+
+    dbContextText += `--- KẾT THÚC DỮ LIỆU THỰC TẾ TRONG HỆ THỐNG DATABASE ---\n`;
+
+    // 4. Gemini API Call
+    if (geminiConfig.isConfigured()) {
+      const promptText = `Bạn là Trợ lý AI chính thức của trung tâm FX Fitness Center.
+Nhiệm vụ của bạn là tư vấn và trả lời câu hỏi của khách hàng.
+
+${dbContextText}
+
+QUY TẮC BẮT BUỘC (STRICT GROUNDING RULES):
+1. CHỈ được phép đọc và sử dụng dữ liệu thực tế trong khối "DỮ LIỆU THỰC TẾ TRONG HỆ THỐNG DATABASE" ở trên.
+2. TUYỆT ĐỐI KHÔNG tự bịa đặt thông tin, không sáng tạo gói tập/giá tiền không có trong database, không dùng kiến thức ngoài hệ thống.
+3. Trả lời chi tiết, chính xác các thắc mắc:
+   - Các gói tập, gói dịch vụ có trong hệ thống kèm giá tiền và thời hạn.
+   - Thời hạn gói tập còn lại của người dùng (nếu người dùng đã đăng nhập).
+   - Huấn luyện viên (PT) nào đang quản lý người dùng (nếu đã đăng nhập).
+   - Giờ rảnh / ca rảnh của PT đang quản lý người dùng đó trong tuần.
+4. Nếu người dùng chưa đăng nhập mà hỏi thông tin cá nhân (thời hạn gói, PT quản lý, ca rảnh PT), hãy lịch sự nhắc họ đăng nhập tài khoản.
+5. Nếu câu hỏi không có thông tin trong Database hoặc hỏi về chủ đề không liên quan đến phòng tập (thời tiết, tin tức, v.v.), hãy lịch sự trả lời rằng bạn là Trợ lý FX Fitness và chỉ hỗ trợ thông tin trong hệ thống phòng tập FX Fitness.
+6. Trả lời bằng tiếng Việt thân thiện, rõ ràng, trình bày định dạng Markdown đẹp mắt (dùng bold **, danh sách -).
 
 Lịch sử trò chuyện gần đây:
 ${(history || []).slice(-6).map(h => `${h.sender === 'user' ? 'Khách hàng' : 'Trợ lý'}: ${h.text}`).join('\n')}
 Khách hàng: ${message}
 Trợ lý:`;
 
-      const response = await fetch(apiURL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText }] }]
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const textResult = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (textResult) {
-          return res.status(200).json({ response: textResult.trim() });
-        }
-      } else {
-        const errText = await response.text();
-        console.error('❌ Gemini API Response Error:', response.status, errText);
+      const aiResponse = await geminiConfig.generateContent(promptText);
+      if (aiResponse) {
+        return res.status(200).json({ response: aiResponse });
       }
     } else {
-      console.log('⚠️ GEMINI_API_KEY is not defined. Using rule-based fallback for chatbot.');
+      console.log('⚠️ GEMINI_API_KEY is not defined. Using database-driven rule fallback for chatbot.');
     }
 
-    // Fallback rule-based matching if Gemini API fails or is not key-configured
+    // 5. Smart Fallback Engine based directly on retrieved DB context
     const lowerMsg = message.toLowerCase();
-    let reply = "Xin chào! Tôi là Trợ lý ảo FX Fitness. Bạn cần tôi hỗ trợ thông tin gì về dịch vụ, gói tập hay lộ trình luyện tập hôm nay ạ?";
-    
-    if (lowerMsg.includes("giá") || lowerMsg.includes("gói tập") || lowerMsg.includes("goi tap") || lowerMsg.includes("chi phí") || lowerMsg.includes("bao nhiêu tiền") || lowerMsg.includes("bao nhieu")) {
-      reply = "FX Fitness hiện đang cung cấp 3 gói tập ưu đãi:\n1. **Gói Tháng**: 5.000đ/tháng (Truy cập thiết bị, tủ đồ cá nhân, giữ xe miễn phí).\n2. **Gói 3 Tháng (Phổ biến)**: 10.000đ/3 tháng (Có tủ VIP, giữ xe miễn phí, lớp Yoga, đo Inbody miễn phí 1 lần).\n3. **Gói Năm**: 15.000đ/năm (Tất cả quyền lợi Gói 3 Tháng, tặng thêm 1 tháng tập, 2 buổi cùng PT cá nhân, đo Inbody định kỳ).\nBạn có thể nhấp trực tiếp vào nút 'Mua Ngay' trên trang chủ để đăng ký nhé!";
-    } else if (lowerMsg.includes("dịch vụ") || lowerMsg.includes("dich vu") || lowerMsg.includes("gym") || lowerMsg.includes("yoga") || lowerMsg.includes("pt") || lowerMsg.includes("huấn luyện viên") || lowerMsg.includes("hlv")) {
-      reply = "FX Fitness cung cấp các dịch vụ luyện tập chuyên nghiệp:\n- **Gym**: Trang thiết bị nhập khẩu hiện đại, khu vực tập tạ và cardio rộng rãi.\n- **Yoga**: Không gian yên tĩnh, lớp học đa dạng từ cơ bản tới nâng cao.\n- **PT Cá Nhân**: Lộ trình tập luyện và chế độ dinh dưỡng thiết kế riêng biệt, đồng hành sát sao 1-1.\nBạn có thể nhấn vào các thẻ dịch vụ trên trang chủ để xem chi tiết hoặc liên hệ tư vấn trực tiếp.";
-    } else if (lowerMsg.includes("địa chỉ") || lowerMsg.includes("dia chi") || lowerMsg.includes("ở đâu") || lowerMsg.includes("o dau") || lowerMsg.includes("vị trí") || lowerMsg.includes("chi nhánh")) {
-      reply = "FX Fitness Center tọa lạc tại các khu vực trung tâm thành phố với không gian tập luyện hiện đại đạt chuẩn. Quý khách vui lòng ghé thăm trực tiếp hoặc nhắn tin qua hotline để được hướng dẫn đường đi chi tiết nhất!";
-    } else if (lowerMsg.includes("giờ mở cửa") || lowerMsg.includes("giờ hoạt động") || lowerMsg.includes("mở cửa") || lowerMsg.includes("gio mo cua")) {
-      reply = "FX Fitness mở cửa phục vụ quý khách từ **5:00 sáng đến 22:00 tối** tất cả các ngày trong tuần (kể cả Thứ Bảy, Chủ Nhật và ngày lễ). Rất hân hạnh được đón tiếp bạn!";
-    } else if (lowerMsg.includes("xin chào") || lowerMsg.includes("hello") || lowerMsg.includes("hi") || lowerMsg.includes("chào") || lowerMsg.includes("alo")) {
-      reply = "Xin chào! Tôi là Trợ lý ảo của FX Fitness. Tôi có thể hỗ trợ gì cho hành trình rèn luyện sức khỏe của bạn hôm nay?";
-    } else if (lowerMsg.includes("tạm biệt") || lowerMsg.includes("bye") || lowerMsg.includes("cảm ơn") || lowerMsg.includes("cam on") || lowerMsg.includes("thank")) {
-      reply = "Cảm ơn bạn đã trò chuyện cùng tôi! Chúc bạn có những giờ phút tập luyện tràn đầy năng lượng tại FX Fitness. Hẹn gặp lại nhé!";
+    let reply = "Xin chào! Tôi là Trợ lý AI của FX Fitness. Tôi có thể giúp gì cho bạn về các gói tập, dịch vụ hoặc lịch trình luyện tập hôm nay?";
+
+    if (lowerMsg.includes("thời hạn") || lowerMsg.includes("của tôi") || lowerMsg.includes("còn bao lâu") || lowerMsg.includes("hạn gói")) {
+      if (!memberInfo) {
+        reply = "Bạn vui lòng **đăng nhập vào tài khoản hội viên** để tôi có thể tra cứu chính xác thời hạn gói tập còn lại của bạn nhé!";
+      } else if (memberMemberships.length > 0) {
+        reply = `Thông tin thời hạn gói tập của hội viên **${memberInfo.full_name}**:\n`;
+        memberMemberships.forEach(m => {
+          const planName = m.membership_plan?.plan_name || 'Gói tập';
+          const endDateObj = new Date(m.end_date);
+          const nowObj = new Date();
+          const remainingDays = Math.max(0, Math.ceil((endDateObj - nowObj) / (1000 * 60 * 60 * 24)));
+          reply += `- Gói **${planName}**: Ngày kết thúc **${m.end_date}** (Còn lại **${remainingDays} ngày** sử dụng).\n`;
+        });
+      } else {
+        reply = `Tài khoản của hội viên **${memberInfo.full_name}** hiện chưa đăng ký gói tập membership nào hoặc gói tập đã hết hạn.`;
+      }
+    } else if (lowerMsg.includes("giờ rảnh") || lowerMsg.includes("ca rảnh") || lowerMsg.includes("rảnh") || lowerMsg.includes("lịch pt")) {
+      if (!memberInfo) {
+        reply = "Bạn vui lòng **đăng nhập** để tra cứu lịch làm việc và giờ rảnh của Huấn luyện viên cá nhân quản lý bạn.";
+      } else if (trainerSchedulesData.length > 0) {
+        reply = `Lịch ca rảnh trong 7 ngày tới của PT quản lý bạn:\n`;
+        trainerSchedulesData.forEach(t => {
+          reply += `\n💪 **HLV ${t.trainerName}** (SĐT: ${t.phone}):\n`;
+          t.schedules.slice(0, 3).forEach(s => {
+            if (s.note) {
+              reply += `- Ngày ${s.date}: PT nghỉ làm.\n`;
+            } else if (s.freeShifts.length > 0) {
+              reply += `- Ngày ${s.date}: Ca rảnh (${s.freeShifts.join(', ')}).\n`;
+            } else {
+              reply += `- Ngày ${s.date}: Đã kín lịch.\n`;
+            }
+          });
+        });
+      } else {
+        reply = `Hội viên **${memberInfo.full_name}** chưa đăng ký gói tập với HLV nên chưa thể tra cứu giờ rảnh của PT.`;
+      }
+    } else if (lowerMsg.includes("huấn luyện viên") || lowerMsg.includes("pt") || lowerMsg.includes("quản lý") || lowerMsg.includes("hlv")) {
+      if (!memberInfo) {
+        reply = "Bạn vui lòng **đăng nhập vào tài khoản hội viên** để kiểm tra Huấn luyện viên (PT) đang trực tiếp quản lý bạn nhé!";
+      } else if (memberTrainerPackages.length > 0) {
+        reply = `Hội viên **${memberInfo.full_name}** hiện đang được đồng hành bởi:\n`;
+        memberTrainerPackages.forEach(pkg => {
+          const trainerName = pkg.trainer?.user?.full_name || 'HLV';
+          const remaining = pkg.total_sessions - pkg.used_sessions;
+          reply += `- **HLV ${trainerName}**: Tổng **${pkg.total_sessions} buổi**, đã hoàn thành **${pkg.used_sessions} buổi**, còn lại **${remaining} buổi** tập.\n`;
+        });
+      } else {
+        reply = `Hội viên **${memberInfo.full_name}** hiện chưa đăng ký hoặc chưa được phân công HLV cá nhân nào.`;
+      }
+    } else if (lowerMsg.includes("gói tập") || lowerMsg.includes("goi tap") || lowerMsg.includes("giá") || lowerMsg.includes("chi phí") || lowerMsg.includes("bao nhiêu tiền")) {
+      if (membershipPlans.length > 0) {
+        reply = "Hiện tại hệ thống FX Fitness đang cung cấp các gói tập sau:\n";
+        membershipPlans.forEach((p, idx) => {
+          const priceStr = Number(p.price).toLocaleString('vi-VN') + ' VNĐ';
+          reply += `${idx + 1}. **${p.plan_name}** (${p.sport_type}): **${priceStr}** cho **${p.duration_months} tháng**. ${p.description || ''}\n`;
+        });
+        if (services.length > 0) {
+          reply += "\nCác gói dịch vụ đi kèm:\n";
+          services.forEach(s => {
+            const sPrice = s.price ? Number(s.price).toLocaleString('vi-VN') + ' VNĐ' : 'Liên hệ';
+            reply += `- **${s.service_name}**: ${sPrice} (${s.description || ''})\n`;
+          });
+        }
+      } else {
+        reply = "Hiện tại hệ thống chưa cập nhật danh sách gói tập công khai.";
+      }
+    } else if (lowerMsg.includes("dịch vụ") || lowerMsg.includes("dich vu")) {
+      if (services.length > 0) {
+        reply = "FX Fitness hiện đang cung cấp các dịch vụ luyện tập:\n";
+        services.forEach(s => {
+          const sPrice = s.price ? Number(s.price).toLocaleString('vi-VN') + ' VNĐ' : 'Liên hệ';
+          reply += `- **${s.service_name}** (${s.service_type || 'Dịch vụ'}): Giá **${sPrice}**. ${s.description || ''}\n`;
+        });
+      } else {
+        reply = "Danh sách dịch vụ hiện đang được cập nhật trong hệ thống.";
+      }
+    } else if (lowerMsg.includes("xin chào") || lowerMsg.includes("hello") || lowerMsg.includes("hi")) {
+      reply = `Xin chào${memberInfo ? ' ' + memberInfo.full_name : ''}! Tôi là Trợ lý AI của FX Fitness Center. Tôi có thể giúp gì cho bạn hôm nay?`;
     }
 
     return res.status(200).json({ response: reply });

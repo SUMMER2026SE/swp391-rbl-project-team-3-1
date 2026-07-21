@@ -66,17 +66,23 @@ const { poolPromise, sql } = require('../src/config/db');
           'MealPlans',
           'MemberMemberships',
           'MemberServices',
+          'MemberTrainerPackages',
+          'PtBookings',
+          'CheckIns',
           'Payments',
           'ProgressTrackings',
           'WorkoutPlans'
         ];
 
         for (const table of memberTables) {
-          const req = new sql.Request(transaction);
-          const result = await req
-            .input('memberId', memberId)
-            .query(`DELETE FROM ${table} WHERE member_id = @memberId`);
-          console.log(`  - Deleted ${result.rowsAffected[0]} records from ${table}`);
+          const checkTable = await pool.request().query(`SELECT * FROM sysobjects WHERE name='${table}' AND xtype='U'`);
+          if (checkTable.recordset.length > 0) {
+            const req = new sql.Request(transaction);
+            const result = await req
+              .input('memberId', memberId)
+              .query(`DELETE FROM ${table} WHERE member_id = @memberId`);
+            console.log(`  - Deleted ${result.rowsAffected[0]} records from ${table}`);
+          }
         }
 
         // Delete from Members table
@@ -94,15 +100,19 @@ const { poolPromise, sql } = require('../src/config/db');
         { name: 'Notifications', col: 'user_id' },
         { name: 'Reports', col: 'reported_by' },
         { name: 'Reports', col: 'reported_user_id' },
+        { name: 'PasswordResetTokens', col: 'user_id' },
         { name: 'Trainers', col: 'user_id' }
       ];
 
       for (const item of userTables) {
-        const req = new sql.Request(transaction);
-        const result = await req
-          .input('userId', userId)
-          .query(`DELETE FROM ${item.name} WHERE ${item.col} = @userId`);
-        console.log(`  - Deleted ${result.rowsAffected[0]} records from ${item.name} (${item.col})`);
+        const checkTable = await pool.request().query(`SELECT * FROM sysobjects WHERE name='${item.name}' AND xtype='U'`);
+        if (checkTable.recordset.length > 0) {
+          const req = new sql.Request(transaction);
+          const result = await req
+            .input('userId', userId)
+            .query(`DELETE FROM ${item.name} WHERE ${item.col} = @userId`);
+          console.log(`  - Deleted ${result.rowsAffected[0]} records from ${item.name} (${item.col})`);
+        }
       }
 
       // C. Delete from Users table

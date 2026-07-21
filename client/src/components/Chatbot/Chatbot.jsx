@@ -46,11 +46,17 @@ function Chatbot() {
         text: m.text
       }));
 
+      const token = localStorage.getItem('token');
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           message: userMessageText,
           history: chatHistory
