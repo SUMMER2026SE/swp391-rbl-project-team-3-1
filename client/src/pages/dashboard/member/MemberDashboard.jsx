@@ -1062,6 +1062,46 @@ function MemberDashboard({
 
   const unreadNotifsCount = notifications.filter(n => n.unread).length;
 
+  const getThisWeekRange = () => {
+    const now = new Date();
+    const day = now.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    return { monday, sunday };
+  };
+
+  const { monday: thisWeekMonday, sunday: thisWeekSunday } = getThisWeekRange();
+
+  const thisWeekAppts = appointmentsList.filter(ap => {
+    if (ap.status !== 'confirmed' && ap.status !== 'Approved') return false;
+    
+    let apDate = null;
+    if (ap.workingDate) {
+      apDate = new Date(ap.workingDate + 'T00:00:00');
+    } else if (ap.date && ap.date !== 'N/A') {
+      const parts = ap.date.split('/');
+      if (parts.length === 3) {
+        apDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`);
+      }
+    } else if (ap.startDateTime) {
+      apDate = new Date(ap.startDateTime);
+    }
+    
+    if (!apDate || isNaN(apDate.getTime())) return false;
+    return apDate >= thisWeekMonday && apDate <= thisWeekSunday;
+  });
+
+  const thisWeekConfirmedCount = thisWeekAppts.length;
+  const thisWeekCompletedPtCount = thisWeekAppts.filter(ap => isAppointmentPast(ap)).length;
+  const totalCompletedWeek = Math.max(completedExsCount, thisWeekCompletedPtCount);
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'tongquan':
@@ -1072,7 +1112,16 @@ function MemberDashboard({
             <div className="member-stats-grid">
               <div className="member-stat-card">
                 <span className="member-stat-label">Buổi tập tuần này</span>
-                <span className="member-stat-value">{completedExsCount} / 5</span>
+                <span className="member-stat-value">
+                  {thisWeekConfirmedCount > 0
+                    ? `${totalCompletedWeek} / ${thisWeekConfirmedCount}`
+                    : `${completedExsCount} / 5`}
+                </span>
+                {thisWeekConfirmedCount > 0 && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--orange)', marginTop: '2px', fontWeight: 'bold' }}>
+                    Đã hẹn {thisWeekConfirmedCount} buổi với PT
+                  </span>
+                )}
                 <i className="fa-solid fa-dumbbell member-stat-icon"></i>
               </div>
               <div className="member-stat-card">

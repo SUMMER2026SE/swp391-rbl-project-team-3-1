@@ -16,6 +16,8 @@ function HomePage() {
   const [plans, setPlans] = useState([]);
   const [services, setServices] = useState([]);
   const [coreSports, setCoreSports] = useState([]);
+  const [heroTitle, setHeroTitle] = useState('Bứt Phá Giới Hạn');
+  const [heroSubtitle, setHeroSubtitle] = useState('Hệ thống quản lý phòng gym thông minh, tối ưu hóa quy trình tập luyện và trải nghiệm khách hàng đẳng cấp.');
 
   // Trạng thái cho bảng thiết lập hồ sơ (Profile Setup Modal)
   const [showSetupModal, setShowSetupModal] = useState(localStorage.getItem('showProfileSetup') === 'true');
@@ -414,9 +416,9 @@ function HomePage() {
         </div>
 
         <div className="hero-content">
-          <h1 className="hero-title">Bứt Phá Giới Hạn</h1>
+          <h1 className="hero-title">{heroTitle || 'Bứt Phá Giới Hạn'}</h1>
           <p className="hero-subtitle">
-            Hệ thống quản lý phòng gym thông minh, tối ưu hóa quy trình tập luyện và trải nghiệm khách hàng đẳng cấp.
+            {heroSubtitle || 'Hệ thống quản lý phòng gym thông minh, tối ưu hóa quy trình tập luyện và trải nghiệm khách hàng đẳng cấp.'}
           </p>
           <div className="hero-actions">
             <a href="#pricing" onClick={(e) => handleAnchorClick(e, '#pricing')} className="btn-hero-primary">
@@ -517,46 +519,75 @@ function HomePage() {
               <div className={`pricing-grid grid-${sportPlans.length}`}>
                 {sportPlans.map((plan, index) => {
                   const isFeatured = plan.durationMonths === 6;
+
+                  // Determine package image variation (3, 6, 12)
+                  const sportKey = (plan.sportType || 'Gym').toLowerCase();
+                  let prefix = sportKey === 'combo' || sportKey === 'vip' ? 'vip' : sportKey;
+                  let suffix = '6';
+                  if (plan.durationMonths <= 3) {
+                    suffix = '3';
+                  } else if (plan.durationMonths >= 12) {
+                    suffix = '12';
+                  }
+
+                  const bgImg = `/assets/images/${prefix}_package_${suffix}.png`;
+
                   return (
-                    <div key={plan.planId} className={`pricing-card reveal reveal-delay-${(index % 3) + 1} ${isFeatured ? 'featured' : ''}`} style={{ display: 'flex', flexDirection: 'column' }}>
-                      {isFeatured && <div className="popular-badge">Khuyên Dùng</div>}
-                      <p className={`plan-name ${isFeatured ? 'featured-name' : ''}`}>{plan.planName}</p>
-                      <div className="plan-price">
-                        <div className="price-amount" style={{ fontSize: '2rem' }}>
-                          {plan.price.toLocaleString('vi-VN')}đ
-                          <span className="price-period" style={{ fontSize: '0.85rem', color: '#64748b' }}>
-                            /{plan.durationMonths} tháng
-                          </span>
+                    <div 
+                      key={plan.planId} 
+                      className={`pricing-card image-card reveal reveal-delay-${(index % 3) + 1} ${isFeatured ? 'featured' : ''}`}
+                      style={{ backgroundImage: `url('${bgImg}')` }}
+                    >
+                      {/* DEFAULT BANNER FRONT VIEW */}
+                      <div className="pricing-card-banner">
+                        {isFeatured && <div className="popular-badge">Khuyên Dùng</div>}
+                        <div className="banner-sport-icon">
+                          <i className={plan.sportType === 'Yoga' ? 'fa-solid fa-spa' : plan.sportType === 'Boxing' ? 'fa-solid fa-hand-fist' : 'fa-solid fa-dumbbell'}></i>
                         </div>
-                        {plan.durationMonths > 1 && (
-                          <div style={{ fontSize: '0.78rem', color: 'var(--orange)', marginTop: '4px', fontWeight: 'bold' }}>
-                            (~{Math.round(plan.price / plan.durationMonths).toLocaleString('vi-VN')}đ/tháng)
-                          </div>
-                        )}
+                        <p className="banner-plan-name">{plan.planName}</p>
+                        <span className="banner-duration-badge">{plan.durationMonths} Tháng</span>
                       </div>
-                      <div className="plan-divider"></div>
-                      <ul className="plan-features" style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
-                        <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                          <i className="fas fa-check-circle" style={{ color: 'var(--orange)', marginTop: '4px' }}></i>
-                          <span>Bộ môn: <strong>{plan.sportType === 'VIP' || plan.sportType === 'Combo' ? 'Gym, Yoga, Boxing' : plan.sportType}</strong></span>
-                        </li>
-                        {plan.description && plan.description.split('\n').map((line, lIdx) => {
-                          if (!line.trim()) return null;
-                          return (
-                            <li key={lIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                              <i className="fas fa-check-circle" style={{ color: 'var(--orange)', marginTop: '4px' }}></i>
-                              <span>{line}</span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                      <button
-                        onClick={() => goToCheckout(plan.planId)}
-                        className={`btn-plan ${isFeatured ? 'btn-featured' : ''}`}
-                        style={{ marginTop: '20px' }}
-                      >
-                        Mua Ngay
-                      </button>
+
+                       {/* HOVER CONTENT OVERLAY VIEW */}
+                       <div className="pricing-card-content">
+                         <p className={`plan-name ${isFeatured ? 'featured-name' : ''}`}>{plan.planName}</p>
+                         <div className="plan-price">
+                          <div className="price-amount" style={{ fontSize: '1.8rem' }}>
+                            {plan.price.toLocaleString('vi-VN')}đ
+                            <span className="price-period" style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                              /{plan.durationMonths} tháng
+                            </span>
+                          </div>
+                          {plan.durationMonths > 1 && (
+                            <div style={{ fontSize: '0.78rem', color: 'var(--orange)', marginTop: '4px', fontWeight: 'bold' }}>
+                              (~{Math.round(plan.price / plan.durationMonths).toLocaleString('vi-VN')}đ/tháng)
+                            </div>
+                          )}
+                        </div>
+                        <div className="plan-divider"></div>
+                        <ul className="plan-features" style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
+                          <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                            <i className="fas fa-check-circle" style={{ color: 'var(--orange)', marginTop: '4px' }}></i>
+                            <span>Bộ môn: <strong>{plan.sportType === 'VIP' || plan.sportType === 'Combo' ? 'Gym, Yoga, Boxing' : plan.sportType}</strong></span>
+                          </li>
+                          {plan.description && plan.description.split('\n').map((line, lIdx) => {
+                            if (!line.trim()) return null;
+                            return (
+                              <li key={lIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                <i className="fas fa-check-circle" style={{ color: 'var(--orange)', marginTop: '4px' }}></i>
+                                <span>{line}</span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                        <button
+                          onClick={() => goToCheckout(plan.planId)}
+                          className={`btn-plan ${isFeatured ? 'btn-featured' : ''}`}
+                          style={{ marginTop: 'auto' }}
+                        >
+                          Mua Ngay
+                        </button>
+                      </div>
                     </div>
                   );
                 })}

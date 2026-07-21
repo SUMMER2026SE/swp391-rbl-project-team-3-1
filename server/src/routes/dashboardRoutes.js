@@ -23,6 +23,7 @@ router.post('/admin/trainers', dashboardController.createTrainer);
 router.get('/admin/plans', dashboardController.getAdminPlans);
 router.post('/admin/plans', dashboardController.createAdminPlan);
 router.put('/admin/plans/:id', dashboardController.updateAdminPlan);
+router.delete('/admin/plans/:id', dashboardController.deleteAdminPlan);
 router.get('/admin/appointments', dashboardController.getAdminAppointments);
 router.put('/admin/appointments/:id/cancel', dashboardController.cancelAdminAppointment);
 router.get('/api/admin/services', dashboardController.getAdminServices); // backward compatibility
@@ -30,6 +31,7 @@ router.get('/admin/services', dashboardController.getAdminServices);
 router.post('/admin/services', dashboardController.createAdminService);
 router.put('/admin/services/:id', dashboardController.toggleAdminService);
 router.put('/admin/services/:id/update', dashboardController.updateAdminService);
+router.delete('/admin/services/:id', dashboardController.deleteAdminService);
 
 // Homepage Config routes
 const uploadHomepageImages = require('../middlewares/uploadHomepageMiddleware');

@@ -160,6 +160,13 @@ function AdminDashboard({ token, userInfo, logout }) {
   const [allServices, setAllServices] = useState([]);
   const [packageFilter, setPackageFilter] = useState('ALL');
 
+  // Edit Service Modal State
+  const [showEditService, setShowEditService] = useState(null);
+  const [showAddService, setShowAddService] = useState(false);
+  const [editSvcTitle, setEditSvcTitle] = useState('');
+  const [editSvcPrice, setEditSvcPrice] = useState(0);
+  const [editSvcDescription, setEditSvcDescription] = useState('');
+
   // Toast notification helper
   const showToast = (message) => {
     setToastMessage(message);
@@ -452,7 +459,7 @@ function AdminDashboard({ token, userInfo, logout }) {
       .then(data => { if (data && data.appointments) setAppointmentsList(data.appointments); })
       .catch(err => console.error('Error fetching admin appointments:', err));
 
-    fetch('/api/admin/services', {
+    fetch('/api/dashboard/admin/services', {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => res.json())
@@ -806,6 +813,105 @@ function AdminDashboard({ token, userInfo, logout }) {
     setEditPkgSportType(pkg.sportType || 'Gym');
   };
 
+  const openAddServiceModal = () => {
+    setShowAddService(true);
+    setShowEditService(null);
+    setEditSvcTitle('');
+    setEditSvcPrice(0);
+    setEditSvcDescription('');
+  };
+
+  const openEditServiceModal = (srv) => {
+    setShowEditService(srv.id);
+    setShowAddService(false);
+    setEditSvcTitle(srv.title);
+    setEditSvcPrice(srv.price);
+    setEditSvcDescription(srv.description);
+  };
+
+  const handleSaveService = (e) => {
+    e.preventDefault();
+    if (!editSvcTitle) return;
+
+    if (showAddService) {
+      fetch('/api/dashboard/admin/services', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: editSvcTitle,
+          price: editSvcPrice,
+          description: editSvcDescription
+        })
+      })
+        .then(res => res.json())
+        .then(data => {
+          showToast(data.message || 'Tạo dịch vụ mới thành công!');
+          setShowAddService(false);
+          reloadAllAdminData();
+        })
+        .catch(err => console.error('Error creating service:', err));
+    } else {
+      fetch(`/api/dashboard/admin/services/${showEditService}/update`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: editSvcTitle,
+          price: editSvcPrice,
+          description: editSvcDescription
+        })
+      })
+        .then(res => res.json())
+        .then(data => {
+          showToast(data.message || 'Cập nhật dịch vụ thành công!');
+          setShowEditService(null);
+          reloadAllAdminData();
+        })
+        .catch(err => console.error('Error updating service:', err));
+    }
+  };
+
+  const handleDeletePackage = (pkgId) => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa gói tập này không?')) {
+      fetch(`/api/dashboard/admin/plans/${pkgId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(async (res) => {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.message || 'Lỗi khi xóa gói tập!');
+          showToast(data.message || 'Xóa gói tập thành công!');
+          reloadAllAdminData();
+        })
+        .catch(err => {
+          alert(err.message || 'Không thể xóa gói tập!');
+        });
+    }
+  };
+
+  const handleDeleteService = (srvId) => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa dịch vụ này không?')) {
+      fetch(`/api/dashboard/admin/services/${srvId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(async (res) => {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.message || 'Lỗi khi xóa dịch vụ!');
+          showToast(data.message || 'Xóa dịch vụ thành công!');
+          reloadAllAdminData();
+        })
+        .catch(err => {
+          alert(err.message || 'Không thể xóa dịch vụ!');
+        });
+    }
+  };
+
   const openAddPkgModal = () => {
     setShowAddPackage(true);
     setShowEditPackage(null);
@@ -948,7 +1054,7 @@ function AdminDashboard({ token, userInfo, logout }) {
 
   // Render tab contents
   const renderTabContent = () => {
-    const rev = analyticsData?.revenue || { total: 48500000, membership: 35000000, service: 13500000 };
+    const rev = analyticsData?.revenue || { total: 0, membership: 0, service: 0 };
     const pkgs = analyticsData?.packages || [];
     const srvs = analyticsData?.services || [];
     const tns = analyticsData?.trainers || [];
@@ -1563,6 +1669,13 @@ function AdminDashboard({ token, userInfo, logout }) {
                     >
                       <i className={`fa-solid ${pkg.status === 'Active' ? 'fa-lock' : 'fa-lock-open'}`}></i> {pkg.status === 'Active' ? 'Khóa' : 'Mở khóa'}
                     </button>
+                    <button 
+                      className="admin-package-btn-edit delete" 
+                      style={{marginLeft: '10px', backgroundColor: '#fee2e2', color: '#dc2626', borderColor: 'transparent'}}
+                      onClick={() => handleDeletePackage(pkg.id)}
+                    >
+                      <i className="fa-solid fa-trash-can"></i> Xóa
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1669,12 +1782,21 @@ function AdminDashboard({ token, userInfo, logout }) {
       case 'dichvu':
         return (
           <div className="admin-card-panel">
-            <h3 className="admin-card-title" style={{ marginBottom: '20px' }}>Dịch vụ & Tiện ích đi kèm FxFitness</h3>
+            <div className="admin-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div>
+                <h3 className="admin-card-title" style={{ margin: 0 }}>Dịch vụ & Tiện ích đi kèm FxFitness</h3>
+                <p className="admin-card-desc" style={{ margin: '4px 0 0 0' }}>Quản lý và tạo mới các gói dịch vụ bổ sung trong hệ thống.</p>
+              </div>
+              <button className="admin-btn-add" onClick={openAddServiceModal}>
+                <i className="fa-solid fa-plus"></i> Tạo Dịch Vụ
+              </button>
+            </div>
             <div className="admin-table-container">
               <table className="admin-table">
                 <thead>
                   <tr>
                     <th>Tên dịch vụ</th>
+                    <th>Đơn giá</th>
                     <th>Mô tả tiện ích</th>
                     <th>Trạng thái hoạt động</th>
                     <th>Thao tác điều khiển</th>
@@ -1684,6 +1806,7 @@ function AdminDashboard({ token, userInfo, logout }) {
                   {servicesList.map((srv) => (
                     <tr key={srv.id}>
                       <td className="admin-table-name">{srv.title}</td>
+                      <td style={{ fontWeight: 'bold', color: 'var(--orange)' }}>{Number(srv.price).toLocaleString('vi-VN')}đ</td>
                       <td>{srv.description}</td>
                       <td>
                         <span className={`admin-status-dot-wrap ${srv.active ? 'active' : 'inactive'}`}>
@@ -1692,15 +1815,33 @@ function AdminDashboard({ token, userInfo, logout }) {
                         </span>
                       </td>
                       <td>
+                        <button className="admin-action-link" style={{ marginRight: '10px', color: '#3b82f6' }} onClick={() => openEditServiceModal(srv)}>
+                          <i className="fa-regular fa-pen-to-square"></i> Sửa
+                        </button>
                         <button 
                           className={`admin-action-link ${srv.active ? '' : 'unlock'}`} 
+                          style={{ marginRight: '10px' }}
                           onClick={() => toggleServiceStatus(srv.id)}
                         >
                           {srv.active ? 'Tạm dừng' : 'Kích hoạt'}
                         </button>
+                        <button 
+                          className="admin-action-link" 
+                          style={{ color: '#ef4444' }}
+                          onClick={() => handleDeleteService(srv.id)}
+                        >
+                          <i className="fa-solid fa-trash-can"></i> Xóa
+                        </button>
                       </td>
                     </tr>
                   ))}
+                  {servicesList.length === 0 && (
+                    <tr>
+                      <td colSpan="5" style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>
+                        Chưa có dịch vụ nào trong hệ thống.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1997,13 +2138,16 @@ function AdminDashboard({ token, userInfo, logout }) {
                       : `Tuần ${new Date(item.weekStart).toLocaleDateString('vi-VN').slice(0, 5)}`;
                     
                     return (
-                      <div key={idx} className="admin-chart-col">
+                      <div key={idx} className="admin-chart-col" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end', gap: '4px' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--orange)', marginBottom: '4px' }}>
+                          {item.total.toLocaleString('vi-VN')}đ
+                        </span>
                         <div 
                           className="admin-chart-bar active" 
-                          style={{ height: `${pct}%` }}
-                          data-value={`${(item.total / 1000000).toFixed(2)}M`}
+                          style={{ height: `${pct}%`, width: '42px', backgroundColor: 'var(--orange)', borderRadius: '6px 6px 0 0', cursor: 'pointer', transition: 'all 0.3s ease' }}
+                          title={`Doanh thu: ${item.total.toLocaleString('vi-VN')}đ`}
                         ></div>
-                        <span className="admin-chart-label" style={{ fontSize: '0.7rem' }}>{labelStr}</span>
+                        <span className="admin-chart-label" style={{ fontSize: '0.75rem', fontWeight: 'bold', marginTop: '8px', color: '#475569' }}>{labelStr}</span>
                       </div>
                     );
                   })}
@@ -2024,7 +2168,7 @@ function AdminDashboard({ token, userInfo, logout }) {
               <p className="admin-card-desc" style={{ marginBottom: '24px' }}>Dữ liệu đối chiếu doanh thu tổng và lợi nhuận thực thu sau khi khấu trừ 60% chi phí vận hành.</p>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(selectedPeriodData.length, 1)}, 1fr)`, gap: '15px', height: '220px', alignItems: 'end', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(selectedPeriodData.length, 1)}, 1fr)`, gap: '15px', height: '240px', alignItems: 'end', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>
                   {selectedPeriodData.map((item, idx) => {
                     const revPct = Math.round((item.total / maxVal) * 100);
                     const profitPct = Math.round((item.profit / maxVal) * 100);
@@ -2035,31 +2179,46 @@ function AdminDashboard({ token, userInfo, logout }) {
                     return (
                       <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'end', gap: '4px' }}>
                         {/* Dual Bars */}
-                        <div style={{ display: 'flex', alignItems: 'end', gap: '4px', height: '80%', width: '100%', justifyContent: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'end', gap: '8px', height: '85%', width: '100%', justifyContent: 'center' }}>
                           {/* Revenue Bar */}
-                          <div 
-                            style={{ 
-                              width: '12px', 
-                              height: `${revPct}%`, 
-                              backgroundColor: '#ffe8d6', 
-                              borderTopLeftRadius: '3px', 
-                              borderTopRightRadius: '3px'
-                            }}
-                            title={`Doanh thu: ${item.total.toLocaleString('vi-VN')}đ`}
-                          />
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end', gap: '2px' }}>
+                            <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#ea580c' }}>
+                              {item.total >= 1000000 ? `${(item.total / 1000000).toFixed(1)}M` : `${Math.round(item.total / 1000)}k`}
+                            </span>
+                            <div 
+                              style={{ 
+                                width: '20px', 
+                                height: `${revPct}%`, 
+                                backgroundColor: '#ffe8d6', 
+                                borderTopLeftRadius: '4px', 
+                                borderTopRightRadius: '4px',
+                                border: '1px solid #fdba74',
+                                transition: 'all 0.3s ease',
+                                cursor: 'pointer'
+                              }}
+                              title={`Doanh thu: ${item.total.toLocaleString('vi-VN')}đ`}
+                            />
+                          </div>
                           {/* Profit Bar */}
-                          <div 
-                            style={{ 
-                              width: '12px', 
-                              height: `${profitPct}%`, 
-                              backgroundColor: '#10b981', 
-                              borderTopLeftRadius: '3px', 
-                              borderTopRightRadius: '3px'
-                            }}
-                            title={`Lợi nhuận: ${item.profit.toLocaleString('vi-VN')}đ`}
-                          />
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end', gap: '2px' }}>
+                            <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#10b981' }}>
+                              {item.profit >= 1000000 ? `${(item.profit / 1000000).toFixed(1)}M` : `${Math.round(item.profit / 1000)}k`}
+                            </span>
+                            <div 
+                              style={{ 
+                                width: '20px', 
+                                height: `${profitPct}%`, 
+                                backgroundColor: '#10b981', 
+                                borderTopLeftRadius: '4px', 
+                                borderTopRightRadius: '4px',
+                                transition: 'all 0.3s ease',
+                                cursor: 'pointer'
+                              }}
+                              title={`Lợi nhuận: ${item.profit.toLocaleString('vi-VN')}đ`}
+                            />
+                          </div>
                         </div>
-                        <span style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b' }}>{labelStr}</span>
+                        <span style={{ fontSize: '0.72rem', fontWeight: '750', color: '#475569', marginTop: '6px' }}>{labelStr}</span>
                       </div>
                     );
                   })}
@@ -2618,7 +2777,7 @@ function AdminDashboard({ token, userInfo, logout }) {
                 <i className="fa-solid fa-house"></i> Trang Chủ
               </button>
             </li>
-            <li>
+             <li>
               <button 
                 className={`admin-menu-item ${activeTab === 'goitap' ? 'active' : ''}`}
                 onClick={() => setActiveTab('goitap')}
@@ -2628,18 +2787,18 @@ function AdminDashboard({ token, userInfo, logout }) {
             </li>
             <li>
               <button 
-                className={`admin-menu-item ${activeTab === 'lichhen' ? 'active' : ''}`}
-                onClick={() => setActiveTab('lichhen')}
-              >
-                <i className="fa-solid fa-calendar-check"></i> Lịch hẹn
-              </button>
-            </li>
-            <li>
-              <button 
                 className={`admin-menu-item ${activeTab === 'dichvu' ? 'active' : ''}`}
                 onClick={() => setActiveTab('dichvu')}
               >
                 <i className="fa-solid fa-gem"></i> Dịch vụ
+              </button>
+            </li>
+            <li>
+              <button 
+                className={`admin-menu-item ${activeTab === 'lichhen' ? 'active' : ''}`}
+                onClick={() => setActiveTab('lichhen')}
+              >
+                <i className="fa-solid fa-calendar-check"></i> Lịch hẹn
               </button>
             </li>
             <li>
@@ -3032,6 +3191,64 @@ function AdminDashboard({ token, userInfo, logout }) {
                 </button>
                 <button type="submit" className="admin-btn-submit">
                   Lưu Thay Đổi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CREATE / EDIT SERVICE */}
+      {(showAddService || showEditService !== null) && (
+        <div className="admin-modal-overlay">
+          <div className="admin-modal-box" style={{ maxWidth: '540px' }}>
+            <h3 className="admin-modal-title">
+              {showAddService ? 'Tạo Gói Dịch Vụ Mới' : 'Chỉnh Sửa Dịch Vụ'}
+            </h3>
+            <form onSubmit={handleSaveService}>
+              <div className="admin-form-group">
+                <label className="admin-form-label">Tên gói dịch vụ</label>
+                <input 
+                  type="text" 
+                  className="admin-form-input" 
+                  value={editSvcTitle}
+                  onChange={(e) => setEditSvcTitle(e.target.value)}
+                  placeholder="Ví dụ: Tủ đồ cá nhân VIP, Nước uống Protein..."
+                  required 
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label className="admin-form-label">Giá dịch vụ (VNĐ)</label>
+                <input 
+                  type="number" 
+                  className="admin-form-input" 
+                  value={editSvcPrice}
+                  onChange={(e) => setEditSvcPrice(Number(e.target.value))}
+                  min="0"
+                  step="50000"
+                  required 
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label className="admin-form-label">Mô tả dịch vụ</label>
+                <textarea 
+                  className="admin-form-textarea" 
+                  value={editSvcDescription}
+                  onChange={(e) => setEditSvcDescription(e.target.value)}
+                  placeholder="Mô tả các tiện ích chi tiết đi kèm gói dịch vụ..."
+                  rows="4"
+                  required 
+                />
+              </div>
+
+              <div className="admin-form-actions">
+                <button type="button" className="admin-btn-cancel" onClick={() => { setShowEditService(null); setShowAddService(false); }}>
+                  Hủy Bỏ
+                </button>
+                <button type="submit" className="admin-btn-submit">
+                  Lưu Dịch Vụ
                 </button>
               </div>
             </form>

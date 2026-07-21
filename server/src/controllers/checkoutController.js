@@ -287,7 +287,7 @@ exports.getPlans = async (req, res) => {
 exports.getServices = async (req, res) => {
     try {
         const services = await models.Services.findAll({
-            where: { status: 'Available' },
+            where: { status: ['Active', 'Available'] },
             order: [['price', 'ASC']]
         });
 
@@ -298,7 +298,10 @@ exports.getServices = async (req, res) => {
         }
         const uniqueServices = Array.from(uniqueServicesMap.values());
 
-        const result = uniqueServices.map(s => ({
+        // Lọc các dịch vụ giá rẻ (dưới 1.000.000đ) để khôi phục giao diện trang chủ gọn gàng như cũ
+        const cheapServices = uniqueServices.filter(s => parseFloat(s.price) < 1000000);
+
+        const result = cheapServices.map(s => ({
             serviceId: s.service_id,
             serviceName: s.service_name,
             description: s.description,
@@ -1179,7 +1182,15 @@ exports.getHomepageConfig = async (req, res) => {
                 console.error('Lỗi parse config core_sports:', e);
             }
         }
-        return res.status(200).json({ coreSports });
+
+        const heroTitleConfig = await models.AppConfigs.findOne({ where: { config_key: 'hero_title' } });
+        const heroSubtitleConfig = await models.AppConfigs.findOne({ where: { config_key: 'hero_subtitle' } });
+
+        return res.status(200).json({ 
+            coreSports,
+            heroTitle: heroTitleConfig ? heroTitleConfig.config_value : 'Bứt Phá Giới Hạn',
+            heroSubtitle: heroSubtitleConfig ? heroSubtitleConfig.config_value : 'Hệ thống quản lý phòng gym thông minh, tối ưu hóa quy trình tập luyện và trải nghiệm khách hàng đẳng cấp.'
+        });
     } catch (error) {
         console.error('❌ Error getting homepage config:', error);
         return res.status(500).json({ message: 'Lỗi server khi lấy cấu hình trang chủ!' });

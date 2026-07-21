@@ -136,23 +136,11 @@ exports.getAdminStats = async (req, res) => {
     const totalMembers = await models.Members.count();
     const activeTrainers = await models.Trainers.count();
 
-    // Sum Payments. If empty, calculate dummy revenue or sum member memberships
+    // Sum Paid Payments.
     let totalRevenue = 0;
-    const paymentSum = await models.Payments.sum('amount');
+    const paymentSum = await models.Payments.sum('amount', { where: { payment_status: 'Paid' } });
     if (paymentSum) {
-      totalRevenue = paymentSum;
-    } else {
-      // Fallback: sum plan prices from active member memberships
-      const memberships = await models.MemberMemberships.findAll({
-        include: [{ model: models.MembershipPlans, as: 'membership_plan' }]
-      });
-      totalRevenue = memberships.reduce((sum, m) => {
-        return sum + (m.membership_plan ? Number(m.membership_plan.price) : 0);
-      }, 0);
-    }
-
-    if (totalRevenue === 0) {
-      totalRevenue = 48500000; // Mock default matching mockup
+      totalRevenue = Number(paymentSum);
     }
 
     const todayDate = new Date().toISOString().split('T')[0];
@@ -170,7 +158,7 @@ exports.getAdminStats = async (req, res) => {
       totalMembers,
       activeTrainers,
       totalRevenue,
-      appointmentsToday: appointmentsToday || 34 // Fallback if no appts today
+      appointmentsToday: appointmentsToday || 0
     });
   } catch (error) {
     console.error('❌ Error getting admin stats:', error);
@@ -181,65 +169,6 @@ exports.getAdminStats = async (req, res) => {
 // GET /api/dashboard/admin/analytics
 exports.getAdminAnalytics = async (req, res) => {
   try {
-    // 0. Auto-seed payments if there are very few (under 15) so the database has realistic historical data
-    const paymentCount = await models.Payments.count();
-    if (paymentCount < 15) {
-      console.log('🌱 Seeding payments with realistic data...');
-      const members = await models.Members.findAll({ limit: 5 });
-      const plans = await models.MembershipPlans.findAll();
-      const services = await models.Services.findAll();
-
-      if (members.length > 0) {
-        const paymentDates = [
-          // 2025
-          '2025-01-10', '2025-01-22', '2025-02-15', '2025-02-28', '2025-03-05', '2025-03-20',
-          '2025-04-12', '2025-04-25', '2025-05-08', '2025-05-18', '2025-06-03', '2025-06-19',
-          '2025-07-02', '2025-07-29', '2025-08-11', '2025-08-23', '2025-09-07', '2025-09-22',
-          '2025-10-04', '2025-10-18', '2025-11-12', '2025-11-27', '2025-12-05', '2025-12-25',
-          // 2026
-          '2026-01-10', '2026-01-20', '2026-02-05', '2026-02-24', '2026-03-12', '2026-03-28',
-          '2026-04-05', '2026-04-22', '2026-05-15', '2026-05-30', '2026-06-02', '2026-06-18',
-          '2026-07-01', '2026-07-15'
-        ];
-
-        for (let i = 0; i < paymentDates.length; i++) {
-          const member = members[i % members.length];
-          const isMembership = i % 3 !== 0; 
-          
-          let amount = 150000;
-          let payType = 'Service';
-          if (isMembership && plans.length > 0) {
-            const plan = plans[i % plans.length];
-            amount = Number(plan.price) || 3000000;
-            payType = 'Membership';
-          } else if (services.length > 0) {
-            const srv = services[i % services.length];
-            amount = Number(srv.price) || 200000;
-            payType = 'Service';
-          }
-
-          const dateStr = `${paymentDates[i]}T12:00:00`;
-          const txn = `TXN${100000000000 + i}`;
-
-          await sequelize.query(
-            `INSERT INTO Payments (member_id, amount, payment_type, payment_method, payment_status, transaction_code, payment_date)
-             VALUES (:member_id, :amount, :payType, :method, 'Paid', :txn, :dateStr)`,
-            {
-              replacements: {
-                member_id: member.member_id,
-                amount: amount,
-                payType: payType,
-                method: i % 2 === 0 ? 'PayOS' : 'VNPAY',
-                txn: txn,
-                dateStr: dateStr
-              }
-            }
-          );
-        }
-        console.log(`✅ Seeded ${paymentDates.length} payments successfully via raw queries.`);
-      }
-    }
-
     // 1. Doanh thu doanh số (Revenue)
     const payments = await models.Payments.findAll({
       where: { payment_status: 'Paid' }
@@ -262,28 +191,57 @@ exports.getAdminAnalytics = async (req, res) => {
     });
 
     // 2. Gói tập được mua nhiều nhất (Membership Plans Stats)
-    const memberMemberships = await models.MemberMemberships.findAll({
-      include: [{
-        model: models.MembershipPlans,
-        as: 'membership_plan'
-      }]
+    const allPlans = await models.MembershipPlans.findAll();
+    const planPriceMap = {};
+    const packageCountMap = {};
+
+    allPlans.forEach(p => {
+      const priceVal = Number(p.price);
+      if (!planPriceMap[priceVal]) {
+        planPriceMap[priceVal] = p;
+      }
+      packageCountMap[p.membership_plan_id] = {
+        id: p.membership_plan_id,
+        name: p.plan_name,
+        price: Number(p.price) || 0,
+        duration: p.duration_months,
+        sportType: p.sport_type,
+        count: 0
+      };
     });
 
-    const packageCountMap = {};
-    memberMemberships.forEach(m => {
-      if (m.membership_plan) {
-        const planId = m.membership_plan.membership_plan_id;
-        if (!packageCountMap[planId]) {
-          packageCountMap[planId] = {
-            id: planId,
-            name: m.membership_plan.plan_name,
-            price: Number(m.membership_plan.price) || 0,
-            duration: m.membership_plan.duration_months,
-            sportType: m.membership_plan.sport_type,
-            count: 0
-          };
+    // 3. Dịch vụ được mua nhiều nhất (Services Stats)
+    const allServices = await models.Services.findAll();
+    const servicePriceMap = {};
+    const serviceCountMap = {};
+
+    allServices.forEach(s => {
+      const priceVal = Number(s.price);
+      if (!servicePriceMap[priceVal]) {
+        servicePriceMap[priceVal] = s;
+      }
+      serviceCountMap[s.service_id] = {
+        id: s.service_id,
+        name: s.service_name,
+        price: Number(s.price) || 0,
+        description: s.description || '',
+        count: 0
+      };
+    });
+
+    // Loop through all paid payments to match and increment counts by price
+    payments.forEach(p => {
+      const amt = Number(p.amount) || 0;
+      if (p.payment_type === 'Membership') {
+        const matchedPlan = planPriceMap[amt];
+        if (matchedPlan) {
+          packageCountMap[matchedPlan.membership_plan_id].count += 1;
         }
-        packageCountMap[planId].count += 1;
+      } else if (p.payment_type === 'Service') {
+        const matchedSrv = servicePriceMap[amt];
+        if (matchedSrv) {
+          serviceCountMap[matchedSrv.service_id].count += 1;
+        }
       }
     });
 
@@ -293,71 +251,11 @@ exports.getAdminAnalytics = async (req, res) => {
     }));
     packagesResult.sort((a, b) => b.count - a.count);
 
-    if (packagesResult.length === 0) {
-      const allPlans = await models.MembershipPlans.findAll();
-      const mockCounts = [15, 12, 8, 5, 3];
-      packagesResult = allPlans.map((p, idx) => {
-        const count = mockCounts[idx % mockCounts.length] || 2;
-        return {
-          id: p.membership_plan_id,
-          name: p.plan_name,
-          price: Number(p.price) || 0,
-          duration: p.duration_months,
-          sportType: p.sport_type,
-          count: count,
-          totalRevenue: (Number(p.price) || 0) * count
-        };
-      });
-      packagesResult.sort((a, b) => b.count - a.count);
-    }
-
-    // 3. Dịch vụ được mua nhiều nhất (Services Stats)
-    const memberServices = await models.MemberServices.findAll({
-      include: [{
-        model: models.Services,
-        as: 'service'
-      }]
-    });
-
-    const serviceCountMap = {};
-    memberServices.forEach(ms => {
-      if (ms.service) {
-        const srvId = ms.service.service_id;
-        if (!serviceCountMap[srvId]) {
-          serviceCountMap[srvId] = {
-            id: srvId,
-            name: ms.service.service_name,
-            price: Number(ms.service.price) || 0,
-            description: ms.service.description || '',
-            count: 0
-          };
-        }
-        serviceCountMap[srvId].count += 1;
-      }
-    });
-
     let servicesResult = Object.values(serviceCountMap).map(srv => ({
       ...srv,
       totalRevenue: srv.price * srv.count
     }));
     servicesResult.sort((a, b) => b.count - a.count);
-
-    if (servicesResult.length === 0) {
-      const allServices = await models.Services.findAll();
-      const mockCounts = [24, 18, 15, 10, 8, 4];
-      servicesResult = allServices.map((s, idx) => {
-        const count = mockCounts[idx % mockCounts.length] || 3;
-        return {
-          id: s.service_id,
-          name: s.service_name,
-          price: Number(s.price) || 0,
-          description: s.description || '',
-          count: count,
-          totalRevenue: (Number(s.price) || 0) * count
-        };
-      });
-      servicesResult.sort((a, b) => b.count - a.count);
-    }
 
     // 4. PT được thuê nhiều nhất (Personal Trainers Stats)
     const workoutPlans = await models.WorkoutPlans.findAll({
@@ -1277,7 +1175,14 @@ exports.getHomepageConfig = async (req, res) => {
       }
     }
 
-    return res.status(200).json({ coreSports });
+    const heroTitleConfig = await models.AppConfigs.findOne({ where: { config_key: 'hero_title' } });
+    const heroSubtitleConfig = await models.AppConfigs.findOne({ where: { config_key: 'hero_subtitle' } });
+
+    return res.status(200).json({ 
+      coreSports,
+      heroTitle: heroTitleConfig ? heroTitleConfig.config_value : 'Bứt Phá Giới Hạn',
+      heroSubtitle: heroSubtitleConfig ? heroSubtitleConfig.config_value : 'Hệ thống quản lý phòng gym thông minh, tối ưu hóa quy trình tập luyện và trải nghiệm khách hàng đẳng cấp.'
+    });
   } catch (error) {
     console.error('❌ Error getting homepage config:', error);
     return res.status(500).json({ message: 'Lỗi server khi lấy cấu hình trang chủ!' });
@@ -1287,9 +1192,6 @@ exports.getHomepageConfig = async (req, res) => {
 // PUT /api/dashboard/admin/homepage-config
 exports.updateHomepageConfig = async (req, res) => {
   try {
-    // Expected structure for a single sport update or full array update
-    // If updating full array, req.body.coreSports contains JSON string
-    // Let's support updating full array
     let updatedSports = [];
 
     if (req.body.coreSports) {
@@ -1302,10 +1204,6 @@ exports.updateHomepageConfig = async (req, res) => {
       return res.status(400).json({ message: 'Thiếu dữ liệu cấu hình!' });
     }
 
-    // Handle image upload if a new file is uploaded
-    // Note: Due to limitations of multipart/form-data with array of objects, 
-    // a simpler approach is updating one sport at a time or passing image URL.
-    // Assuming frontend updates one sport at a time: index, name, description, and file
     const indexStr = req.body.updateIndex;
     if (indexStr !== undefined && req.file) {
       const idx = parseInt(indexStr, 10);
@@ -1327,9 +1225,33 @@ exports.updateHomepageConfig = async (req, res) => {
       await config.update({ config_value: JSON.stringify(updatedSports), updated_at: new Date() });
     }
 
+    let savedHeroTitle = req.body.heroTitle;
+    if (req.body.heroTitle !== undefined) {
+      const [titleConfig, tCreated] = await models.AppConfigs.findOrCreate({
+        where: { config_key: 'hero_title' },
+        defaults: { config_value: req.body.heroTitle, description: 'Slogan Banner trang chủ' }
+      });
+      if (!tCreated) {
+        await titleConfig.update({ config_value: req.body.heroTitle, updated_at: new Date() });
+      }
+    }
+
+    let savedHeroSubtitle = req.body.heroSubtitle;
+    if (req.body.heroSubtitle !== undefined) {
+      const [subConfig, sCreated] = await models.AppConfigs.findOrCreate({
+        where: { config_key: 'hero_subtitle' },
+        defaults: { config_value: req.body.heroSubtitle, description: 'Mô tả Banner trang chủ' }
+      });
+      if (!sCreated) {
+        await subConfig.update({ config_value: req.body.heroSubtitle, updated_at: new Date() });
+      }
+    }
+
     return res.status(200).json({ 
       message: 'Cập nhật cấu hình trang chủ thành công!',
-      coreSports: updatedSports
+      coreSports: updatedSports,
+      heroTitle: savedHeroTitle,
+      heroSubtitle: savedHeroSubtitle
     });
 
   } catch (error) {
@@ -3314,5 +3236,55 @@ exports.getMemberCheckInStatus = async (req, res) => {
   } catch (error) {
     console.error('❌ Lỗi khi kiểm tra trạng thái check-in:', error);
     return res.status(500).json({ message: 'Lỗi server khi kiểm tra trạng thái check-in!' });
+  }
+};
+
+// DELETE /api/dashboard/admin/plans/:id
+exports.deleteAdminPlan = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // First remove associations in MembershipPlanServices
+    await models.MembershipPlanServices.destroy({ where: { membership_plan_id: id } });
+    
+    // Then try to delete the MembershipPlan
+    const deletedCount = await models.MembershipPlans.destroy({ where: { membership_plan_id: id } });
+    
+    if (deletedCount === 0) {
+      return res.status(404).json({ message: 'Không tìm thấy gói tập!' });
+    }
+    
+    return res.status(200).json({ message: 'Xóa gói tập thành công!' });
+  } catch (error) {
+    console.error('❌ Error deleting plan:', error);
+    if (error.name === 'SequelizeForeignKeyConstraintError') {
+      return res.status(400).json({ message: 'Gói tập này đã có hội viên đăng ký mua, không thể xóa trực tiếp. Hãy chọn Khóa thay thế!' });
+    }
+    return res.status(500).json({ message: 'Lỗi server khi xóa gói tập!' });
+  }
+};
+
+// DELETE /api/dashboard/admin/services/:id
+exports.deleteAdminService = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // First remove associations in MembershipPlanServices
+    await models.MembershipPlanServices.destroy({ where: { service_id: id } });
+    
+    // Then try to delete the Service
+    const deletedCount = await models.Services.destroy({ where: { service_id: id } });
+    
+    if (deletedCount === 0) {
+      return res.status(404).json({ message: 'Không tìm thấy dịch vụ!' });
+    }
+    
+    return res.status(200).json({ message: 'Xóa dịch vụ thành công!' });
+  } catch (error) {
+    console.error('❌ Error deleting service:', error);
+    if (error.name === 'SequelizeForeignKeyConstraintError') {
+      return res.status(400).json({ message: 'Dịch vụ này đang được đính kèm trong các gói tập hoặc hội viên đang sử dụng, không thể xóa trực tiếp. Hãy chọn Tạm dừng thay thế!' });
+    }
+    return res.status(500).json({ message: 'Lỗi server khi xóa dịch vụ!' });
   }
 };
