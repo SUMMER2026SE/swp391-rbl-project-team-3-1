@@ -11,6 +11,17 @@ const PAYOS_CONFIG = {
     apiBase: process.env.PAYOS_API_BASE || 'https://api-merchant.payos.vn'
 };
 
+const VALID_COUPONS = {
+    'GIAM10': 10,
+    'GIAM20': 20,
+    'GIAM50': 50,
+    'GIAM100': 100,
+    'FXFITNESS': 15,
+    'TEST30': 30
+};
+
+const freeOrders = new Set();
+
 const createPayosSignature = (data) => {
     const rawData = Object.keys(data)
         .sort()
@@ -54,6 +65,9 @@ const getPayosPaymentInfo = async (orderCode) => {
 };
 
 const ensurePayosPaid = async (orderCode, expectedAmount) => {
+    if (freeOrders.has(Number(orderCode))) {
+        return { orderCode, status: 'PAID', amountPaid: 0, amount: 0 };
+    }
     const paymentInfo = await getPayosPaymentInfo(orderCode);
     const paidAmount = Number(paymentInfo.amountPaid || paymentInfo.amount || 0);
 
@@ -326,7 +340,7 @@ exports.getServices = async (req, res) => {
 // =====================================================
 exports.createPayosPayment = async (req, res) => {
     try {
-        const { planId, services = [] } = req.body;
+        const { planId, services = [], couponCode } = req.body;
 
         if (!planId && (!services || services.length === 0)) {
             return res.status(400).json({ message: 'Vui lòng chọn gói tập hoặc dịch vụ!' });
@@ -352,47 +366,72 @@ exports.createPayosPayment = async (req, res) => {
             servicesAmount = selectedServicesRecords.reduce((sum, s) => sum + parseFloat(s.price), 0);
         }
 
-        const amount = Math.round(planAmount + servicesAmount);
+        const originalAmount = planAmount + servicesAmount;
+        let discountPercent = 0;
+        if (couponCode) {
+            const code = couponCode.toUpperCase().trim();
+            if (VALID_COUPONS[code]) {
+                discountPercent = VALID_COUPONS[code];
+            }
+        }
+        const discountAmount = originalAmount * (discountPercent / 100);
+        const amount = Math.round(originalAmount - discountAmount);
+
         const orderCode = Number(`${Date.now()}${Math.floor(Math.random() * 90 + 10)}`.slice(-12));
         const description = `FXFITNESS ${orderCode}`.slice(0, 25);
         const returnUrl = buildClientUrl(req, `/checkout?payosOrderCode=${orderCode}`);
         const cancelUrl = buildClientUrl(req, '/checkout?payosCancelled=true');
-        const signatureData = { amount, cancelUrl, description, orderCode, returnUrl };
-
-        const paymentData = {
-            ...signatureData,
-            buyerName: 'FX Fitness Member',
-            items: [
-                {
-                    name: planName,
-                    quantity: 1,
-                    price: amount
-                }
-            ],
-            signature: createPayosSignature(signatureData)
-        };
 
         let paymentLink;
-        try {
-            paymentLink = await payosRequest('/v2/payment-requests', {
-                method: 'POST',
-                body: JSON.stringify(paymentData)
-            });
-        } catch (payosError) {
-            if (process.env.NODE_ENV === 'production') {
-                throw payosError;
-            }
-            console.warn('⚠️ [DEV] Không thể tạo link PayOS thật, sử dụng mock:', payosError.message);
+        if (amount === 0) {
+            freeOrders.add(orderCode);
             paymentLink = {
-                bin: '970422',
-                accountNumber: '0855157236',
-                accountName: 'HOANG LAN',
-                amount: amount,
+                bin: '000000',
+                accountNumber: 'FREE-COUPON',
+                accountName: 'MIEN PHI',
+                amount: 0,
                 orderCode: orderCode,
                 description: description,
-                qrCode: `00020101021238580010A00000072701240006970422011008551572360208QRIBFTTA53037045405${amount}5802VN62170813${description}6304`,
-                checkoutUrl: buildClientUrl(req, `/checkout?payosOrderCode=${orderCode}`)
+                qrCode: '',
+                checkoutUrl: buildClientUrl(req, `/checkout?payosOrderCode=${orderCode}`),
+                isFree: true
             };
+        } else {
+            const signatureData = { amount, cancelUrl, description, orderCode, returnUrl };
+            const paymentData = {
+                ...signatureData,
+                buyerName: 'FX Fitness Member',
+                items: [
+                    {
+                        name: planName,
+                        quantity: 1,
+                        price: amount
+                    }
+                ],
+                signature: createPayosSignature(signatureData)
+            };
+
+            try {
+                paymentLink = await payosRequest('/v2/payment-requests', {
+                    method: 'POST',
+                    body: JSON.stringify(paymentData)
+                });
+            } catch (payosError) {
+                if (process.env.NODE_ENV === 'production') {
+                    throw payosError;
+                }
+                console.warn('⚠️ [DEV] Không thể tạo link PayOS thật, sử dụng mock:', payosError.message);
+                paymentLink = {
+                    bin: '970422',
+                    accountNumber: '0855157236',
+                    accountName: 'HOANG LAN',
+                    amount: amount,
+                    orderCode: orderCode,
+                    description: description,
+                    qrCode: `00020101021238580010A00000072701240006970422011008551572360208QRIBFTTA53037045405${amount}5802VN62170813${description}6304`,
+                    checkoutUrl: buildClientUrl(req, `/checkout?payosOrderCode=${orderCode}`)
+                };
+            }
         }
 
         return res.status(201).json({
@@ -411,6 +450,17 @@ exports.createPayosPayment = async (req, res) => {
 // =====================================================
 exports.getPayosStatus = async (req, res) => {
     try {
+        const orderCode = Number(req.params.orderCode);
+        if (freeOrders.has(orderCode)) {
+            return res.status(200).json({
+                payment: {
+                    orderCode: req.params.orderCode,
+                    status: 'PAID',
+                    amountPaid: 0,
+                    amount: 0
+                }
+            });
+        }
         const payment = await getPayosPaymentInfo(req.params.orderCode);
         return res.status(200).json({ payment });
     } catch (error) {
@@ -430,7 +480,7 @@ exports.getPayosStatus = async (req, res) => {
 exports.guestCheckoutAndRegister = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const { email, fullName, phoneNumber, password, planId, trainerId, services = [], serviceIds = [], height, weight, bmi, fitnessGoal, payosOrderCode } = req.body;
+        const { email, fullName, phoneNumber, password, planId, trainerId, services = [], serviceIds = [], height, weight, bmi, fitnessGoal, payosOrderCode, couponCode } = req.body;
 
         // 1. Validate input
         if (!email || !password) {
@@ -540,7 +590,16 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             servicesAmount = selectedServicesRecords.reduce((sum, s) => sum + parseFloat(s.price), 0);
         }
 
-        const amount = planAmount + servicesAmount;
+        const originalAmount = planAmount + servicesAmount;
+        let discountPercent = 0;
+        if (couponCode) {
+            const code = couponCode.toUpperCase().trim();
+            if (VALID_COUPONS[code]) {
+                discountPercent = VALID_COUPONS[code];
+            }
+        }
+        const discountAmount = originalAmount * (discountPercent / 100);
+        const amount = Math.round(originalAmount - discountAmount);
         let payosPayment;
         try {
             payosPayment = await ensurePayosPaid(payosOrderCode, amount);
@@ -928,7 +987,7 @@ exports.loggedInCheckout = async (req, res) => {
     const t = await sequelize.transaction();
     try {
         const userId = req.user.userId || req.user.id;
-        const { planId, trainerId, services = [], payosOrderCode } = req.body;
+        const { planId, trainerId, services = [], payosOrderCode, couponCode } = req.body;
 
         if (!planId && (!services || services.length === 0)) {
             await t.rollback();
@@ -963,7 +1022,16 @@ exports.loggedInCheckout = async (req, res) => {
             servicesAmount = selectedServicesRecords.reduce((sum, s) => sum + parseFloat(s.price), 0);
         }
 
-        const amount = planAmount + servicesAmount;
+        const originalAmount = planAmount + servicesAmount;
+        let discountPercent = 0;
+        if (couponCode) {
+            const code = couponCode.toUpperCase().trim();
+            if (VALID_COUPONS[code]) {
+                discountPercent = VALID_COUPONS[code];
+            }
+        }
+        const discountAmount = originalAmount * (discountPercent / 100);
+        const amount = Math.round(originalAmount - discountAmount);
         let payosPayment;
         try {
             payosPayment = await ensurePayosPaid(payosOrderCode, amount);

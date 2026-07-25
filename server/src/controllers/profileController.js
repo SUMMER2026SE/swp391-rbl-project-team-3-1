@@ -332,11 +332,16 @@ exports.updateMyProfile = async (req, res) => {
             return res.status(400).json({ message: 'Họ tên không được để trống!' });
         }
 
+        let dobValue = user.date_of_birth;
+        if (dateOfBirth !== undefined) {
+            dobValue = (dateOfBirth === '' || dateOfBirth === null) ? null : dateOfBirth;
+        }
+
         await user.update({
             full_name: fullName !== undefined ? fullName : user.full_name,
             phone_number: phoneNumber !== undefined ? phoneNumber : user.phone_number,
             gender: gender !== undefined ? gender : user.gender,
-            date_of_birth: dateOfBirth !== undefined ? dateOfBirth : user.date_of_birth
+            date_of_birth: dobValue
         });
 
         // Member được sửa thêm thông tin luyện tập cá nhân.

@@ -61,6 +61,15 @@ const FALLBACK_TRAINERS = [
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 const fmt = (n) => n?.toLocaleString('vi-VN') + 'đ';
 
+const FRONTEND_COUPONS = {
+  'GIAM10': 10,
+  'GIAM20': 20,
+  'GIAM50': 50,
+  'GIAM100': 100,
+  'FXFITNESS': 15,
+  'TEST30': 30
+};
+
 const getPeriodLabel = (months) => {
   if (months === 1) return '/tháng';
   if (months === 12) return '/năm';
@@ -115,6 +124,13 @@ function CheckoutPage() {
   const otpInputs = useRef([]);
   const [otpCountdown, setOtpCountdown] = useState(0);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+
+  // Coupon states
+  const [couponInput, setCouponInput] = useState('');
+  const [couponApplied, setCouponApplied] = useState(false);
+  const [appliedCouponCode, setAppliedCouponCode] = useState('');
+  const [appliedDiscountPercent, setAppliedDiscountPercent] = useState(0);
+  const [couponMsg, setCouponMsg] = useState(null);
 
   // ── Init: read plan and service from URL / localStorage ─────────────────────────
   useEffect(() => {
@@ -236,7 +252,8 @@ function CheckoutPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             planId: selectedPlan?.planId || null,
-            services: selectedServices
+            services: selectedServices,
+            couponCode: couponApplied ? appliedCouponCode : null
           })
         });
         const data = await res.json();
@@ -254,7 +271,7 @@ function CheckoutPage() {
     };
 
     createPayosPayment();
-  }, [step, selectedPlan, selectedServices]);
+  }, [step, selectedPlan, selectedServices, couponApplied, appliedCouponCode]);
 
   // ── Navigation helpers ─────────────────────────────────────────────
   const goHome = () => {
@@ -280,7 +297,8 @@ function CheckoutPage() {
           planId: selectedPlan?.planId || null,
           trainerId: selectedTrainer?.userId || null,
           services: selectedServices,
-          payosOrderCode: payosPayment?.orderCode
+          payosOrderCode: payosPayment?.orderCode,
+          couponCode: couponApplied ? appliedCouponCode : null
         })
       });
       const data = await res.json();
@@ -294,7 +312,7 @@ function CheckoutPage() {
       setIsVerifyingPayment(false);
       setAlert({ show: true, msg: 'Không thể kết nối tới server!', type: 'error' });
     }
-  }, [payosPayment, selectedPlan, selectedTrainer, token]);
+  }, [payosPayment, selectedPlan, selectedTrainer, token, couponApplied, appliedCouponCode]);
 
   // ── Guest Submit Registration ──────────────────────────────────────
   useEffect(() => {
@@ -379,7 +397,8 @@ function CheckoutPage() {
           trainerId: selectedTrainer?.userId || null,
           services: selectedServices,
           serviceIds: selectedServices,
-          payosOrderCode: payosPayment?.orderCode
+          payosOrderCode: payosPayment?.orderCode,
+          couponCode: couponApplied ? appliedCouponCode : null
         })
       });
       const data = await res.json();
@@ -547,13 +566,39 @@ function CheckoutPage() {
     }
   };
 
+  const handleApplyCoupon = () => {
+    setCouponMsg(null);
+    const code = couponInput.toUpperCase().trim();
+    if (!code) return;
+
+    if (FRONTEND_COUPONS[code] !== undefined) {
+      const discount = FRONTEND_COUPONS[code];
+      setCouponApplied(true);
+      setAppliedCouponCode(code);
+      setAppliedDiscountPercent(discount);
+      setCouponMsg({ text: `Áp dụng mã ${code} thành công: Giảm ${discount}%`, type: 'success' });
+    } else {
+      setCouponMsg({ text: 'Mã giảm giá không hợp lệ!', type: 'error' });
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setCouponInput('');
+    setCouponApplied(false);
+    setAppliedCouponCode('');
+    setAppliedDiscountPercent(0);
+    setCouponMsg(null);
+  };
+
   // ─── Computed values ───────────────────────────────────────────────
   const planPrice = selectedPlan?.price || 0;
   const servicesPrice = selectedServices.reduce((sum, svcId) => {
     const svc = services.find(s => s.serviceId === svcId);
     return sum + (svc ? svc.price : 0);
   }, 0);
-  const totalPrice = planPrice + servicesPrice;
+  const subtotalPrice = planPrice + servicesPrice;
+  const discountAmount = Math.round(subtotalPrice * (appliedDiscountPercent / 100));
+  const totalPrice = subtotalPrice - discountAmount;
 
   const hasPTService = (selectedPlan?.includedServices || []).some(s => s.sportType === 'Huấn Luyện') || 
     selectedServices.some(svcId => {
@@ -940,18 +985,31 @@ function CheckoutPage() {
                         <span>Đang tạo thanh toán PayOS...</span>
                       </div>
                     )}
-                    {!isCreatingPayment && qrCodeUrl && (
-                      <img src={qrCodeUrl} alt="PayOS QR Code" className="payos-qr-img" />
-                    )}
-                    <div className="qr-scan-guide">
-                      <i className="fa-solid fa-expandscan"></i>
-                      <span>Sử dụng ứng dụng Ngân hàng quét mã QR PayOS để thanh toán</span>
-                    </div>
-                    {payosPayment?.checkoutUrl && (
-                      <a className="btn-payos-link" href={payosPayment.checkoutUrl} target="_blank" rel="noreferrer">
-                        <i className="fa-solid fa-arrow-up-right-from-square"></i>
-                        Mở trang PayOS
-                      </a>
+                    {!isCreatingPayment && (totalPrice === 0 || payosPayment?.isFree) ? (
+                      <div className="free-checkout-banner" style={{ textAlign: 'center', padding: '24px 16px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.3)', margin: '20px 0' }}>
+                        <i className="fa-solid fa-gift" style={{ fontSize: '3rem', color: '#10b981', marginBottom: '16px', display: 'block' }}></i>
+                        <h4 style={{ color: '#065f46', fontSize: '1.1rem', fontWeight: 800, margin: '0 0 8px' }}>Miễn Phí Hoàn Toàn</h4>
+                        <p style={{ color: '#047857', fontSize: '0.88rem', margin: 0, lineHeight: 1.6 }}>
+                          Gói tập này của bạn được giảm 100% nhờ coupon.<br />
+                          Vui lòng nhấn nút <strong>"Tiếp tục"</strong> bên dưới để hoàn tất.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        {!isCreatingPayment && qrCodeUrl && (
+                          <img src={qrCodeUrl} alt="PayOS QR Code" className="payos-qr-img" />
+                        )}
+                        <div className="qr-scan-guide">
+                          <i className="fa-solid fa-expandscan"></i>
+                          <span>Sử dụng ứng dụng Ngân hàng quét mã QR PayOS để thanh toán</span>
+                        </div>
+                        {payosPayment?.checkoutUrl && (
+                          <a className="btn-payos-link" href={payosPayment.checkoutUrl} target="_blank" rel="noreferrer">
+                            <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                            Mở trang PayOS
+                          </a>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -990,36 +1048,39 @@ function CheckoutPage() {
                     </div>
 
                     {/* Nút giả lập thanh toán dùng khi dev local */}
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        setHasDetectedPayment(true);
-                        setAlert({ show: false, msg: '', type: 'error' });
-                        if (isLoggedIn) {
-                          await handleLoggedInCheckout();
-                        } else {
-                          setStep(3); // Chuyển sang Bước 3 để điền thông tin đăng ký
-                        }
-                      }}
-                      style={{
-                        marginTop: '16px',
-                        padding: '10px 16px',
-                        backgroundColor: '#ff9800',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontWeight: 'bold',
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      <i className="fa-solid fa-circle-play"></i>
-                      ⚠️ [DEV] Giả Lập Thanh Toán Thành Công
-                    </button>
+                    {(totalPrice === 0 || payosPayment?.isFree) && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setHasDetectedPayment(true);
+                          setAlert({ show: false, msg: '', type: 'error' });
+                          if (isLoggedIn) {
+                            await handleLoggedInCheckout();
+                          } else {
+                            setStep(3); // Chuyển sang Bước 3 để điền thông tin đăng ký
+                          }
+                        }}
+                        style={{
+                          marginTop: '16px',
+                          padding: '12px 16px',
+                          backgroundColor: '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontWeight: 'bold',
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+                        }}
+                      >
+                        <i className="fa-solid fa-arrow-right"></i>
+                        Tiếp Tục Bấm Vào Đây Để Hoàn Tất
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1269,6 +1330,63 @@ function CheckoutPage() {
                   <div className="pay-row">
                     <span className="label">Dịch vụ ({selectedServices.length}):</span>
                     <span className="value" style={{ color: '#10b981' }}>+{fmt(servicesPrice)}</span>
+                  </div>
+                  <div className="pay-divider"></div>
+                </>
+              )}
+
+              {couponApplied && (
+                <>
+                  <div className="pay-row coupon-discount-row">
+                    <span className="label" style={{ color: '#16a34a' }}>Mã giảm giá ({appliedCouponCode}):</span>
+                    <span className="value discount-value" style={{ color: '#16a34a', fontWeight: 'bold' }}>-{appliedDiscountPercent}%</span>
+                    {step === 1 && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveCoupon}
+                        className="btn-remove-coupon"
+                        title="Hủy áp dụng"
+                      >
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
+                    )}
+                  </div>
+                  <div className="pay-divider"></div>
+                </>
+              )}
+
+              {step === 1 && (
+                <>
+                  <div className="coupon-section">
+                    <label className="coupon-label">Mã Coupon giảm giá</label>
+                    <div className="coupon-input-group">
+                      <input
+                        type="text"
+                        placeholder="Nhập mã (e.g. GIAM50)"
+                        value={couponInput}
+                        onChange={(e) => setCouponInput(e.target.value)}
+                        disabled={isSubmitting || isVerifyingPayment}
+                        className="coupon-input"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleApplyCoupon}
+                        disabled={!couponInput.trim() || isSubmitting || isVerifyingPayment}
+                        className="btn-apply-coupon"
+                      >
+                        Áp dụng
+                      </button>
+                    </div>
+                    {couponMsg && (
+                      <div className={`coupon-msg ${couponMsg.type}`}>
+                        {couponMsg.type === 'success' ? (
+                          <i className="fa-solid fa-circle-check"></i>
+                        ) : (
+                          <i className="fa-solid fa-circle-exclamation"></i>
+                        )}
+                        <span>{couponMsg.text}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="pay-divider"></div>
                 </>

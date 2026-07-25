@@ -562,3 +562,268 @@ Trợ lý:`;
     });
   }
 };
+
+// POST /api/ai/meal-plan
+// Generate scientific AI meal plan based on metrics and PT exercises/goals
+exports.generateMealPlan = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { height, weight, age, gender, mode, sport, goal } = req.body;
+
+    const member = await models.Members.findOne({
+      where: { user_id: userId },
+      include: [{ model: models.Users, as: 'user' }]
+    });
+
+    if (!member) {
+      return res.status(404).json({ message: 'Không tìm thấy thông tin hội viên!' });
+    }
+
+    // Determine metrics (fallback to member profile if not sent by UI)
+    const heightVal = height ? Number(height) : (member.height ? Math.round(member.height * 100) : 170);
+    const weightVal = weight ? Number(weight) : (member.weight || 65);
+    
+    let ageVal = 25;
+    if (age) {
+      ageVal = Number(age);
+    } else if (member.user && member.user.date_of_birth) {
+      const birthDate = new Date(member.user.date_of_birth);
+      const today = new Date();
+      ageVal = today.getFullYear() - birthDate.getFullYear();
+      const m = today.getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        ageVal--;
+      }
+    }
+
+    const genderVal = gender || (member.user ? member.user.gender : 'Nam') || 'Nam';
+    const heightInMeters = heightVal / 100;
+    const bmiVal = Math.round((weightVal / (heightInMeters * heightInMeters)) * 100) / 100;
+
+    // Fetch member's PT workout plans & exercises
+    const activeWorkoutPlans = await models.WorkoutPlans.findAll({
+      where: { member_id: member.member_id },
+      include: [{ model: models.WorkoutExercises, as: 'WorkoutExercises' }],
+      order: [['created_at', 'DESC']],
+      limit: 2
+    });
+
+    let workoutDescriptionText = "";
+    if (activeWorkoutPlans && activeWorkoutPlans.length > 0) {
+      workoutDescriptionText = activeWorkoutPlans.map(plan => {
+        const exercisesText = plan.WorkoutExercises ? plan.WorkoutExercises.map(ex => {
+          return `- ${ex.exercise_name}: ${ex.sets} hiệp x ${ex.reps} lần${ex.duration_minutes ? `, ${ex.duration_minutes} phút` : ''}${ex.calories_burned ? `, Đốt ${ex.calories_burned} kcal` : ''}`;
+        }).join('\n') : "Chưa có bài tập chi tiết";
+        return `Giáo án: ${plan.title}\nMô tả: ${plan.description || "Không có"}\nBài tập:\n${exercisesText}`;
+      }).join('\n\n');
+    } else {
+      workoutDescriptionText = "Hội viên hiện chưa có giáo án tập luyện cụ thể nào từ PT.";
+    }
+
+    // Call Gemini API if configured
+    let advice = null;
+    if (geminiConfig.isConfigured()) {
+      const promptText = `Bạn là một chuyên gia dinh dưỡng và bác sĩ thể thao chuyên nghiệp của trung tâm FX Fitness.
+Nhiệm vụ của bạn là lập một thực đơn ăn uống khoa học và thực tế phù hợp với chỉ số cơ thể, chế độ tập luyện hiện tại của hội viên.
+
+Thông tin thể chất hội viên:
+- Tuổi: ${ageVal} tuổi
+- Giới tính: ${genderVal}
+- Chiều cao: ${heightVal} cm
+- Cân nặng: ${weightVal} kg
+- Chỉ số BMI: ${bmiVal}
+
+Chế độ tập luyện hiện tại từ PT (giáo án tập):
+${workoutDescriptionText}
+
+Chế độ tư vấn thực đơn do hội viên yêu cầu:
+- Phương thức chọn: Theo ${mode === 'workout' ? `bài tập môn ${sport}` : `nhu cầu mục tiêu ${goal}`}
+
+Yêu cầu thực đơn:
+1. Thực đơn phải hoàn toàn thực tế với các nguyên liệu dễ kiếm, phổ biến tại Việt Nam (ví dụ: ức gà, khoai lang, trứng, bò, rau muống, cơm gạo lứt, chuối...).
+2. Phải phù hợp logic:
+   - Nếu là Boxing: Cần chế độ ăn dồi dào năng lượng (Carb hấp thu nhanh trước tập và Protein phục hồi), hỗ trợ sự bùng nổ cơ bắp và bù nước/khoáng.
+   - Nếu là Yoga: Cần chế độ ăn thanh lọc, giàu chất xơ, vitamin, các thực phẩm lành mạnh (Plant-based, chất béo tốt như hạt, bơ) giúp cơ thể dẻo dai nhẹ nhàng.
+   - Nếu là Gym: Cần giàu Protein để phát triển cơ bắp, chia nhỏ các bữa ăn khoa học.
+   - Nếu là Tăng cơ: Thặng dư Calo nhẹ, protein cao (1.8g - 2.2g/kg), carb phức hợp.
+   - Nếu là Giảm mỡ: Thâm hụt Calo (300-500 kcal dưới mức TDEE duy trì), giàu xơ, protein trung bình cao để giữ cơ, cắt giảm tinh bột nhanh và đường.
+   - Nếu là Dẻo dai: Thực phẩm chống viêm, bổ sung chất béo omega-3, nước, vitamin.
+   - Nếu là Sức bền: Tăng lượng glycogen lưu trữ bằng carb phức hợp, bổ sung điện giải.
+
+Hãy trả về kết quả dưới định dạng JSON duy nhất, KHÔNG chứa các ký tự định dạng Markdown (\`\`\`json) hay bất kỳ văn bản giải thích nào ngoài JSON. Cấu trúc JSON bắt buộc phải khớp chính xác với mẫu sau:
+{
+  "target_calories": 2100,
+  "macro_protein_pct": 30,
+  "macro_carbs_pct": 45,
+  "macro_fat_pct": 25,
+  "meals": {
+    "breakfast": "mô tả chi tiết món ăn và lượng (ví dụ: 2 quả trứng ốp la, 1 lát bánh mì đen, 1 quả chuối tiêu)",
+    "lunch": "mô tả chi tiết món ăn và lượng (ví dụ: 150g ức gà áp chảo, 1 củ khoai lang luộc, bông cải xanh luộc)",
+    "dinner": "mô tả chi tiết món ăn và lượng (ví dụ: 120g cá hồi áp chảo hoặc cá thu, 1 bát nhỏ cơm gạo lứt, salad xà lách dầu giấm)",
+    "snack_drinks": "mô tả chi tiết thức ăn nhẹ hoặc thức uống phù hợp (ví dụ: 1 ly whey protein hoặc 1 hộp sữa chua không đường kết hợp hạt điều)"
+  },
+  "scientific_advice": "lời khuyên khoa học cụ thể, giải thích vì sao thực đơn này phù hợp với chỉ số BMI ${bmiVal} và bài tập/nhu cầu của họ. Viết khoảng 120-150 từ ngắn gọn, thuyết phục, tạo động lực."
+}
+`;
+
+      try {
+        let textResult = await geminiConfig.generateContent(promptText);
+        if (textResult) {
+          textResult = textResult.trim();
+          if (textResult.startsWith('```json')) {
+            textResult = textResult.replace(/^```json/, '').replace(/```$/, '').trim();
+          } else if (textResult.startsWith('```')) {
+            textResult = textResult.replace(/^```/, '').replace(/```$/, '').trim();
+          }
+          advice = JSON.parse(textResult);
+        }
+      } catch (err) {
+        console.error('❌ Failed to call or parse Gemini API for Meal Plan:', err.message);
+      }
+    }
+
+    // Fallback if Gemini is not configured or fails
+    if (!advice) {
+      console.log('⚠️ Using rule-based fallback for Meal Plan generation.');
+      advice = getRuleBasedMealPlan({
+        age: ageVal,
+        gender: genderVal,
+        height: heightVal,
+        weight: weightVal,
+        bmi: bmiVal,
+        mode,
+        sport,
+        goal
+      });
+    }
+
+    // Save meal plan to AIConsultations table
+    const newConsult = await models.AIConsultations.create({
+      member_id: member.member_id,
+      consultation_type: 'Meal Plan',
+      age: ageVal,
+      gender: genderVal,
+      height: heightInMeters,
+      weight: weightVal,
+      fitness_goal: mode === 'workout' ? `Bài tập: ${sport}` : `Nhu cầu: ${goal}`,
+      recommended_sport: sport || (mode === 'workout' ? sport : ''),
+      recommended_membership: mode === 'workout' ? 'Workout Mode' : 'Goal Mode',
+      recommended_schedule: JSON.stringify(advice.meals), // Store meals JSON string
+      recommendation_detail: advice.scientific_advice // Store scientific advice
+    });
+
+    return res.status(200).json({
+      message: 'Tạo thực đơn dinh dưỡng AI thành công!',
+      mealPlan: {
+        id: newConsult.consultation_id,
+        bmi: bmiVal,
+        height: heightVal,
+        weight: weightVal,
+        age: ageVal,
+        gender: genderVal,
+        fitnessGoal: newConsult.fitness_goal,
+        target_calories: advice.target_calories,
+        macro_protein_pct: advice.macro_protein_pct,
+        macro_carbs_pct: advice.macro_carbs_pct,
+        macro_fat_pct: advice.macro_fat_pct,
+        meals: advice.meals,
+        scientific_advice: advice.scientific_advice,
+        createdAt: newConsult.created_at
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error in generateMealPlan:', error);
+    return res.status(500).json({
+      message: 'Lỗi server khi tạo thực đơn AI!',
+      error: error.message
+    });
+  }
+};
+
+// Helper rule-based fallback meal plan generator
+function getRuleBasedMealPlan({ age, gender, height, weight, bmi, mode, sport, goal }) {
+  let bmr = 10 * weight + 6.25 * height - 5 * age;
+  if (gender === 'Nam') {
+    bmr += 5;
+  } else {
+    bmr -= 161;
+  }
+
+  let tdee = Math.round(bmr * 1.375);
+  let target_calories = tdee;
+  
+  let macro_protein_pct = 25;
+  let macro_carbs_pct = 50;
+  let macro_fat_pct = 25;
+
+  let breakfast = "";
+  let lunch = "";
+  let dinner = "";
+  let snack_drinks = "";
+  let scientific_advice = "";
+
+  let selectedOption = mode === 'workout' ? (sport || 'gym').toLowerCase() : (goal || 'tăng cơ').toLowerCase();
+
+  if (selectedOption.includes('tăng cơ') || selectedOption.includes('gym')) {
+    target_calories = Math.round(tdee + 300);
+    macro_protein_pct = 30;
+    macro_carbs_pct = 45;
+    macro_fat_pct = 25;
+
+    breakfast = "3 lòng trắng trứng + 1 lòng đỏ trứng chiên ít dầu, 2 lát bánh mì nguyên cám, 1 quả chuối chín.";
+    lunch = "180g ức gà áp chảo xắt hạt lựu, 1 bát cơm gạo lứt, 150g súp lơ xanh luộc chấm nước tương tỏi.";
+    dinner = "150g nạc thăn bò xào măng tây hoặc hành tây, 1 củ khoai lang luộc ngọt, salad xà lách cà chua.";
+    snack_drinks = "1 ly sữa tươi không đường + 30g hạt hạnh nhân hoặc óc chó chống đói xế chiều.";
+    scientific_advice = `Chỉ số BMI của bạn là ${bmi}. Với mục tiêu tăng cơ bắp và rèn luyện Gym kháng lực, thực đơn này cung cấp thặng dư calo nhẹ và nạp protein chất lượng cao để kích thích tổng hợp protein trong cơ. Các nguồn carb phức hợp từ gạo lứt và khoai lang giúp duy trì năng lượng bền vững cho các buổi tập nâng tạ nặng mà PT giao cho bạn.`;
+  } else if (selectedOption.includes('giảm mỡ') || selectedOption.includes('boxing')) {
+    target_calories = Math.round(tdee - 350);
+    macro_protein_pct = 35;
+    macro_carbs_pct = 35;
+    macro_fat_pct = 30;
+
+    breakfast = "1 bát cháo yến mạch nấu với 80g thịt ức gà băm, rắc hành lá và tiêu thơm phức.";
+    lunch = "150g cá quả hoặc cá rô phi phi lê áp chảo, 1 củ khoai lang nhỏ, 200g bắp cải luộc chín.";
+    dinner = "1 bát canh đậu phụ nấu thịt nạc băm, 100g ức gà xé trộn hành tây dưa chuột bóp giấm táo.";
+    snack_drinks = "1 hũ sữa chua Hy Lạp ít béo không đường kết hợp vài quả dâu tây chín mọng.";
+    scientific_advice = `Chỉ số BMI của bạn là ${bmi}. Thực đơn được tối ưu hóa thâm hụt calo lành mạnh giúp đốt cháy mỡ thừa hiệu quả đồng thời bảo toàn khối lượng cơ nạc. Hàm lượng protein cao hỗ trợ đẩy mạnh quá trình trao đổi chất và tăng cảm giác no lâu, giúp bạn tập luyện boxing hay cardio cường độ cao bền bỉ hơn.`;
+  } else if (selectedOption.includes('dẻo dai') || selectedOption.includes('yoga')) {
+    target_calories = Math.round(tdee - 100);
+    macro_protein_pct = 20;
+    macro_carbs_pct = 50;
+    macro_fat_pct = 30;
+
+    breakfast = "1 ly sinh tố bơ, chuối xay với sữa hạnh nhân không đường, rắc thêm 1 thìa cafe hạt chia.";
+    lunch = "150g đậu phụ kho nấm rơm chay, 1 bát cơm gạo lứt, 1 bát canh rong biển thanh mát.";
+    dinner = "120g tôm sú hấp gừng, 1 đĩa bông cải xanh luộc chấm muối vừng, 1/2 quả bơ chín thái lát.";
+    snack_drinks = "1 ly nước dừa tươi nguyên chất hoặc 1 ly nước ép cần tây thanh lọc cơ thể.";
+    scientific_advice = `Chỉ số BMI của bạn là ${bmi}. Để bổ trợ cho các bài tập Yoga dẻo dai và phục hồi cơ thể, thực đơn ưu tiên các nhóm thực phẩm chống viêm tự nhiên, giàu nước, vitamin và omega-3 có lợi cho khớp gối. Chế độ ăn nhẹ nhàng, dễ tiêu hóa này giúp cơ thể bạn thanh thoát, dẻo dai hơn khi thực hiện các động tác uốn dẻo khớp xương.`;
+  } else {
+    // Sức bền / Cải thiện sức khỏe tổng thể
+    target_calories = Math.round(tdee);
+    macro_protein_pct = 22;
+    macro_carbs_pct = 55;
+    macro_fat_pct = 23;
+
+    breakfast = "1 đĩa mì Ý xốt bò bằm vừa phải (khoảng 80g bò nạc), 1 quả táo xanh giòn.";
+    lunch = "150g phi lê cá hồi áp chảo sốt chanh leo, 1.5 bát cơm gạo lứt thơm, canh rau cải ngọt nấu tôm.";
+    dinner = "150g thịt heo nạc thăn luộc chấm mắm tỏi, 1 củ khoai tây hầm cà rốt và bí đỏ.";
+    snack_drinks = "1 ly nước điện giải bù khoáng và 1 quả chuối tiêu trước khi chạy bộ hoặc đạp xe 30 phút.";
+    scientific_advice = `Chỉ số BMI của bạn là ${bmi}. Để duy trì sức bền trong các bài tập kéo dài, thực đơn này tập trung cung cấp lượng carbohydrate phức hợp phong phú giúp làm đầy kho glycogen trong gan và cơ bắp. Các chất béo tốt từ cá hồi hỗ trợ đắc lực cho hoạt động của hệ tim mạch dẻo dai.`;
+  }
+
+  return {
+    target_calories,
+    macro_protein_pct,
+    macro_carbs_pct,
+    macro_fat_pct,
+    meals: {
+      breakfast,
+      lunch,
+      dinner,
+      snack_drinks
+    },
+    scientific_advice
+  };
+}
+

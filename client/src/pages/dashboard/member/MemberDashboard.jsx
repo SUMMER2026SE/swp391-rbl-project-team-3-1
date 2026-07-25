@@ -109,6 +109,120 @@ function MemberDashboard({
     'morning': false, 'noon': false, 'evening': false
   });
 
+  // --- AI MEAL PLAN STATES ---
+  const [aiMealAge, setAiMealAge] = useState('25');
+  const [aiMealGender, setAiMealGender] = useState('Nam');
+  const [aiMealHeight, setAiMealHeight] = useState('');
+  const [aiMealWeight, setAiMealWeight] = useState('');
+  const [aiMealMode, setAiMealMode] = useState('workout'); // 'workout' | 'goal'
+  const [aiMealSport, setAiMealSport] = useState('Gym'); // 'Gym' | 'Yoga' | 'Boxing'
+  const [aiMealGoal, setAiMealGoal] = useState('Tăng cơ'); // 'Tăng cơ' | 'Giảm mỡ' | 'Dẻo dai' | 'Sức bền'
+  const [aiMealResult, setAiMealResult] = useState(null);
+  const [aiMealLoading, setAiMealLoading] = useState(false);
+  const [aiMealLoadingStep, setAiMealLoadingStep] = useState('');
+  const [aiMealError, setAiMealError] = useState('');
+
+  const syncMealPlanMetricsWithProfile = () => {
+    if (profileData && profileData.memberInfo) {
+      const info = profileData.memberInfo;
+      if (info.height) setAiMealHeight(Math.round(info.height * 100).toString());
+      if (info.weight) setAiMealWeight(info.weight.toString());
+      if (info.fitness_goal) {
+        if (info.fitness_goal.includes('Tăng cơ')) setAiMealGoal('Tăng cơ');
+        else if (info.fitness_goal.includes('Giảm cân') || info.fitness_goal.includes('Giảm mỡ')) setAiMealGoal('Giảm mỡ');
+        else if (info.fitness_goal.includes('Dẻo dai') || info.fitness_goal.includes('Linh hoạt')) setAiMealGoal('Dẻo dai');
+        else if (info.fitness_goal.includes('Sức bền')) setAiMealGoal('Sức bền');
+      }
+    }
+    if (userInfo) {
+      if (userInfo.gender) setAiMealGender(userInfo.gender);
+      if (userInfo.date_of_birth || userInfo.dateOfBirth) {
+        const dobStr = userInfo.date_of_birth || userInfo.dateOfBirth;
+        const birthDate = new Date(dobStr);
+        const today = new Date();
+        let calculatedAge = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+          calculatedAge--;
+        }
+        setAiMealAge(calculatedAge.toString());
+      }
+    }
+  };
+
+  const handleGenerateMealPlan = async (e) => {
+    if (e) e.preventDefault();
+    setAiMealError('');
+    setAiMealResult(null);
+    setAiMealLoading(true);
+
+    if (!aiMealHeight || Number(aiMealHeight) <= 0) {
+      setAiMealError('Chiều cao không hợp lệ!');
+      setAiMealLoading(false);
+      return;
+    }
+    if (!aiMealWeight || Number(aiMealWeight) <= 0) {
+      setAiMealError('Cân nặng không hợp lệ!');
+      setAiMealLoading(false);
+      return;
+    }
+
+    const steps = [
+      'Đang gửi dữ liệu phân tích...',
+      'Đang đối chiếu bài tập với PT & số đo...',
+      'AI đang tính toán lượng Calories & tỷ lệ Macro...',
+      'AI đang thiết kế thực đơn chi tiết từng bữa...',
+      'Đang chuẩn bị hiển thị thực đơn...'
+    ];
+
+    let currentStepIdx = 0;
+    setAiMealLoadingStep(steps[0]);
+    const stepInterval = setInterval(() => {
+      currentStepIdx++;
+      if (currentStepIdx < steps.length) {
+        setAiMealLoadingStep(steps[currentStepIdx]);
+      }
+    }, 1100);
+
+    try {
+      const res = await fetch('/api/ai/meal-plan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          height: aiMealHeight,
+          weight: aiMealWeight,
+          age: aiMealAge,
+          gender: aiMealGender,
+          mode: aiMealMode,
+          sport: aiMealSport,
+          goal: aiMealGoal
+        })
+      });
+
+      clearInterval(stepInterval);
+      const data = await res.json();
+      setAiMealLoading(false);
+
+      if (res.ok) {
+        setAiMealResult(data.mealPlan);
+        reloadAiHistory();
+      } else {
+        setAiMealError(data.message || 'Yêu cầu thực đơn AI thất bại!');
+      }
+    } catch (err) {
+      clearInterval(stepInterval);
+      setAiMealLoading(false);
+      setAiMealError('Không thể kết nối đến máy chủ AI!');
+    }
+  };
+
+  useEffect(() => {
+    syncMealPlanMetricsWithProfile();
+  }, [profileData, userInfo]);
+
   // Fetch trainer schedule
   useEffect(() => {
     if (selectedTrainerId && activeTab === 'lichhen') {
@@ -2340,7 +2454,7 @@ function MemberDashboard({
                     Lịch sử tư vấn
                   </h3>
                   <div className="ai-history-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '550px', overflowY: 'auto' }}>
-                    {aiHistory.map((item, idx) => (
+                    {aiHistory.filter(item => item.consultationType !== 'Meal Plan').map((item, idx) => (
                       <div
                         key={item.id || idx}
                         className={`ai-history-item ${aiResult?.id === item.id ? 'active' : ''}`}
@@ -2370,8 +2484,363 @@ function MemberDashboard({
                         </div>
                       </div>
                     ))}
-                    {aiHistory.length === 0 && (
+                    {aiHistory.filter(item => item.consultationType !== 'Meal Plan').length === 0 && (
                       <div style={{ color: '#94a3b8', fontSize: '0.86rem', textAlign: 'center', marginTop: '30px' }}>Chưa có lịch sử tư vấn nào</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+      case 'ai_meal':
+        {
+          const parseMeals = (item) => {
+            if (!item) return null;
+            if (item.meals) return item.meals;
+            if (item.recommendedSchedule) {
+              try {
+                return JSON.parse(item.recommendedSchedule);
+              } catch (e) {
+                return {
+                  breakfast: "Theo lịch trình: " + item.recommendedSchedule,
+                  lunch: "Tham khảo chế độ dinh dưỡng",
+                  dinner: "Liên hệ HLV hoặc AI tư vấn thêm",
+                  snack_drinks: "Uống đủ nước, bổ sung khoáng chất"
+                };
+              }
+            }
+            return null;
+          };
+
+          const meals = parseMeals(aiMealResult);
+
+          return (
+            <div className="member-ai-meal-layout">
+              {/* Form & Current result column */}
+              <div className="ai-meal-main-column">
+                <div className="member-card-panel">
+                  <div className="member-card-header" style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 className="member-card-title">
+                      <i className="fa-solid fa-robot" style={{ marginRight: '8px', color: '#10b981' }}></i>
+                      Trợ lý Dinh dưỡng AI tối ưu
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={syncMealPlanMetricsWithProfile}
+                      className="sync-profile-btn"
+                      title="Đồng bộ chỉ số thể chất từ Hồ sơ của bạn"
+                    >
+                      <i className="fa-solid fa-rotate"></i> Đồng bộ Hồ sơ
+                    </button>
+                  </div>
+
+                  {aiMealError && (
+                    <div className="alert err" style={{ display: 'flex', marginTop: '16px' }}>
+                      <i className="fa-solid fa-circle-exclamation"></i>
+                      <span>{aiMealError}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleGenerateMealPlan} className="ai-consult-form" style={{ marginTop: '20px' }}>
+                    <div className="member-form-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
+                      <div className="member-form-group">
+                        <label className="member-form-label">Tuổi (năm)</label>
+                        <input
+                          type="number"
+                          className="member-form-input"
+                          value={aiMealAge}
+                          onChange={(e) => setAiMealAge(e.target.value)}
+                          required
+                          disabled={aiMealLoading}
+                        />
+                      </div>
+                      <div className="member-form-group">
+                        <label className="member-form-label">Giới tính</label>
+                        <select
+                          className="member-form-select"
+                          value={aiMealGender}
+                          onChange={(e) => setAiMealGender(e.target.value)}
+                          disabled={aiMealLoading}
+                        >
+                          <option value="Nam">Nam</option>
+                          <option value="Nữ">Nữ</option>
+                          <option value="Khác">Khác</option>
+                        </select>
+                      </div>
+                      <div className="member-form-group">
+                        <label className="member-form-label">Chiều cao (cm)</label>
+                        <input
+                          type="number"
+                          className="member-form-input"
+                          placeholder="170"
+                          value={aiMealHeight}
+                          onChange={(e) => setAiMealHeight(e.target.value)}
+                          required
+                          disabled={aiMealLoading}
+                        />
+                      </div>
+                      <div className="member-form-group">
+                        <label className="member-form-label">Cân nặng (kg)</label>
+                        <input
+                          type="number"
+                          className="member-form-input"
+                          placeholder="65"
+                          value={aiMealWeight}
+                          onChange={(e) => setAiMealWeight(e.target.value)}
+                          required
+                          disabled={aiMealLoading}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Mode Tabs */}
+                    <div className="ai-meal-mode-tabs" style={{ marginTop: '20px' }}>
+                      <button
+                        type="button"
+                        className={`mode-tab-btn ${aiMealMode === 'workout' ? 'active' : ''}`}
+                        onClick={() => setAiMealMode('workout')}
+                        disabled={aiMealLoading}
+                      >
+                        <i className="fa-solid fa-dumbbell"></i> Theo Bài Tập PT Giao
+                      </button>
+                      <button
+                        type="button"
+                        className={`mode-tab-btn ${aiMealMode === 'goal' ? 'active' : ''}`}
+                        onClick={() => setAiMealMode('goal')}
+                        disabled={aiMealLoading}
+                      >
+                        <i className="fa-solid fa-bullseye"></i> Theo Nhu Cầu Cá Nhân
+                      </button>
+                    </div>
+
+                    {/* Mode dependent selection */}
+                    <div className="ai-meal-mode-options" style={{ marginTop: '16px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      {aiMealMode === 'workout' ? (
+                        <div>
+                          <label className="member-form-label">Chọn môn tập đang luyện tập:</label>
+                          <select
+                            className="member-form-select"
+                            value={aiMealSport}
+                            onChange={(e) => setAiMealSport(e.target.value)}
+                            disabled={aiMealLoading}
+                          >
+                            <option value="Gym">Tập Gym & Thể hình (Fitness)</option>
+                            <option value="Yoga">Tập Yoga & Phục hồi dẻo dai</option>
+                            <option value="Boxing">Tập Boxing & Kickboxing cường độ cao</option>
+                          </select>
+
+                          {/* Render PT's current assigned exercises in the dashboard if any */}
+                          {dbWorkoutPlans && dbWorkoutPlans.length > 0 ? (
+                            <div style={{ marginTop: '12px', fontSize: '0.82rem', color: '#475569', background: '#fff', padding: '10px 14px', borderRadius: '8px', border: '1.5px dashed #cbd5e1' }}>
+                              <div style={{ fontWeight: '700', marginBottom: '6px', color: '#1e293b' }}>
+                                <i className="fa-solid fa-circle-info" style={{ color: '#3b82f6', marginRight: '4px' }}></i> 
+                                Dữ liệu bài tập của bạn (AI sẽ đồng bộ phân tích):
+                              </div>
+                              {dbWorkoutPlans.slice(0, 1).map((p) => (
+                                <div key={p.workout_plan_id}>
+                                  <strong>{p.title}</strong>: {p.description || 'Bài tập rèn luyện thể chất'}
+                                  <div style={{ marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                    {p.WorkoutExercises && p.WorkoutExercises.slice(0, 3).map((ex, exIdx) => (
+                                      <span key={exIdx} style={{ background: '#f1f5f9', color: '#64748b', padding: '2px 6px', borderRadius: '4px', fontSize: '0.74rem' }}>
+                                        {ex.exercise_name} ({ex.sets}x{ex.reps})
+                                      </span>
+                                    ))}
+                                    {p.WorkoutExercises && p.WorkoutExercises.length > 3 && <span>... và {p.WorkoutExercises.length - 3} bài khác</span>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ marginTop: '12px', fontSize: '0.82rem', color: '#64748b', fontStyle: 'italic' }}>
+                              * Bạn chưa có giáo án bài tập nào được giao bởi PT. AI sẽ phân tích dựa trên đặc thù môn tập lựa chọn.
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="member-form-label">Chọn nhu cầu / mục tiêu sức khỏe của bạn:</label>
+                          <div className="ai-meal-goals-grid">
+                            {[
+                              { key: 'Tăng cơ', label: 'Tăng cơ & Phát triển thể chất', icon: 'fa-cubes' },
+                              { key: 'Giảm mỡ', label: 'Giảm mỡ & Thâm hụt Calo nhẹ', icon: 'fa-fire-flame-curved' },
+                              { key: 'Dẻo dai', label: 'Dẻo dai & Thanh lọc cơ thể', icon: 'fa-leaf' },
+                              { key: 'Sức bền', label: 'Sức bền & Năng lượng kéo dài', icon: 'fa-bolt' }
+                            ].map((g) => (
+                              <button
+                                key={g.key}
+                                type="button"
+                                className={`goal-btn ${aiMealGoal === g.key ? 'active' : ''}`}
+                                onClick={() => setAiMealGoal(g.key)}
+                                disabled={aiMealLoading}
+                              >
+                                <i className={`fa-solid ${g.icon}`}></i> {g.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="member-btn-submit ai-meal-submit-btn"
+                      style={{ width: '100%', marginTop: '20px', padding: '14px', background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', fontSize: '1rem', fontWeight: 'bold' }}
+                      disabled={aiMealLoading}
+                    >
+                      {aiMealLoading ? (
+                        <span><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px' }}></i> Đang xử lý thực đơn...</span>
+                      ) : (
+                        <span><i className="fa-solid fa-wand-magic-sparkles" style={{ marginRight: '8px' }}></i> Thiết lập thực đơn dinh dưỡng AI</span>
+                      )}
+                    </button>
+                  </form>
+                </div>
+
+                {aiMealLoading && (
+                  <div className="member-card-panel" style={{ marginTop: '20px', textAlign: 'center', padding: '40px 20px' }}>
+                    <div className="ai-pulse-loader">
+                      <i className="fa-solid fa-bowl-food fa-bounce" style={{ fontSize: '3.5rem', color: '#10b981' }}></i>
+                    </div>
+                    <h4 style={{ marginTop: '20px', color: '#1e293b' }}>{aiMealLoadingStep}</h4>
+                    <p style={{ color: '#94a3b8', fontSize: '0.86rem', marginTop: '8px' }}>Hệ thống đang phân tích khẩu phần & nhu cầu calo tối ưu...</p>
+                  </div>
+                )}
+
+                {aiMealResult && !aiMealLoading && (
+                  <div className="ai-results-wrapper animate-slide-up" style={{ marginTop: '20px' }}>
+                    {/* Calo and Macro Summary */}
+                    <div className="member-card-panel" style={{ background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)', borderLeft: '4px solid #10b981' }}>
+                      <h4 className="member-card-title" style={{ color: '#0f172a' }}>Chỉ số Dinh dưỡng Đề xuất</h4>
+                      <div className="ai-meal-macro-summary" style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap', marginTop: '16px' }}>
+                        <div className="ai-meal-calories-box">
+                          <span className="cal-val">{aiMealResult.target_calories || aiMealResult.targetCalories || 2000}</span>
+                          <span className="cal-lbl">Kcal / Ngày</span>
+                        </div>
+                        <div className="ai-meal-macros-bars" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 'bold', color: '#475569' }}>
+                              <span>💪 Protein (Chất đạm)</span>
+                              <span>{aiMealResult.macro_protein_pct || aiMealResult.macroProteinPct || 25}%</span>
+                            </div>
+                            <div className="macro-bar-bg"><div className="macro-bar-fill protein" style={{ width: `${aiMealResult.macro_protein_pct || aiMealResult.macroProteinPct || 25}%` }}></div></div>
+                          </div>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 'bold', color: '#475569' }}>
+                              <span>🌾 Carbs (Tinh bột)</span>
+                              <span>{aiMealResult.macro_carbs_pct || aiMealResult.macroCarbsPct || 50}%</span>
+                            </div>
+                            <div className="macro-bar-bg"><div className="macro-bar-fill carbs" style={{ width: `${aiMealResult.macro_carbs_pct || aiMealResult.macroCarbsPct || 50}%` }}></div></div>
+                          </div>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 'bold', color: '#475569' }}>
+                              <span>🥑 Fats (Chất béo)</span>
+                              <span>{aiMealResult.macro_fat_pct || aiMealResult.macroFatPct || 25}%</span>
+                            </div>
+                            <div className="macro-bar-bg"><div className="macro-bar-fill fat" style={{ width: `${aiMealResult.macro_fat_pct || aiMealResult.macroFatPct || 25}%` }}></div></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Meals Grid */}
+                    {meals && (
+                      <div className="ai-meals-grid" style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                        <div className="member-card-panel meal-card-interactive" style={{ borderLeft: '4px solid #f59e0b', background: '#fff' }}>
+                          <h4 style={{ color: '#d97706', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1rem', fontWeight: 'bold', margin: 0 }}>
+                            <i className="fa-solid fa-egg"></i> Bữa Sáng
+                          </h4>
+                          <p style={{ marginTop: '10px', fontSize: '0.88rem', color: '#334155', lineHeight: '1.5' }}>{meals.breakfast}</p>
+                        </div>
+                        <div className="member-card-panel meal-card-interactive" style={{ borderLeft: '4px solid #10b981', background: '#fff' }}>
+                          <h4 style={{ color: '#059669', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1rem', fontWeight: 'bold', margin: 0 }}>
+                            <i className="fa-solid fa-bowl-food"></i> Bữa Trưa
+                          </h4>
+                          <p style={{ marginTop: '10px', fontSize: '0.88rem', color: '#334155', lineHeight: '1.5' }}>{meals.lunch}</p>
+                        </div>
+                        <div className="member-card-panel meal-card-interactive" style={{ borderLeft: '4px solid #3b82f6', background: '#fff' }}>
+                          <h4 style={{ color: '#2563eb', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1rem', fontWeight: 'bold', margin: 0 }}>
+                            <i className="fa-solid fa-fish"></i> Bữa Tối
+                          </h4>
+                          <p style={{ marginTop: '10px', fontSize: '0.88rem', color: '#334155', lineHeight: '1.5' }}>{meals.dinner}</p>
+                        </div>
+                        <div className="member-card-panel meal-card-interactive" style={{ borderLeft: '4px solid #8b5cf6', background: '#fff' }}>
+                          <h4 style={{ color: '#7c3aed', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1rem', fontWeight: 'bold', margin: 0 }}>
+                            <i className="fa-solid fa-wine-glass-empty"></i> Bữa Phụ & Uống
+                          </h4>
+                          <p style={{ marginTop: '10px', fontSize: '0.88rem', color: '#334155', lineHeight: '1.5' }}>{meals.snack_drinks || meals.snack || "Sinh tố hạt hoặc Whey protein bổ sung."}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Scientific Advice */}
+                    <div className="member-card-panel" style={{ marginTop: '20px', borderLeft: '4px solid #6366f1', background: '#fff' }}>
+                      <h4 className="member-card-title" style={{ color: '#4f46e5' }}>
+                        <i className="fa-solid fa-lightbulb" style={{ marginRight: '8px' }}></i> Lời khuyên Khoa học từ AI
+                      </h4>
+                      <p style={{ marginTop: '12px', fontSize: '0.9rem', color: '#475569', lineHeight: '1.6', textAlign: 'justify' }}>
+                        {aiMealResult.scientific_advice || aiMealResult.scientificAdvice}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* History Sidebar column */}
+              <div className="ai-meal-history-column">
+                <div className="member-card-panel" style={{ height: '100%', minHeight: '350px' }}>
+                  <h3 className="member-card-title" style={{ marginBottom: '16px', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px' }}>
+                    <i className="fa-solid fa-clock-rotate-left" style={{ marginRight: '8px', color: '#64748b' }}></i>
+                    Thực đơn đã lưu
+                  </h3>
+                  <div className="ai-history-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '580px', overflowY: 'auto' }}>
+                    {aiHistory.filter(item => item.consultationType === 'Meal Plan').map((item, idx) => (
+                      <div
+                        key={item.id || idx}
+                        className={`ai-history-item ${aiMealResult?.id === item.id ? 'active' : ''}`}
+                        onClick={() => {
+                          let mealsData = null;
+                          if (item.recommendedSchedule) {
+                            try {
+                              mealsData = JSON.parse(item.recommendedSchedule);
+                            } catch(e) {
+                              mealsData = { breakfast: item.recommendedSchedule };
+                            }
+                          }
+                          setAiMealResult({
+                            id: item.id,
+                            bmi: item.bmi,
+                            height: item.height,
+                            weight: item.weight,
+                            age: item.age,
+                            gender: item.gender,
+                            fitnessGoal: item.fitnessGoal,
+                            target_calories: item.recommendedSport ? (item.recommendedSport.toLowerCase().includes('boxing') ? 2200 : 2300) : 1900,
+                            macro_protein_pct: 25,
+                            macro_carbs_pct: 50,
+                            macro_fat_pct: 25,
+                            meals: mealsData,
+                            scientific_advice: item.recommendationDetail,
+                            createdAt: item.createdAt
+                          });
+                        }}
+                        style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s ease-in-out' }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#64748b' }}>
+                          <span>{new Date(item.createdAt).toLocaleDateString('vi-VN')}</span>
+                          <span style={{ fontWeight: '800', color: '#10b981' }}>Meal Plan</span>
+                        </div>
+                        <div style={{ fontWeight: 'bold', marginTop: '6px', fontSize: '0.86rem', color: '#1e293b' }}>
+                          Cân nặng: {item.weight}kg | Cao: {item.height}cm
+                        </div>
+                        <div style={{ fontSize: '0.76rem', color: '#475569', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          Chế độ: {item.fitnessGoal || 'Tư vấn'}
+                        </div>
+                      </div>
+                    ))}
+                    {aiHistory.filter(item => item.consultationType === 'Meal Plan').length === 0 && (
+                      <div style={{ color: '#94a3b8', fontSize: '0.86rem', textAlign: 'center', marginTop: '30px' }}>Chưa có thực đơn AI nào được tạo</div>
                     )}
                   </div>
                 </div>
@@ -2471,6 +2940,14 @@ function MemberDashboard({
                 onClick={() => setActiveTab('meal')}
               >
                 <i className="fa-solid fa-bowl-food"></i> Meal Plan
+              </button>
+            </li>
+            <li>
+              <button
+                className={`member-menu-item ${activeTab === 'ai_meal' ? 'active' : ''}`}
+                onClick={() => setActiveTab('ai_meal')}
+              >
+                <i className="fa-solid fa-robot" style={{ color: '#10b981' }}></i> AI Meal Plan
               </button>
             </li>
             <li>

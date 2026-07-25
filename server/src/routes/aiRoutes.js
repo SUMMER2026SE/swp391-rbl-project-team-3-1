@@ -9,6 +9,9 @@ router.post('/consult', aiController.consult);
 // POST /api/ai/chat (Public chatbot interaction endpoint)
 router.post('/chat', aiController.chat);
 
+// POST /api/ai/meal-plan (Protected - only for authenticated members)
+router.post('/meal-plan', authMiddleware, aiController.generateMealPlan);
+
 // GET /api/ai/history (Protected - only for authenticated members to view their past advice)
 router.get('/history', authMiddleware, aiController.getHistory);
 
