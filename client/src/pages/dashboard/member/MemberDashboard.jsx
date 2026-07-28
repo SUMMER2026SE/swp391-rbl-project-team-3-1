@@ -75,10 +75,8 @@ function MemberDashboard({
   const [isCancellationSubmitting, setIsCancellationSubmitting] = useState(false);
   const [selectedPTCancelRequest, setSelectedPTCancelRequest] = useState(null);
   const [dbWorkoutPlans, setDbWorkoutPlans] = useState([]);
-  const [dbMealPlans, setDbMealPlans] = useState([]);
   const [plansLoaded, setPlansLoaded] = useState(false);
   const [workoutSubTab, setWorkoutSubTab] = useState('today');
-  const [mealSubTab, setMealSubTab] = useState('today');
   const [bookingDate, setBookingDate] = useState('');
   const [bookingTime, setBookingTime] = useState('');
   const [bookingType, setBookingType] = useState('PT Cá Nhân');
@@ -104,10 +102,7 @@ function MemberDashboard({
   const [completedExercises, setCompletedExercises] = useState({
     1: false, 2: false, 3: false, 4: false, 5: false
   });
-  // Meal state: completion status per meal ID
-  const [completedMeals, setCompletedMeals] = useState({
-    'morning': false, 'noon': false, 'evening': false
-  });
+
 
   // --- AI MEAL PLAN STATES ---
   const [aiMealAge, setAiMealAge] = useState('25');
@@ -223,6 +218,13 @@ function MemberDashboard({
     syncMealPlanMetricsWithProfile();
   }, [profileData, userInfo]);
 
+  useEffect(() => {
+    const activeSports = Array.from(new Set((profileData?.memberInfo?.memberships || []).filter(m => m.status === 'Active').map(m => m.sportType).filter(Boolean)));
+    if (activeSports.length > 0 && !activeSports.includes(aiMealSport)) {
+      setAiMealSport(activeSports[0]);
+    }
+  }, [profileData]);
+
   // Fetch trainer schedule
   useEffect(() => {
     if (selectedTrainerId && activeTab === 'lichhen') {
@@ -251,7 +253,7 @@ function MemberDashboard({
     }
   }, [selectedTrainerId, currentWeekStart, activeTab, refreshTrigger]);
 
-  // Load completed exercises and meals from localStorage when memberInfo is available
+  // Load completed exercises from localStorage when memberInfo is available
   useEffect(() => {
     const memberId = profileData?.memberInfo?.member_id;
     if (memberId) {
@@ -260,10 +262,8 @@ function MemberDashboard({
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed.completedExercises) setCompletedExercises(parsed.completedExercises);
-          if (parsed.completedMeals) setCompletedMeals(parsed.completedMeals);
         } else {
           setCompletedExercises({});
-          setCompletedMeals({});
         }
       } catch (e) {
         console.error('Error loading progress from localStorage:', e);
@@ -271,34 +271,31 @@ function MemberDashboard({
     }
   }, [profileData]);
 
-  // Save to localStorage whenever completedExercises or completedMeals change
+  // Save to localStorage whenever completedExercises changes
   useEffect(() => {
     const memberId = profileData?.memberInfo?.member_id;
     if (memberId) {
       try {
         localStorage.setItem(`member_progress_${memberId}`, JSON.stringify({
-          completedExercises,
-          completedMeals
+          completedExercises
         }));
       } catch (e) {
         console.error('Error saving progress to localStorage:', e);
       }
     }
-  }, [completedExercises, completedMeals, profileData]);
+  }, [completedExercises, profileData]);
 
   // Reset progress when there are no active plans for today
   useEffect(() => {
     const memberId = profileData?.memberInfo?.member_id;
     if (memberId && plansLoaded) {
       const activeWorkouts = dbWorkoutPlans.filter(plan => !plan.created_at || isToday(plan.created_at));
-      const activeMeals = dbMealPlans.filter(plan => !plan.created_at || isToday(plan.created_at));
 
-      if (activeWorkouts.length === 0 && activeMeals.length === 0) {
+      if (activeWorkouts.length === 0) {
         setCompletedExercises({});
-        setCompletedMeals({});
       }
     }
-  }, [plansLoaded, dbWorkoutPlans, dbMealPlans, profileData]);
+  }, [plansLoaded, dbWorkoutPlans, profileData]);
 
   // Notifications state
   const [notifications, setNotifications] = useState([]);
@@ -583,20 +580,13 @@ function MemberDashboard({
   const reloadPlans = () => {
     if (!token || token === 'mock-preview-token') return;
     setPlansLoaded(false);
-    Promise.all([
-      fetch('/api/workout-plans', {
-        headers: { Authorization: `Bearer ${token}` }
-      }).then(res => res.json()),
-      fetch('/api/meal-plans', {
-        headers: { Authorization: `Bearer ${token}` }
-      }).then(res => res.json())
-    ])
-      .then(([workouts, meals]) => {
+    fetch('/api/workout-plans', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(workouts => {
         if (Array.isArray(workouts)) {
           setDbWorkoutPlans(workouts);
-        }
-        if (Array.isArray(meals)) {
-          setDbMealPlans(meals);
         }
         setPlansLoaded(true);
       })
@@ -942,12 +932,7 @@ function MemberDashboard({
     }));
   };
 
-  const toggleMeal = (mealKey) => {
-    setCompletedMeals(prev => ({
-      ...prev,
-      [mealKey]: !prev[mealKey]
-    }));
-  };
+
 
   const handleAddWeightHistory = (e) => {
     e.preventDefault();
@@ -1130,11 +1115,6 @@ function MemberDashboard({
   const todayWorkoutPlans = latestWorkoutPlan && isToday(latestWorkoutPlan.created_at) ? [latestWorkoutPlan] : [];
   const historyWorkoutPlans = dbWorkoutPlans.filter(plan => plan !== latestWorkoutPlan || !isToday(plan.created_at));
 
-  // Filter meal plans
-  const latestMealPlan = dbMealPlans.length > 0 ? dbMealPlans[0] : null;
-  const todayMealPlans = latestMealPlan && isToday(latestMealPlan.created_at) ? [latestMealPlan] : [];
-  const historyMealPlans = dbMealPlans.filter(plan => plan !== latestMealPlan || !isToday(plan.created_at));
-
   // Dynamic exercises count from today's plans
   let totalExs = 0;
   todayWorkoutPlans.forEach(plan => {
@@ -1157,22 +1137,14 @@ function MemberDashboard({
   });
   const workoutProgressPct = Math.round((completedExsCount / totalExs) * 100);
 
-  const mealsData = [
-    { key: 'morning', name: 'Sáng', desc: 'Yến mạch + trứng luộc', kcal: 450, carbs: '45g', protein: '25g', fat: '10g' },
-    { key: 'noon', name: 'Trưa', desc: 'Cơm gạo lứt + ức gà', kcal: 650, carbs: '60g', protein: '45g', fat: '12g' },
-    { key: 'evening', name: 'Tối', desc: 'Salad + cá hồi', kcal: 520, carbs: '20g', protein: '35g', fat: '18g' }
-  ];
+  const todayMealPlans = [];
+  const historyMealPlans = [];
+  const targetKcal = 0;
+  const eatenKcal = 0;
 
-  const targetKcal = todayMealPlans.length > 0
-    ? Number(todayMealPlans[0].calories_per_day) || 2000
-    : 0;
-
-  const eatenKcal = todayMealPlans.length > 0
-    ? todayMealPlans.reduce((sum, plan) => {
-      const key = `db-meal-${plan.meal_plan_id}`;
-      return sum + (completedMeals[key] ? plan.calories_per_day : 0);
-    }, 0)
-    : 0;
+  const memberships = profileData?.memberInfo?.memberships || [];
+  const activeMemberships = memberships.filter(m => m.status === 'Active');
+  const registeredSports = Array.from(new Set(activeMemberships.map(m => m.sportType).filter(Boolean)));
 
   const unreadNotifsCount = notifications.filter(n => n.unread).length;
 
@@ -1219,7 +1191,7 @@ function MemberDashboard({
   const renderTabContent = () => {
     switch (activeTab) {
       case 'tongquan':
-        const memberships = profileData?.memberInfo?.memberships || [];
+        // memberships is defined in parent scope
         return (
           <>
             {/* Stat Cards */}
@@ -1365,109 +1337,76 @@ function MemberDashboard({
               )}
             </div>
 
-            {/* Grid Columns */}
-            <div className="member-overview-grid">
-              {/* Left Column: Upcoming Appointments */}
-              <div className="member-card-panel">
-                <div className="member-card-header">
-                  <h3 className="member-card-title">Lịch hẹn sắp tới</h3>
-                  <span className="member-link-action" onClick={() => setActiveTab('lichhen')}>Xem tất cả</span>
-                </div>
-                <div className="member-table-container">
-                  <table className="member-table">
-                    <thead>
-                      <tr>
-                        <th>Thời gian</th>
-                        <th>HLV / Lớp</th>
-                        <th>Loại</th>
-                        <th>Trạng thái</th>
-                        <th>Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {upcomingAppointments.slice(0, 4).map((ap) => (
-                        <tr key={ap.id}>
-                          <td>{ap.time}</td>
-                          <td>{ap.trainer}</td>
-                          <td>{ap.type}</td>
-                          <td>
-                            <span className={`member-badge-status ${ap.status}`}>
-                              {ap.status === 'confirmed' ? 'Xác nhận' : 
-                               ap.status === 'pending' ? 'Chờ duyệt' : 
-                               ap.status === 'rejected' ? 'Bị từ chối' : 
-                               ap.status === 'cancelpending' ? (ap.cancelRequestedBy === 'TRAINER' ? 'HLV xin hủy' : 'Chờ duyệt hủy') : 'Đã hủy'}
-                            </span>
-                          </td>
-                          <td>
-                            {ap.status === 'cancelpending' ? (
-                              ap.cancelRequestedBy === 'TRAINER' ? (
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                  <span 
-                                    onClick={() => setSelectedPTCancelRequest(ap)}
-                                    style={{ color: 'var(--orange)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', marginRight: '6px' }}
-                                  >
-                                    Xem lý do
-                                  </span>
-                                  <button 
-                                    onClick={() => handleRespondPTCancel(ap.id, 'accept')}
-                                    style={{ padding: '4px 8px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
-                                  >
-                                    Đồng ý
-                                  </button>
-                                  <button 
-                                    onClick={() => handleRespondPTCancel(ap.id, 'reject')}
-                                    style={{ padding: '4px 8px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
-                                  >
-                                    Từ chối
-                                  </button>
-                                </div>
-                              ) : (
-                                <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
-                              )
-                            ) : ap.status === 'cancelled' || ap.status === 'rejected' ? null : (
-                              <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                      {upcomingAppointments.length === 0 && (
-                        <tr>
-                          <td colSpan="5" className="member-no-data">Không có lịch hẹn nào sắp tới</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+            {/* Full Width Column: Upcoming Appointments */}
+            <div className="member-card-panel">
+              <div className="member-card-header">
+                <h3 className="member-card-title">Lịch hẹn sắp tới</h3>
+                <span className="member-link-action" onClick={() => setActiveTab('lichhen')}>Xem tất cả</span>
               </div>
-
-              {/* Right Column: Today's Menu */}
-              <div className="member-card-panel">
-                <div className="member-card-header">
-                  <h3 className="member-card-title">Thực đơn hôm nay</h3>
-                  <span className="member-link-action" onClick={() => setActiveTab('meal')}>Xem chi tiết</span>
-                </div>
-                <div className="member-menu-meal-list">
-                  {todayMealPlans.length > 0 ? (
-                    todayMealPlans.map((plan) => (
-                      <div className="member-menu-meal-item" key={plan.meal_plan_id} style={{ borderLeft: '3px solid #10b981', paddingLeft: '8px', marginBottom: '8px' }}>
-                        <div>
-                          <div className="member-meal-time" style={{ color: '#10b981', fontWeight: 'bold' }}>{plan.title}</div>
-                          <div className="member-meal-desc" style={{ fontSize: '0.8rem', color: '#64748b' }}>{plan.description}</div>
-                        </div>
-                        <div className="member-meal-kcal" style={{ minWidth: '70px', textAlign: 'right', fontWeight: 'bold' }}>{plan.calories_per_day} kcal</div>
-                      </div>
-                    ))
-                  ) : (
-                    <div style={{ padding: '24px 10px', textAlign: 'center', color: '#94a3b8', fontWeight: '600', fontSize: '0.9rem' }}>
-                      <i className="fa-solid fa-utensils" style={{ display: 'block', fontSize: '1.8rem', color: '#cbd5e1', marginBottom: '10px' }}></i>
-                      Chưa có plan cho hôm nay
-                    </div>
-                  )}
-                </div>
-                <div className="member-menu-total-row">
-                  <span className="member-menu-total-lbl">Tổng calories</span>
-                  <span className="member-menu-total-val">{targetKcal.toLocaleString('vi-VN')}</span>
-                </div>
+              <div className="member-table-container">
+                <table className="member-table">
+                  <thead>
+                    <tr>
+                      <th>Thời gian</th>
+                      <th>HLV / Lớp</th>
+                      <th>Loại</th>
+                      <th>Trạng thái</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {upcomingAppointments.slice(0, 4).map((ap) => (
+                      <tr key={ap.id}>
+                        <td>{ap.time}</td>
+                        <td>{ap.trainer}</td>
+                        <td>{ap.type}</td>
+                        <td>
+                          <span className={`member-badge-status ${ap.status}`}>
+                            {ap.status === 'confirmed' ? 'Xác nhận' : 
+                             ap.status === 'pending' ? 'Chờ duyệt' : 
+                             ap.status === 'rejected' ? 'Bị từ chối' : 
+                             ap.status === 'cancelpending' ? (ap.cancelRequestedBy === 'TRAINER' ? 'HLV xin hủy' : 'Chờ duyệt hủy') : 'Đã hủy'}
+                          </span>
+                        </td>
+                        <td>
+                          {ap.status === 'cancelpending' ? (
+                            ap.cancelRequestedBy === 'TRAINER' ? (
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <span 
+                                  onClick={() => setSelectedPTCancelRequest(ap)}
+                                  style={{ color: 'var(--orange)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', marginRight: '6px' }}
+                                >
+                                  Xem lý do
+                                </span>
+                                <button 
+                                  onClick={() => handleRespondPTCancel(ap.id, 'accept')}
+                                  style={{ padding: '4px 8px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                >
+                                  Đồng ý
+                                </button>
+                                <button 
+                                  onClick={() => handleRespondPTCancel(ap.id, 'reject')}
+                                  style={{ padding: '4px 8px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                >
+                                  Từ chối
+                                </button>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
+                            )
+                          ) : ap.status === 'cancelled' || ap.status === 'rejected' ? null : (
+                            <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {upcomingAppointments.length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="member-no-data">Không có lịch hẹn nào sắp tới</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </>
@@ -1906,124 +1845,6 @@ function MemberDashboard({
           </div>
         );
 
-      case 'meal':
-        return (
-          <div className="member-meal-layout">
-            <div className="member-meal-items-stack">
-              <div className="member-progress-wrapper">
-                <div className="member-progress-label-row">
-                  <span className="member-progress-title">Năng lượng nạp vào hôm nay</span>
-                  <span className="member-progress-pct">{eatenKcal} / {targetKcal} kcal</span>
-                </div>
-                <div className="member-progress-bg">
-                  <div className="member-progress-fill" style={{ width: `${Math.min((eatenKcal / targetKcal) * 100, 100)}%` }}></div>
-                </div>
-              </div>
-
-              {/* Subtabs control */}
-              <div className="member-subtabs">
-                <button
-                  type="button"
-                  className={`member-subtab-btn ${mealSubTab === 'today' ? 'active' : ''}`}
-                  onClick={() => setMealSubTab('today')}
-                >
-                  Hôm nay
-                </button>
-                <button
-                  type="button"
-                  className={`member-subtab-btn ${mealSubTab === 'history' ? 'active' : ''}`}
-                  onClick={() => setMealSubTab('history')}
-                >
-                  Lịch sử thực đơn ({historyMealPlans.length})
-                </button>
-              </div>
-
-              {mealSubTab === 'today' ? (
-                todayMealPlans.length > 0 ? (
-                  todayMealPlans.map((plan) => {
-                    const key = `db-meal-${plan.meal_plan_id}`;
-                    return (
-                      <div className={`member-meal-plan-card ${completedMeals[key] ? 'completed' : ''}`} key={plan.meal_plan_id} style={{ borderLeft: '4px solid #10b981' }}>
-                        <input
-                          type="checkbox"
-                          className="member-meal-plan-checkbox"
-                          checked={!!completedMeals[key]}
-                          onChange={() => toggleMeal(key)}
-                        />
-                        <div className="member-meal-plan-body" style={{ paddingLeft: '8px' }}>
-                          <div className="member-meal-plan-header">
-                            <span className="member-meal-plan-title" style={{ color: '#10b981', fontWeight: 'bold' }}>{plan.title}</span>
-                            <span className="member-meal-plan-kcal" style={{ background: '#d1fae5', color: '#065f46', padding: '3px 8px', borderRadius: '12px', fontSize: '0.78rem' }}>{plan.calories_per_day || 2000} kcal</span>
-                          </div>
-                          <div className="member-meal-plan-desc" style={{ marginTop: '8px', fontSize: '0.85rem', color: '#475569' }}>{plan.description}</div>
-                          <div className="member-meal-plan-nutrients" style={{ marginTop: '10px', fontSize: '0.78rem', color: '#94a3b8', display: 'flex', gap: '12px' }}>
-                            <span>HLV phân công: {plan.trainer?.user?.full_name || 'Hệ thống'}</span>
-                            <span>Ngày giao: {plan.created_at ? new Date(plan.created_at).toLocaleDateString('vi-VN') : 'Mới'}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="member-meal-plan-card" style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <i className="fa-solid fa-utensils" style={{ fontSize: '2.5rem', color: '#cbd5e1', marginBottom: '16px' }}></i>
-                    <h4 className="member-meal-plan-title" style={{ color: '#64748b' }}>
-                      Chưa có thực đơn hôm nay
-                    </h4>
-                    <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '8px' }}>
-                      Hôm nay bạn chưa được thiết lập thực đơn mới. Vui lòng kiểm tra tab "Lịch sử thực đơn" hoặc liên hệ HLV.
-                    </p>
-                  </div>
-                )
-              ) : (
-                historyMealPlans.length > 0 ? (
-                  historyMealPlans.map((plan) => {
-                    return (
-                      <div className="member-meal-plan-card" key={plan.meal_plan_id} style={{ borderLeft: '4px solid #10b981' }}>
-                        <div className="member-meal-plan-body">
-                          <div className="member-meal-plan-header">
-                            <span className="member-meal-plan-title" style={{ color: '#10b981', fontWeight: 'bold' }}>{plan.title}</span>
-                            <span className="member-meal-plan-kcal" style={{ background: '#d1fae5', color: '#065f46', padding: '3px 8px', borderRadius: '12px', fontSize: '0.78rem' }}>{plan.calories_per_day || 2000} kcal</span>
-                          </div>
-                          <div className="member-meal-plan-desc" style={{ marginTop: '8px', fontSize: '0.85rem', color: '#475569' }}>{plan.description}</div>
-                          <div className="member-meal-plan-nutrients" style={{ marginTop: '10px', fontSize: '0.78rem', color: '#94a3b8', display: 'flex', gap: '12px' }}>
-                            <span>HLV phân công: {plan.trainer?.user?.full_name || 'Hệ thống'}</span>
-                            <span>Ngày giao: {plan.created_at ? new Date(plan.created_at).toLocaleDateString('vi-VN') : 'Lịch sử'}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="member-meal-plan-card" style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <i className="fa-solid fa-clock-rotate-left" style={{ fontSize: '2.5rem', color: '#cbd5e1', marginBottom: '16px' }}></i>
-                    <h4 className="member-meal-plan-title" style={{ color: '#64748b' }}>
-                      Lịch sử thực đơn trống
-                    </h4>
-                    <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '8px' }}>
-                      Bạn chưa có thực đơn dinh dưỡng cũ nào trong lịch sử.
-                    </p>
-                  </div>
-                )
-              )}
-            </div>
-
-            <div className="member-calorie-ring-box">
-              <div className="member-calorie-counter">
-                <span className="member-calorie-counter-fill">{eatenKcal}</span>
-                <span className="member-calorie-counter-lbl">Kcal Đã Nạp</span>
-              </div>
-              <div className="member-calorie-target-info">
-                Mục tiêu dinh dưỡng ngày hôm nay: <span>{targetKcal} kcal</span>.
-                {eatenKcal >= targetKcal ? (
-                  <p style={{ color: '#22c55e', fontWeight: 'bold', marginTop: '10px' }}>🎉 Đã đạt mục tiêu calo ngày!</p>
-                ) : (
-                  <p style={{ marginTop: '10px' }}>Cần nạp thêm <span>{targetKcal - eatenKcal} kcal</span> nữa.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        );
 
       case 'thongbao':
         return (
@@ -2603,7 +2424,15 @@ function MemberDashboard({
                         onClick={() => setAiMealMode('workout')}
                         disabled={aiMealLoading}
                       >
-                        <i className="fa-solid fa-dumbbell"></i> Theo Bài Tập PT Giao
+                        <i className="fa-solid fa-circle-nodes"></i> Theo Gói Tập Đăng Ký
+                      </button>
+                      <button
+                        type="button"
+                        className={`mode-tab-btn ${aiMealMode === 'pt_workout' ? 'active' : ''}`}
+                        onClick={() => setAiMealMode('pt_workout')}
+                        disabled={aiMealLoading}
+                      >
+                        <i className="fa-solid fa-dumbbell"></i> Theo Giáo Án PT Giao
                       </button>
                       <button
                         type="button"
@@ -2617,44 +2446,90 @@ function MemberDashboard({
 
                     {/* Mode dependent selection */}
                     <div className="ai-meal-mode-options" style={{ marginTop: '16px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      {aiMealMode === 'workout' ? (
+                      {aiMealMode === 'pt_workout' ? (
                         <div>
-                          <label className="member-form-label">Chọn môn tập đang luyện tập:</label>
-                          <select
-                            className="member-form-select"
-                            value={aiMealSport}
-                            onChange={(e) => setAiMealSport(e.target.value)}
-                            disabled={aiMealLoading}
-                          >
-                            <option value="Gym">Tập Gym & Thể hình (Fitness)</option>
-                            <option value="Yoga">Tập Yoga & Phục hồi dẻo dai</option>
-                            <option value="Boxing">Tập Boxing & Kickboxing cường độ cao</option>
-                          </select>
-
-                          {/* Render PT's current assigned exercises in the dashboard if any */}
-                          {dbWorkoutPlans && dbWorkoutPlans.length > 0 ? (
-                            <div style={{ marginTop: '12px', fontSize: '0.82rem', color: '#475569', background: '#fff', padding: '10px 14px', borderRadius: '8px', border: '1.5px dashed #cbd5e1' }}>
-                              <div style={{ fontWeight: '700', marginBottom: '6px', color: '#1e293b' }}>
-                                <i className="fa-solid fa-circle-info" style={{ color: '#3b82f6', marginRight: '4px' }}></i> 
-                                Dữ liệu bài tập của bạn (AI sẽ đồng bộ phân tích):
-                              </div>
-                              {dbWorkoutPlans.slice(0, 1).map((p) => (
-                                <div key={p.workout_plan_id}>
-                                  <strong>{p.title}</strong>: {p.description || 'Bài tập rèn luyện thể chất'}
-                                  <div style={{ marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                    {p.WorkoutExercises && p.WorkoutExercises.slice(0, 3).map((ex, exIdx) => (
-                                      <span key={exIdx} style={{ background: '#f1f5f9', color: '#64748b', padding: '2px 6px', borderRadius: '4px', fontSize: '0.74rem' }}>
-                                        {ex.exercise_name} ({ex.sets}x{ex.reps})
+                          <label className="member-form-label" style={{ fontWeight: '700', marginBottom: '8px', display: 'block' }}>Giáo án luyện tập được PT giao hôm nay:</label>
+                          {todayWorkoutPlans && todayWorkoutPlans.length > 0 ? (
+                            <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1.5px solid #e2e8f0' }}>
+                              {todayWorkoutPlans.slice(0, 1).map((p) => {
+                                const isCompleted = workoutProgressPct === 100;
+                                return (
+                                  <div key={p.workout_plan_id}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                      <span style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--orange)' }}>{p.title}</span>
+                                      <span style={{ fontSize: '0.78rem', fontWeight: 'bold', color: isCompleted ? '#166534' : '#92400e', backgroundColor: isCompleted ? '#d1fae5' : '#fef3c7', padding: '2px 8px', borderRadius: '12px' }}>
+                                        {isCompleted ? 'Hoàn thành' : 'Đang thực hiện'}
                                       </span>
-                                    ))}
-                                    {p.WorkoutExercises && p.WorkoutExercises.length > 3 && <span>... và {p.WorkoutExercises.length - 3} bài khác</span>}
+                                    </div>
+                                    <p style={{ margin: '0 0 12px 0', fontSize: '0.84rem', color: '#64748b' }}>
+                                      {p.description || 'Chưa có mô tả chi tiết giáo án.'}
+                                    </p>
+
+                                    <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '12px', marginBottom: '16px' }}>
+                                      <span style={{ fontSize: '0.78rem', fontWeight: '800', color: '#475569', display: 'block', marginBottom: '8px' }}>DANH SÁCH BÀI TẬP:</span>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        {p.WorkoutExercises && p.WorkoutExercises.map((ex, exIdx) => {
+                                          const key = `db-${p.workout_plan_id}-${exIdx}`;
+                                          const exDone = completedExercises[key];
+                                          return (
+                                            <div key={exIdx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.84rem' }}>
+                                              <i className={exDone ? "fa-solid fa-circle-check" : "fa-regular fa-circle"} style={{ color: exDone ? '#10b981' : '#cbd5e1', fontSize: '1rem' }}></i>
+                                              <span style={{ textDecoration: exDone ? 'line-through' : 'none', color: exDone ? '#94a3b8' : '#334155', fontWeight: '500' }}>
+                                                {ex.exercise_name} ({ex.sets} hiệp x {ex.reps} lần {ex.duration_minutes ? `| ${ex.duration_minutes} phút` : ''})
+                                              </span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+
+                                    <div style={{ background: isCompleted ? '#f0fdf4' : '#fffbeb', border: `1px solid ${isCompleted ? '#bbf7d0' : '#fef3c7'}`, padding: '12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                      <i className={`fa-solid ${isCompleted ? 'fa-circle-check' : 'fa-triangle-exclamation'}`} style={{ color: isCompleted ? '#10b981' : '#d97706', fontSize: '1.25rem' }}></i>
+                                      <div>
+                                        <div style={{ fontSize: '0.84rem', fontWeight: 'bold', color: isCompleted ? '#166534' : '#92400e' }}>
+                                          Tiến độ: {completedExsCount} / {totalExs} bài tập ({workoutProgressPct}%)
+                                        </div>
+                                        <div style={{ fontSize: '0.76rem', color: isCompleted ? '#15803d' : '#b45309', marginTop: '2px', lineHeight: '1.3' }}>
+                                          {isCompleted 
+                                            ? 'Tuyệt vời! Bạn đã hoàn thành 100% bài tập hôm nay. Nhấp nút phía dưới để đồng bộ dữ liệu cho AI phân tích thực đơn.' 
+                                            : 'Yêu cầu: Bạn cần hoàn thành (tick đủ) tất cả các bài tập của giáo án hôm nay để được mở khóa chức năng gợi ý thực đơn hồi phục của AI.'}
+                                        </div>
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           ) : (
-                            <div style={{ marginTop: '12px', fontSize: '0.82rem', color: '#64748b', fontStyle: 'italic' }}>
-                              * Bạn chưa có giáo án bài tập nào được giao bởi PT. AI sẽ phân tích dựa trên đặc thù môn tập lựa chọn.
+                            <div style={{ background: '#ffffff', padding: '24px 16px', borderRadius: '12px', border: '1.5px solid #e2e8f0', textAlign: 'center', color: '#94a3b8' }}>
+                              <i className="fa-solid fa-circle-exclamation" style={{ fontSize: '2rem', color: '#cbd5e1', marginBottom: '10px', display: 'block' }}></i>
+                              Hôm nay bạn chưa được PT giao giáo án tập luyện nào.
+                            </div>
+                          )}
+                        </div>
+                      ) : aiMealMode === 'workout' ? (
+                        <div>
+                          <label className="member-form-label">Chọn bộ môn đăng ký tập luyện:</label>
+                          {registeredSports.length > 0 ? (
+                            <select
+                              className="member-form-select"
+                              value={aiMealSport}
+                              onChange={(e) => setAiMealSport(e.target.value)}
+                              disabled={aiMealLoading}
+                            >
+                              {registeredSports.includes('Gym') && (
+                                <option value="Gym">Tập Gym & Thể hình (Fitness)</option>
+                              )}
+                              {registeredSports.includes('Yoga') && (
+                                <option value="Yoga">Tập Yoga & Phục hồi dẻo dai</option>
+                              )}
+                              {registeredSports.includes('Boxing') && (
+                                <option value="Boxing">Tập Boxing & Kickboxing cường độ cao</option>
+                              )}
+                            </select>
+                          ) : (
+                            <div style={{ color: '#ef4444', fontSize: '0.86rem', fontWeight: 'bold', background: '#fef2f2', border: '1px solid #fee2e2', padding: '10px', borderRadius: '8px' }}>
+                              ⚠️ Bạn chưa đăng ký gói tập nào đang hoạt động. Hãy đăng ký gói tập để sử dụng tính năng này!
                             </div>
                           )}
                         </div>
@@ -2686,13 +2561,17 @@ function MemberDashboard({
                     <button
                       type="submit"
                       className="member-btn-submit ai-meal-submit-btn"
-                      style={{ width: '100%', marginTop: '20px', padding: '14px', background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', fontSize: '1rem', fontWeight: 'bold' }}
-                      disabled={aiMealLoading}
+                      style={{ width: '100%', marginTop: '20px', padding: '14px', background: (aiMealMode === 'pt_workout' && (workoutProgressPct < 100 || todayWorkoutPlans.length === 0)) ? '#94a3b8' : 'linear-gradient(135deg, #10b981, #059669)', border: 'none', fontSize: '1rem', fontWeight: 'bold' }}
+                      disabled={aiMealLoading || (aiMealMode === 'pt_workout' && (workoutProgressPct < 100 || !todayWorkoutPlans || todayWorkoutPlans.length === 0)) || (aiMealMode === 'workout' && registeredSports.length === 0)}
                     >
                       {aiMealLoading ? (
                         <span><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px' }}></i> Đang xử lý thực đơn...</span>
+                      ) : (aiMealMode === 'pt_workout' && todayWorkoutPlans.length === 0) ? (
+                        <span><i className="fa-solid fa-lock" style={{ marginRight: '8px' }}></i> Chưa được giao giáo án hôm nay</span>
+                      ) : (aiMealMode === 'pt_workout' && workoutProgressPct < 100) ? (
+                        <span><i className="fa-solid fa-lock" style={{ marginRight: '8px' }}></i> Hãy hoàn thành giáo án để mở khóa</span>
                       ) : (
-                        <span><i className="fa-solid fa-wand-magic-sparkles" style={{ marginRight: '8px' }}></i> Thiết lập thực đơn dinh dưỡng AI</span>
+                        <span><i className="fa-solid fa-wand-magic-sparkles" style={{ marginRight: '8px' }}></i> Gợi ý thực đơn dinh dưỡng AI</span>
                       )}
                     </button>
                   </form>
@@ -2934,14 +2813,7 @@ function MemberDashboard({
                 <i className="fa-solid fa-dumbbell"></i> Workout Plan
               </button>
             </li>
-            <li>
-              <button
-                className={`member-menu-item ${activeTab === 'meal' ? 'active' : ''}`}
-                onClick={() => setActiveTab('meal')}
-              >
-                <i className="fa-solid fa-bowl-food"></i> Meal Plan
-              </button>
-            </li>
+
             <li>
               <button
                 className={`member-menu-item ${activeTab === 'ai_meal' ? 'active' : ''}`}

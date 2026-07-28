@@ -84,39 +84,46 @@ async function seedTemplates() {
           { "exercise_name": "Đấm móc (Hooks & Uppercuts)", "sets": 4, "reps": 40, "duration_minutes": 2, "calories_burned": 70, "rpe": 7 },
           { "exercise_name": "Di chuyển tránh đòn (Slipping & Weaving)", "sets": 3, "reps": 30, "duration_minutes": 2, "calories_burned": 50, "rpe": 6 }
         ]
-      }
-    ];
-
-    const mealTemplates = [
-      {
-        "sport_type": "Gym",
-        "title": "Chế độ giảm cân thâm hụt 500kcal",
-        "description": "Giàu đạm, ít tinh bột nhanh. Sáng ức gà chiên không dầu, trưa cơm gạo lứt cá hồi, tối salad xanh."
       },
       {
         "sport_type": "Gym",
-        "title": "Ăn kiêng Low-Carb cơ bản",
-        "description": "Giảm thiểu tinh bột xấu, tăng chất béo tốt. Ưu tiên thịt bò, trứng luộc, quả bơ, rau xanh các bữa chính."
+        "title": "Upper Body (Cơ Thân Trên)",
+        "description": "Phát triển nhóm cơ ngực, lưng, vai và bắp tay săn chắc.",
+        "exercises": [
+          { "exercise_name": "Hít đất (Push-ups)", "sets": 4, "reps": 12, "duration_minutes": 2, "calories_burned": 35, "rpe": 7 },
+          { "exercise_name": "Kéo xà đơn (Pull-ups)", "sets": 3, "reps": 8, "duration_minutes": 3, "calories_burned": 40, "rpe": 8 },
+          { "exercise_name": "Dumbbell Bicep Curls", "sets": 3, "reps": 12, "duration_minutes": 2, "calories_burned": 25, "rpe": 6 }
+        ]
       },
       {
         "sport_type": "Gym",
-        "title": "Tăng cơ nạc (Lean Bulking)",
-        "description": "Dư thừa nhẹ 200kcal, ưu tiên đạm tinh khiết cho sự phát triển của thớ cơ. Sử dụng yến mạch, whey protein hỗ trợ."
+        "title": "Lower Body (Cơ Thân Dưới)",
+        "description": "Tập trung các nhóm cơ đùi trước, đùi sau và cơ mông khỏe khoắn.",
+        "exercises": [
+          { "exercise_name": "Barbell Squats", "sets": 4, "reps": 10, "duration_minutes": 3, "calories_burned": 70, "rpe": 8 },
+          { "exercise_name": "Romanian Deadlifts", "sets": 3, "reps": 12, "duration_minutes": 2, "calories_burned": 60, "rpe": 7 },
+          { "exercise_name": "Walking Lunges", "sets": 3, "reps": 12, "duration_minutes": 2, "calories_burned": 50, "rpe": 7 }
+        ]
       },
       {
         "sport_type": "Yoga",
-        "title": "Thực đơn thuần chay thanh lọc",
-        "description": "Chế độ ăn nhẹ nhàng, giàu chất xơ và vitamin để cơ thể dẻo dai. Sáng sinh tố bơ chuối, trưa salad đậu hũ, tối súp rau củ thanh đạm."
-      },
-      {
-        "sport_type": "Yoga",
-        "title": "Thực đơn dinh dưỡng duy trì vóc dáng",
-        "description": "Cân bằng tinh bột phức and đạm thực vật. Tốt cho sức khỏe và tim mạch."
+        "title": "Yoga Vinyasa Năng Động",
+        "description": "Chuỗi chuyển động nhịp nhàng kết hợp nhịp thở sâu giúp tăng tuần hoàn máu.",
+        "exercises": [
+          { "exercise_name": "Chào mặt trời A (Sun Salutation A)", "sets": 3, "reps": 1, "duration_minutes": 3, "calories_burned": 30, "rpe": 5 },
+          { "exercise_name": "Tư thế rắn hổ mang (Cobra Pose)", "sets": 3, "reps": 5, "duration_minutes": 2, "calories_burned": 15, "rpe": 4 },
+          { "exercise_name": "Tư thế chiến binh II (Warrior II)", "sets": 3, "reps": 5, "duration_minutes": 2, "calories_burned": 25, "rpe": 5 }
+        ]
       },
       {
         "sport_type": "Boxing",
-        "title": "Thực đơn võ sĩ tăng cơ đốt mỡ",
-        "description": "Bữa ăn giàu protein và tinh bột hấp thụ chậm để duy trì năng lượng tập luyện cao. Sáng bò áp chảo, trưa cơm trắng + ức gà, tối cá hồi hấp."
+        "title": "Boxing Footwork & Tốc Độ",
+        "description": "Rèn luyện di chuyển bộ chân linh hoạt và tung các tổ hợp đấm nhanh liên hoàn.",
+        "exercises": [
+          { "exercise_name": "Di chuyển bộ chân (Footwork drills)", "sets": 4, "reps": 1, "duration_minutes": 3, "calories_burned": 55, "rpe": 6 },
+          { "exercise_name": "Tổ hợp đấm 1-2 (Jab-Cross Combo)", "sets": 5, "reps": 30, "duration_minutes": 2, "calories_burned": 65, "rpe": 7 },
+          { "exercise_name": "Nhảy dây tốc độ cao (Speed Rope)", "sets": 3, "reps": 1, "duration_minutes": 2, "calories_burned": 50, "rpe": 8 }
+        ]
       }
     ];
 
@@ -130,18 +137,7 @@ async function seedTemplates() {
     if (!createdW) {
       await workoutConfig.update({ config_value: JSON.stringify(workoutTemplates) });
     }
-
-    const [mealConfig, createdM] = await models.AppConfigs.findOrCreate({
-      where: { config_key: 'meal_templates' },
-      defaults: {
-        config_value: JSON.stringify(mealTemplates),
-        description: 'Meal Plan templates filtered by sport types'
-      }
-    });
-    if (!createdM) {
-      await mealConfig.update({ config_value: JSON.stringify(mealTemplates) });
-    }
-    console.log('✅ Workout and Meal templates initialized in AppConfigs');
+    console.log('✅ Workout templates initialized in AppConfigs');
   } catch (err) {
     console.error('❌ Error seeding templates:', err);
   }
@@ -219,9 +215,6 @@ app.use('/api/bookings', bookingRoutes);
 const workoutRoutes = require('./routes/workoutRoutes');
 app.use('/api/workout-plans', workoutRoutes);
 
-// Mount meal routes
-const mealRoutes = require('./routes/mealRoutes');
-app.use('/api/meal-plans', mealRoutes);
 
 // Mount certification routes
 const certificationRoutes = require('./routes/certificationRoutes');

@@ -637,10 +637,10 @@ Chế độ tập luyện hiện tại từ PT (giáo án tập):
 ${workoutDescriptionText}
 
 Chế độ tư vấn thực đơn do hội viên yêu cầu:
-- Phương thức chọn: Theo ${mode === 'workout' ? `bài tập môn ${sport}` : `nhu cầu mục tiêu ${goal}`}
+- Phương thức chọn: Theo ${mode === 'pt_workout' ? 'giáo án được giao từ PT và đã hoàn thành 100% hôm nay' : mode === 'workout' ? `bài tập môn ${sport}` : `nhu cầu mục tiêu ${goal}`}
 
 Yêu cầu thực đơn:
-1. Thực đơn phải hoàn toàn thực tế với các nguyên liệu dễ kiếm, phổ biến tại Việt Nam (ví dụ: ức gà, khoai lang, trứng, bò, rau muống, cơm gạo lứt, chuối...).
+1. Thực đơn phải hoàn toàn thực tế với các nguyên liệu dễ kiếm, phổ biến tại Việt Nam.
 2. Phải phù hợp logic:
    - Nếu là Boxing: Cần chế độ ăn dồi dào năng lượng (Carb hấp thu nhanh trước tập và Protein phục hồi), hỗ trợ sự bùng nổ cơ bắp và bù nước/khoáng.
    - Nếu là Yoga: Cần chế độ ăn thanh lọc, giàu chất xơ, vitamin, các thực phẩm lành mạnh (Plant-based, chất béo tốt như hạt, bơ) giúp cơ thể dẻo dai nhẹ nhàng.
@@ -649,6 +649,7 @@ Yêu cầu thực đơn:
    - Nếu là Giảm mỡ: Thâm hụt Calo (300-500 kcal dưới mức TDEE duy trì), giàu xơ, protein trung bình cao để giữ cơ, cắt giảm tinh bột nhanh và đường.
    - Nếu là Dẻo dai: Thực phẩm chống viêm, bổ sung chất béo omega-3, nước, vitamin.
    - Nếu là Sức bền: Tăng lượng glycogen lưu trữ bằng carb phức hợp, bổ sung điện giải.
+3. THỰC ĐƠN PHẢI ĐA DẠNG, PHONG PHÚ VÀ NGẪU NHIÊN: Hãy liên tục đổi mới, ngẫu nhiên chọn các món ăn lành mạnh khác nhau (ví dụ: mực nhồi thịt nạc hấp, cá thu sốt cà chua nhạt, chả lá lốt bò áp chảo, salad bơ tôm sú, súp bí đỏ hạt sen, cháo yến mạch tôm, cá rô phi hấp gừng, canh chua cá lóc...) để người dùng không cảm thấy nhàm chán. Không lặp lại các món ăn rập khuôn cố định (như ức gà, khoai lang) trong mỗi lần gợi ý. Gợi ý phải linh hoạt dựa theo đặc thù bài tập của ngày hôm nay.
 
 Hãy trả về kết quả dưới định dạng JSON duy nhất, KHÔNG chứa các ký tự định dạng Markdown (\`\`\`json) hay bất kỳ văn bản giải thích nào ngoài JSON. Cấu trúc JSON bắt buộc phải khớp chính xác với mẫu sau:
 {
@@ -705,9 +706,9 @@ Hãy trả về kết quả dưới định dạng JSON duy nhất, KHÔNG chứ
       gender: genderVal,
       height: heightInMeters,
       weight: weightVal,
-      fitness_goal: mode === 'workout' ? `Bài tập: ${sport}` : `Nhu cầu: ${goal}`,
+      fitness_goal: mode === 'pt_workout' ? 'Theo giáo án PT' : mode === 'workout' ? `Bài tập: ${sport}` : `Nhu cầu: ${goal}`,
       recommended_sport: sport || (mode === 'workout' ? sport : ''),
-      recommended_membership: mode === 'workout' ? 'Workout Mode' : 'Goal Mode',
+      recommended_membership: mode === 'pt_workout' ? 'PT Workout Mode' : mode === 'workout' ? 'Workout Mode' : 'Goal Mode',
       recommended_schedule: JSON.stringify(advice.meals), // Store meals JSON string
       recommendation_detail: advice.scientific_advice // Store scientific advice
     });
@@ -763,18 +764,63 @@ function getRuleBasedMealPlan({ age, gender, height, weight, bmi, mode, sport, g
   let snack_drinks = "";
   let scientific_advice = "";
 
-  let selectedOption = mode === 'workout' ? (sport || 'gym').toLowerCase() : (goal || 'tăng cơ').toLowerCase();
+  const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-  if (selectedOption.includes('tăng cơ') || selectedOption.includes('gym')) {
+  let selectedOption = mode === 'pt_workout' ? 'pt_workout' : mode === 'workout' ? (sport || 'gym').toLowerCase() : (goal || 'tăng cơ').toLowerCase();
+
+  if (selectedOption.includes('pt_workout')) {
+    target_calories = Math.round(tdee + 250);
+    macro_protein_pct = 30;
+    macro_carbs_pct = 45;
+    macro_fat_pct = 25;
+
+    breakfast = pickRandom([
+      "2 quả trứng luộc, 2 lát bánh mì đen nguyên cám, 1 quả chuối chín.",
+      "1 bát cháo yến mạch tôm băm hành lá, 1 quả táo xanh giòn ngọt.",
+      "1 cốc sinh tố whey protein chuối bơ thơm bùi, 1 nắm hạt hạnh nhân sấy mộc."
+    ]);
+    lunch = pickRandom([
+      "180g ức gà áp chảo sốt tiêu đen, 1.5 bát cơm gạo lứt, bông cải xanh hấp.",
+      "150g cá hồi áp chảo sốt chanh leo, 1 bát cơm lứt nhỏ, măng tây xào tỏi ít dầu.",
+      "180g thịt bò áp chảo xốt tiêu, 1 củ khoai lang luộc ngọt bùi, salad rau mầm sốt dầu giấm."
+    ]);
+    dinner = pickRandom([
+      "150g tôm sú hấp sả thơm, 1 bát cơm gạo lứt nhỏ, canh cải bẹ xanh nấu thịt băm thanh ngọt.",
+      "150g phi lê cá chẽm áp chảo xốt bơ chanh, salad rau bina trộn dầu ô liu và quả bơ chín.",
+      "150g thịt heo thăn nạc luộc thái mỏng, 1 bát canh bí đao nấu sườn heo nhạt, súp lơ luộc."
+    ]);
+    snack_drinks = pickRandom([
+      "1 muỗng Whey Protein pha nước mát hoặc 1 hộp sữa tươi ít béo bổ sung sau buổi tập hoàn thành.",
+      "1 hũ sữa chua Hy Lạp không đường kết hợp dâu tây chín mọng.",
+      "1 quả táo đỏ cắt lát chấm 1 thìa canh bơ hạnh nhân mộc."
+    ]);
+    scientific_advice = `Chỉ số BMI của bạn là ${bmi}. Thực đơn phục hồi cơ bắp được thiết kế linh động sau khi bạn xuất sắc hoàn thành 100% giáo án do PT giao hôm nay. Cung cấp hàm lượng Protein cao và Carb hấp thụ chậm giúp đẩy nhanh tốc độ tái tổng hợp glycogen và phục hồi sợi cơ tổn thương một cách hoàn hảo.`;
+  } else if (selectedOption.includes('tăng cơ') || selectedOption.includes('gym')) {
     target_calories = Math.round(tdee + 300);
     macro_protein_pct = 30;
     macro_carbs_pct = 45;
     macro_fat_pct = 25;
 
-    breakfast = "3 lòng trắng trứng + 1 lòng đỏ trứng chiên ít dầu, 2 lát bánh mì nguyên cám, 1 quả chuối chín.";
-    lunch = "180g ức gà áp chảo xắt hạt lựu, 1 bát cơm gạo lứt, 150g súp lơ xanh luộc chấm nước tương tỏi.";
-    dinner = "150g nạc thăn bò xào măng tây hoặc hành tây, 1 củ khoai lang luộc ngọt, salad xà lách cà chua.";
-    snack_drinks = "1 ly sữa tươi không đường + 30g hạt hạnh nhân hoặc óc chó chống đói xế chiều.";
+    breakfast = pickRandom([
+      "3 lòng trắng trứng + 1 lòng đỏ trứng chiên ít dầu, 2 lát bánh mì nguyên cám, 1 quả chuối chín.",
+      "1 bát phở bò chín tái ít bánh phở, rắc nhiều hành lá thơm, 1 cốc sữa đậu nành ấm ít đường.",
+      "1 bát cháo yến mạch nấu với 100g thịt bò nạc băm, rắc tiêu và hành lá."
+    ]);
+    lunch = pickRandom([
+      "180g ức gà áp chảo xắt hạt lựu, 1 bát cơm gạo lứt, 150g súp lơ xanh luộc chấm nước tương tỏi.",
+      "180g thịt thăn bò xào măng tây và hành tây, 1 bát cơm gạo lứt lớn, canh cải cúc nấu tôm.",
+      "180g phi lê cá thu sốt cà chua nhạt, 1.5 bát cơm lứt, cải thìa xào tỏi ít dầu."
+    ]);
+    dinner = pickRandom([
+      "150g nạc vai heo luộc chấm nước mắm gừng, 1 củ khoai lang luộc, canh rau ngót nấu thịt băm.",
+      "180g tôm rim sả ớt nhạt vị, 1 bát cơm lứt nhỏ, đĩa đậu cô ve luộc giòn ngọt.",
+      "150g phi lê cá hồi nướng giấy bạc, salad xà lách dưa leo quả bơ sốt dầu giấm."
+    ]);
+    snack_drinks = pickRandom([
+      "1 ly sữa tươi không đường + 30g hạt hạnh nhân hoặc óc chó chống đói xế chiều.",
+      "1 muỗng Whey Protein pha nước mát kèm 1 quả chuối chín.",
+      "2 quả trứng luộc lòng đào thơm ngậy bùi."
+    ]);
     scientific_advice = `Chỉ số BMI của bạn là ${bmi}. Với mục tiêu tăng cơ bắp và rèn luyện Gym kháng lực, thực đơn này cung cấp thặng dư calo nhẹ và nạp protein chất lượng cao để kích thích tổng hợp protein trong cơ. Các nguồn carb phức hợp từ gạo lứt và khoai lang giúp duy trì năng lượng bền vững cho các buổi tập nâng tạ nặng mà PT giao cho bạn.`;
   } else if (selectedOption.includes('giảm mỡ') || selectedOption.includes('boxing')) {
     target_calories = Math.round(tdee - 350);
@@ -782,10 +828,26 @@ function getRuleBasedMealPlan({ age, gender, height, weight, bmi, mode, sport, g
     macro_carbs_pct = 35;
     macro_fat_pct = 30;
 
-    breakfast = "1 bát cháo yến mạch nấu với 80g thịt ức gà băm, rắc hành lá và tiêu thơm phức.";
-    lunch = "150g cá quả hoặc cá rô phi phi lê áp chảo, 1 củ khoai lang nhỏ, 200g bắp cải luộc chín.";
-    dinner = "1 bát canh đậu phụ nấu thịt nạc băm, 100g ức gà xé trộn hành tây dưa chuột bóp giấm táo.";
-    snack_drinks = "1 hũ sữa chua Hy Lạp ít béo không đường kết hợp vài quả dâu tây chín mọng.";
+    breakfast = pickRandom([
+      "1 bát cháo yến mạch nấu với 80g thịt ức gà băm, rắc hành lá và tiêu thơm phức.",
+      "1 quả trứng luộc, 1 lát bánh mì đen nguyên cám, 1/2 quả bơ chín thái lát.",
+      "1 cốc sinh tố rau xanh (cải xoăn, táo xanh, cần tây, dưa chuột) rắc thêm hạt chia."
+    ]);
+    lunch = pickRandom([
+      "150g cá quả hoặc cá rô phi phi lê áp chảo, 1 củ khoai lang nhỏ, 200g bắp cải luộc chín.",
+      "150g ức gà hấp xé phay trộn hành tây dưa chuột bóp giấm táo, 1/2 bát cơm lứt.",
+      "150g mực ống hấp hành gừng thơm, đĩa bầu luộc chấm muối vừng nhạt."
+    ]);
+    dinner = pickRandom([
+      "1 bát canh đậu phụ nấu thịt nạc băm, salad rau cải xoong trộn cà chua bi dầu giấm.",
+      "150g tôm sú hấp sả nhạt, đĩa rau muống luộc giòn dầm nước chanh mát.",
+      "150g thịt thăn bò áp chảo, salad bắp cải tím hành tây dưa chuột sốt chanh leo."
+    ]);
+    snack_drinks = pickRandom([
+      "1 hũ sữa chua Hy Lạp ít béo không đường kết hợp vài quả dâu tây chín mọng.",
+      "1 quả dưa chuột thái lát ăn kèm 1 cốc trà xanh thanh mát.",
+      "1/2 quả bưởi da xanh mọng nước giúp tiêu hóa tốt."
+    ]);
     scientific_advice = `Chỉ số BMI của bạn là ${bmi}. Thực đơn được tối ưu hóa thâm hụt calo lành mạnh giúp đốt cháy mỡ thừa hiệu quả đồng thời bảo toàn khối lượng cơ nạc. Hàm lượng protein cao hỗ trợ đẩy mạnh quá trình trao đổi chất và tăng cảm giác no lâu, giúp bạn tập luyện boxing hay cardio cường độ cao bền bỉ hơn.`;
   } else if (selectedOption.includes('dẻo dai') || selectedOption.includes('yoga')) {
     target_calories = Math.round(tdee - 100);
@@ -793,10 +855,26 @@ function getRuleBasedMealPlan({ age, gender, height, weight, bmi, mode, sport, g
     macro_carbs_pct = 50;
     macro_fat_pct = 30;
 
-    breakfast = "1 ly sinh tố bơ, chuối xay với sữa hạnh nhân không đường, rắc thêm 1 thìa cafe hạt chia.";
-    lunch = "150g đậu phụ kho nấm rơm chay, 1 bát cơm gạo lứt, 1 bát canh rong biển thanh mát.";
-    dinner = "120g tôm sú hấp gừng, 1 đĩa bông cải xanh luộc chấm muối vừng, 1/2 quả bơ chín thái lát.";
-    snack_drinks = "1 ly nước dừa tươi nguyên chất hoặc 1 ly nước ép cần tây thanh lọc cơ thể.";
+    breakfast = pickRandom([
+      "1 ly sinh tố bơ, chuối xay với sữa hạnh nhân không đường, rắc thêm 1 thìa cafe hạt chia.",
+      "1 đĩa salad trái cây (táo, chuối, dâu tây, kiwi) trộn sữa chua không đường và yến mạch nướng.",
+      "2 lát bánh mì đen phết bơ đậu phộng mộc phết chuối tiêu cắt lát mỏng."
+    ]);
+    lunch = pickRandom([
+      "150g đậu phụ kho nấm rơm chay, 1 bát cơm gạo lứt, 1 bát canh rong biển thanh mát.",
+      "1 bát canh chua chay nấu dứa, cà chua, đậu phụ và dọc mùng, 1 bát cơm lứt.",
+      "1 đĩa gỏi cuốn chay (rau thơm, bún lứt, đậu phụ chiên không dầu cuốn bánh tráng) chấm sốt tương đen."
+    ]);
+    dinner = pickRandom([
+      "120g tôm sú hấp gừng, 1 đĩa bông cải xanh luộc chấm muối vừng, 1/2 quả bơ chín thái lát.",
+      "150g nấm bào ngư xào dầu hào ít dầu, 1 bát súp bí đỏ hạt sen thanh đạm ngọt mát.",
+      "150g cá hồi hấp xì dầu hành gừng, đĩa rau mồng tơi luộc thanh nhiệt."
+    ]);
+    snack_drinks = pickRandom([
+      "1 ly nước dừa tươi nguyên chất hoặc 1 ly nước ép cần tây thanh lọc cơ thể.",
+      "1 nắm hạt điều sấy mộc nguyên vị giòn ngậy (khoảng 25g).",
+      "1 cốc chè dưỡng nhan mát lành ít đường."
+    ]);
     scientific_advice = `Chỉ số BMI của bạn là ${bmi}. Để bổ trợ cho các bài tập Yoga dẻo dai và phục hồi cơ thể, thực đơn ưu tiên các nhóm thực phẩm chống viêm tự nhiên, giàu nước, vitamin và omega-3 có lợi cho khớp gối. Chế độ ăn nhẹ nhàng, dễ tiêu hóa này giúp cơ thể bạn thanh thoát, dẻo dai hơn khi thực hiện các động tác uốn dẻo khớp xương.`;
   } else {
     // Sức bền / Cải thiện sức khỏe tổng thể
@@ -805,10 +883,26 @@ function getRuleBasedMealPlan({ age, gender, height, weight, bmi, mode, sport, g
     macro_carbs_pct = 55;
     macro_fat_pct = 23;
 
-    breakfast = "1 đĩa mì Ý xốt bò bằm vừa phải (khoảng 80g bò nạc), 1 quả táo xanh giòn.";
-    lunch = "150g phi lê cá hồi áp chảo sốt chanh leo, 1.5 bát cơm gạo lứt thơm, canh rau cải ngọt nấu tôm.";
-    dinner = "150g thịt heo nạc thăn luộc chấm mắm tỏi, 1 củ khoai tây hầm cà rốt và bí đỏ.";
-    snack_drinks = "1 ly nước điện giải bù khoáng và 1 quả chuối tiêu trước khi chạy bộ hoặc đạp xe 30 phút.";
+    breakfast = pickRandom([
+      "1 đĩa mì Ý xốt bò bằm vừa phải (khoảng 80g bò nạc), 1 quả táo xanh giòn.",
+      "1 bát súp ngô gà xé phay nóng hổi, 1 lát bánh mì đen nguyên cám.",
+      "1 bát cháo đậu đen nấu nhạt thanh vị, 1 quả trứng luộc chín."
+    ]);
+    lunch = pickRandom([
+      "150g phi lê cá hồi áp chảo sốt chanh leo, 1.5 bát cơm gạo lứt thơm, canh rau cải ngọt nấu tôm.",
+      "180g gà kho sả ớt bỏ da giòn thơm, 1.5 bát cơm lứt, canh mướp đắng nhồi thịt nạc.",
+      "150g nạc thăn heo luộc chấm mắm tỏi, 1 củ khoai tây hầm cà rốt và bí đỏ ngọt thơm."
+    ]);
+    dinner = pickRandom([
+      "150g cá thu nướng muối ớt đậm đà, 1 bát cơm gạo lứt, đĩa ngọn su su xào tỏi ít dầu.",
+      "150g thịt thăn bò áp chảo sốt vang đỏ nhạt, salad xà lách cà chua bi dưa chuột giòn mát.",
+      "180g tôm rim nhạt thơm tỏi, 1 bát canh rau dền nấu thịt băm, đĩa đậu bắp luộc."
+    ]);
+    snack_drinks = pickRandom([
+      "1 ly nước điện giải bù khoáng và 1 quả chuối tiêu trước khi chạy bộ hoặc đạp xe 30 phút.",
+      "1 hũ sữa chua ít đường trộn hạt chia và yến mạch giòn.",
+      "1 quả lê tươi ngọt thanh, mọng nước."
+    ]);
     scientific_advice = `Chỉ số BMI của bạn là ${bmi}. Để duy trì sức bền trong các bài tập kéo dài, thực đơn này tập trung cung cấp lượng carbohydrate phức hợp phong phú giúp làm đầy kho glycogen trong gan và cơ bắp. Các chất béo tốt từ cá hồi hỗ trợ đắc lực cho hoạt động của hệ tim mạch dẻo dai.`;
   }
 

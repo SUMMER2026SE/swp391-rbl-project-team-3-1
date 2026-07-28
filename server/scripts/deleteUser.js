@@ -63,7 +63,6 @@ const { poolPromise, sql } = require('../src/config/db');
         const memberTables = [
           'AIConsultations',
           'Appointments',
-          'MealPlans',
           'MemberMemberships',
           'MemberServices',
           'MemberTrainerPackages',

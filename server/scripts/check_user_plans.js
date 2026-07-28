@@ -23,10 +23,6 @@ const { poolPromise } = require('../src/config/db');
         .query('SELECT we.* FROM WorkoutExercises we JOIN WorkoutPlans wp ON we.workout_plan_id = wp.workout_plan_id WHERE wp.member_id = @memberId');
       console.log('--- WorkoutExercises ---', exercisesRes.recordset);
 
-      const mealsRes = await pool.request()
-        .input('memberId', memberId)
-        .query('SELECT * FROM MealPlans WHERE member_id = @memberId');
-      console.log('--- MealPlans ---', mealsRes.recordset);
     }
     process.exit(0);
   } catch (err) {

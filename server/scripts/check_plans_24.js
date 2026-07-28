@@ -35,12 +35,6 @@ const { poolPromise } = require('../src/config/db');
       console.log('--- WorkoutExercises ---');
       console.log(exercisesRes.recordset);
 
-      // 4. Get Meal Plans
-      const mealsRes = await pool.request()
-        .input('memberId', memberId)
-        .query('SELECT * FROM MealPlans WHERE member_id = @memberId');
-      console.log('--- MealPlans ---');
-      console.log(mealsRes.recordset);
     }
     process.exit(0);
   } catch (err) {

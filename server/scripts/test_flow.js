@@ -81,27 +81,6 @@ async function runTests() {
     workoutPlanId = createWorkoutData.plan.workout_plan_id;
     console.log(`✅ Tạo Workout Plan thành công! ID Kế hoạch: ${workoutPlanId}`);
 
-    // 4. TẠO MEAL PLAN CHO MEMBER (QUYỀN PT)
-    console.log('\n--- 4. PT tạo Kế hoạch ăn uống mới ---');
-    const createMealRes = await fetch(`${BASE_URL}/api/meal-plans`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${trainerToken}`,
-      },
-      body: JSON.stringify({
-        memberId: memberId,
-        title: 'Chế độ Dinh Dưỡng Test Calo',
-        description: 'Tăng cường chất xơ và đạm',
-        calories_per_day: 2000
-      }),
-    });
-    const createMealData = await createMealRes.json();
-    if (!createMealRes.ok) {
-      throw new Error(`Tạo Meal Plan thất bại: ${createMealData.message}`);
-    }
-    mealPlanId = createMealData.plan.meal_plan_id;
-    console.log(`✅ Tạo Meal Plan thành công! ID Kế hoạch ăn: ${mealPlanId}`);
 
     // 5. ĐĂNG NHẬP DƯỚI QUYỀN MEMBER
     console.log('\n--- 5. Đăng nhập tài khoản Member ---');
@@ -129,17 +108,6 @@ async function runTests() {
     const hasMyWorkout = memberWorkoutsData.some(p => p.workout_plan_id === workoutPlanId);
     console.log(hasMyWorkout ? '✅ Thành công: Member nhìn thấy kế hoạch tập luyện vừa gán!' : '❌ Thất bại: Không tìm thấy kế hoạch!');
 
-    // 7. MEMBER XEM KẾ HOẠCH ĂN UỐNG
-    console.log('\n--- 7. Member truy vấn Kế hoạch ăn uống ---');
-    const memberMealsRes = await fetch(`${BASE_URL}/api/meal-plans`, {
-      headers: { Authorization: `Bearer ${memberToken}` },
-    });
-    const memberMealsData = await memberMealsRes.json();
-    if (!memberMealsRes.ok) {
-      throw new Error(`Member xem Meal Plan thất bại: ${memberMealsData.message}`);
-    }
-    const hasMyMeal = memberMealsData.some(p => p.meal_plan_id === mealPlanId);
-    console.log(hasMyMeal ? '✅ Thành công: Member nhìn thấy kế hoạch ăn uống vừa gán!' : '❌ Thất bại: Không tìm thấy kế hoạch ăn!');
 
     // 8. DỌN DẸP DỮ LIỆU SAU TEST (QUYỀN PT XÓA)
     console.log('\n--- 8. Dọn dẹp dữ liệu kiểm thử (Xóa kế hoạch) ---');
@@ -152,13 +120,6 @@ async function runTests() {
       console.log('✅ Đã xóa Workout Plan kiểm thử.');
     }
 
-    const deleteMealRes = await fetch(`${BASE_URL}/api/meal-plans/${mealPlanId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${trainerToken}` },
-    });
-    if (deleteMealRes.ok) {
-      console.log('✅ Đã xóa Meal Plan kiểm thử.');
-    }
 
     console.log('\n🎉 THÀNH CÔNG: Toàn bộ luồng kiểm thử CRUD và Phân quyền hoạt động trơn tru 100%!');
     process.exit(0);

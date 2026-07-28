@@ -7,7 +7,6 @@ const { sequelize } = require('./src/config/db');
 const authRoutes = require('./src/routes/authRoutes');
 const profileRoutes = require('./src/routes/profileRoutes');
 const workoutRoutes = require('./src/routes/workoutRoutes');
-const mealRoutes = require('./src/routes/mealRoutes');
 const checkoutRoutes = require('./src/routes/checkoutRoutes');
 
 const app = express();
@@ -20,7 +19,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/workout-plans', workoutRoutes);
-app.use('/api/meal-plans', mealRoutes);
 app.use('/api/checkout', checkoutRoutes);
 
 // Hỗ trợ Single Page Application (SPA) routing

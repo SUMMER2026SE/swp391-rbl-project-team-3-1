@@ -3,7 +3,6 @@ var _AIConsultations = require("./AIConsultations");
 var _Announcements = require("./Announcements");
 var _Appointments = require("./Appointments");
 var _ChatMessages = require("./ChatMessages");
-var _MealPlans = require("./MealPlans");
 var _MemberMemberships = require("./MemberMemberships");
 var _MemberServices = require("./MemberServices");
 var _Members = require("./Members");
@@ -32,7 +31,6 @@ function initModels(sequelize) {
   var Announcements = _Announcements(sequelize, DataTypes);
   var Appointments = _Appointments(sequelize, DataTypes);
   var ChatMessages = _ChatMessages(sequelize, DataTypes);
-  var MealPlans = _MealPlans(sequelize, DataTypes);
   var MemberMemberships = _MemberMemberships(sequelize, DataTypes);
   var MemberServices = _MemberServices(sequelize, DataTypes);
   var Members = _Members(sequelize, DataTypes);
@@ -62,8 +60,6 @@ function initModels(sequelize) {
   Members.hasMany(CheckIns, { as: "CheckIns", foreignKey: "member_id"});
   Appointments.belongsTo(Members, { as: "member", foreignKey: "member_id"});
   Members.hasMany(Appointments, { as: "Appointments", foreignKey: "member_id"});
-  MealPlans.belongsTo(Members, { as: "member", foreignKey: "member_id"});
-  Members.hasMany(MealPlans, { as: "MealPlans", foreignKey: "member_id"});
   MemberMemberships.belongsTo(Members, { as: "member", foreignKey: "member_id"});
   Members.hasMany(MemberMemberships, { as: "MemberMemberships", foreignKey: "member_id"});
   MemberServices.belongsTo(Members, { as: "member", foreignKey: "member_id"});
@@ -92,8 +88,6 @@ function initModels(sequelize) {
   Services.hasMany(Reports, { as: "Reports", foreignKey: "reported_service_id"});
   Appointments.belongsTo(TrainerSchedules, { as: "schedule", foreignKey: "schedule_id"});
   TrainerSchedules.hasMany(Appointments, { as: "Appointments", foreignKey: "schedule_id"});
-  MealPlans.belongsTo(Trainers, { as: "trainer", foreignKey: "trainer_id"});
-  Trainers.hasMany(MealPlans, { as: "MealPlans", foreignKey: "trainer_id"});
   TrainerCertifications.belongsTo(Trainers, { as: "trainer", foreignKey: "trainer_id"});
   Trainers.hasMany(TrainerCertifications, { as: "TrainerCertifications", foreignKey: "trainer_id"});
   TrainerSchedules.belongsTo(Trainers, { as: "trainer", foreignKey: "trainer_id"});
@@ -136,7 +130,6 @@ function initModels(sequelize) {
     Announcements,
     Appointments,
     ChatMessages,
-    MealPlans,
     MemberMemberships,
     MemberServices,
     Members,

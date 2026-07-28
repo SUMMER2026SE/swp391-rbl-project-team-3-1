@@ -228,11 +228,9 @@ function TrainerDashboard({
 
   // Assign plans builders inputs
   const [customWorkoutName, setCustomWorkoutName] = useState('');
-  const [customMealName, setCustomMealName] = useState('');
   const [successModal, setSuccessModal] = useState({ show: false, message: '' });
   const [showProgressModal, setShowProgressModal] = useState(false);
   const [workoutTemplates, setWorkoutTemplates] = useState([]);
-  const [mealTemplates, setMealTemplates] = useState([]);
   const [busySchedules, setBusySchedules] = useState([]);
   const [localSchedules, setLocalSchedules] = useState([]);
   const [busyWeekStart, setBusyWeekStart] = useState(new Date());
@@ -280,21 +278,7 @@ function TrainerDashboard({
         workoutPct = Math.round((checkedCount / member.workoutExercisesCount) * 100);
       }
 
-      // Calculate Meal Plan Progress (only for meals assigned today or in the future)
-      let mealPct = 0;
-      const currentMeals = (member.assignedMeals || []).filter(meal => isTodayOrFuture(meal.createdAt));
-      if (currentMeals.length > 0) {
-        let checkedCount = 0;
-        currentMeals.forEach(meal => {
-          const key = `db-meal-${meal.id}`;
-          if (completedMeals[key]) {
-            checkedCount++;
-          }
-        });
-        mealPct = Math.round((checkedCount / currentMeals.length) * 100);
-      }
-
-      return { workoutPct, mealPct, completedExercises, completedMeals, hasCurrentWorkout, currentMeals };
+      return { workoutPct, mealPct: 0, completedExercises, completedMeals: {}, hasCurrentWorkout, currentMeals: [] };
     } catch (e) {
       console.error('Error reading member progress from localStorage:', e);
     }
@@ -389,16 +373,7 @@ function TrainerDashboard({
       })
       .catch(err => console.error('Error fetching workout templates:', err));
 
-    fetch('/api/meal-plans/templates', {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setMealTemplates(data);
-        }
-      })
-      .catch(err => console.error('Error fetching meal templates:', err));
+
   };
 
   useEffect(() => {
@@ -948,35 +923,6 @@ function TrainerDashboard({
       .catch(err => console.error('Error assigning workout:', err));
   };
 
-  const handleAssignMealTemplate = (templateName) => {
-    if (!selectedMember) {
-      alert('Vui lòng chọn học viên trước!');
-      return;
-    }
-
-    fetch('/api/dashboard/trainer/assign-plan', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        memberId: selectedMember.id,
-        type: 'meal',
-        name: templateName
-      })
-    })
-      .then(res => res.json())
-      .then(data => {
-        setSuccessModal({
-          show: true,
-          message: data.message || `Đã giao thực đơn "${templateName}" thành công!`
-        });
-        reloadTrainerDashboardData();
-      })
-      .catch(err => console.error('Error assigning meal:', err));
-  };
-
   const handleAssignCustomWorkout = (e) => {
     e.preventDefault();
     if (!customWorkoutName.trim()) return;
@@ -984,33 +930,24 @@ function TrainerDashboard({
     setCustomWorkoutName('');
   };
 
-  const handleAssignCustomMeal = (e) => {
-    e.preventDefault();
-    if (!customMealName.trim()) return;
-    handleAssignMealTemplate(customMealName);
-    setCustomMealName('');
-  };
-
   const handleFinishProgress = (member, progressData) => {
     if (!member) return;
 
     const hasActiveWorkout = progressData.hasCurrentWorkout;
-    const hasActiveMeal = progressData.currentMeals && progressData.currentMeals.length > 0;
 
-    if (!hasActiveWorkout && !hasActiveMeal) {
-      alert('Học viên này hiện tại chưa có giáo án hay thực đơn nào đang kích hoạt!');
+    if (!hasActiveWorkout) {
+      alert('Học viên này hiện tại chưa có giáo án nào đang kích hoạt!');
       return;
     }
 
-    const isWorkoutDone = !hasActiveWorkout || progressData.workoutPct === 100;
-    const isMealDone = !hasActiveMeal || progressData.mealPct === 100;
+    const isWorkoutDone = progressData.workoutPct === 100;
 
-    if (!isWorkoutDone || !isMealDone) {
-      alert('Học viên chưa hoàn thành đủ 100% tiến độ bài tập và thực đơn!');
+    if (!isWorkoutDone) {
+      alert('Học viên chưa hoàn thành đủ 100% tiến độ bài tập!');
       return;
     }
 
-    if (!window.confirm(`Bạn có chắc chắn muốn kết thúc tiến độ của học viên ${member.name} không?\n\nGiáo án và thực đơn hiện tại sẽ được lưu trữ vào Lịch sử và tiến độ hôm nay của hội viên sẽ được cài lại mặc định.`)) {
+    if (!window.confirm(`Bạn có chắc chắn muốn kết thúc tiến độ của học viên ${member.name} không?\n\nGiáo án hiện tại sẽ được lưu trữ vào Lịch sử và tiến độ hôm nay của hội viên sẽ được cài lại mặc định.`)) {
       return;
     }
 
@@ -1367,21 +1304,7 @@ function TrainerDashboard({
                             </div>
                           )}
                         </div>
-                        <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9' }} />
-                        <div>
-                          <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold' }}>THỰC ĐƠN DINH DƯỠNG</div>
-                          <div style={{ fontWeight: 'bold', color: '#10b981', marginTop: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span>{progress.currentMeals.length > 0 ? progress.currentMeals[0].title : 'Chưa phân công'}</span>
-                            {progress.currentMeals.length > 0 && (
-                              <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Hoàn thành {progress.mealPct}%</span>
-                            )}
-                          </div>
-                          {progress.currentMeals.length > 0 && (
-                            <div style={{ width: '100%', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', marginTop: '6px', overflow: 'hidden' }}>
-                              <div style={{ width: `${progress.mealPct}%`, height: '100%', backgroundColor: '#10b981', borderRadius: '3px', transition: 'width 0.3s ease' }}></div>
-                            </div>
-                          )}
-                        </div>
+
                         <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9' }} />
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
                           <button
@@ -1475,40 +1398,7 @@ function TrainerDashboard({
                       </form>
                     </div>
 
-                    <div className="trainer-card-panel">
-                      <h3 className="trainer-card-title" style={{ marginBottom: '16px' }}>Thiết lập thực đơn dinh dưỡng (Meal Plan)</h3>
-                      <div style={{ marginBottom: '20px' }}>
-                        <label className="trainer-form-label">Chọn thực đơn mẫu dinh dưỡng</label>
-                        <div className="trainer-plan-template-list" style={{ marginTop: '8px' }}>
-                          {mealTemplates.map((temp, idx) => (
-                            <div
-                              key={idx}
-                              className={`trainer-template-card ${customMealName === temp.title ? 'active-meal' : ''}`}
-                              onClick={() => setCustomMealName(temp.title)}
-                            >
-                              <div className="trainer-template-card-title">{temp.title}</div>
-                              <div className="trainer-template-card-desc">{temp.description || temp.desc}</div>
-                            </div>
-                          ))}
-                          {mealTemplates.length === 0 && (
-                            <div style={{ fontSize: '0.86rem', color: '#94a3b8', padding: '10px' }}>Không có thực đơn mẫu cho môn của bạn</div>
-                          )}
-                        </div>
-                      </div>
 
-                      <form onSubmit={handleAssignCustomMeal} style={{ display: 'flex', gap: '12px' }}>
-                        <input
-                          type="text"
-                          className="trainer-form-input"
-                          placeholder="Nhập tên thực đơn dinh dưỡng tùy chỉnh..."
-                          style={{ flex: 1 }}
-                          value={customMealName}
-                          onChange={(e) => setCustomMealName(e.target.value)}
-                          required
-                        />
-                        <button type="submit" className="trainer-btn-submit" style={{ padding: '10px 20px', backgroundColor: '#10b981' }}>Giao thực đơn</button>
-                      </form>
-                    </div>
                   </div>
                 </div>
               )}
@@ -1998,23 +1888,7 @@ function TrainerDashboard({
           </div>
         );
 
-      case 'meal':
-        return (
-          <div className="trainer-card-panel">
-            <h3 className="trainer-card-title" style={{ marginBottom: '20px' }}>Kho thực đơn dinh dưỡng mẫu (Meal Templates)</h3>
-            <div className="trainer-plan-template-list" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
-              {mealTemplates.map((temp, idx) => (
-                <div key={idx} className="trainer-template-card" style={{ cursor: 'default' }}>
-                  <div className="trainer-template-card-title" style={{ color: '#10b981' }}>{temp.title}</div>
-                  <div className="trainer-template-card-desc" style={{ fontSize: '0.84rem', lineHeight: '1.4', marginTop: '6px' }}>{temp.description || temp.desc}</div>
-                </div>
-              ))}
-              {mealTemplates.length === 0 && (
-                <div style={{ padding: '20px', color: '#94a3b8', textAlign: 'center' }}>Không có thực đơn mẫu cho bộ môn này</div>
-              )}
-            </div>
-          </div>
-        );
+
 
       case 'chat':
         {
@@ -2402,14 +2276,7 @@ function TrainerDashboard({
                 <i className="fa-solid fa-dumbbell"></i> Workout Plans
               </button>
             </li>
-            <li>
-              <button
-                className={`trainer-menu-item ${activeTab === 'meal' ? 'active' : ''}`}
-                onClick={() => setActiveTab('meal')}
-              >
-                <i className="fa-solid fa-bowl-food"></i> Meal Plans
-              </button>
-            </li>
+
             <li>
               <button
                 className={`trainer-menu-item ${activeTab === 'chat' ? 'active' : ''}`}
@@ -2564,46 +2431,7 @@ function TrainerDashboard({
                   )}
                 </div>
 
-                {/* Meal Section */}
-                <div style={{ backgroundColor: '#f0fdf4', borderRadius: '12px', padding: '16px', border: '1px solid #dcfce7' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 'bold', color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <i className="fa-solid fa-bowl-food"></i>
-                      Dinh dưỡng ({progress.currentMeals.length > 0 ? progress.currentMeals[0].title : 'Chưa phân công'})
-                    </h4>
-                    <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#15803d', backgroundColor: '#dcfce7', padding: '2px 8px', borderRadius: '12px' }}>
-                      {progress.mealPct}%
-                    </span>
-                  </div>
 
-                  {progress.currentMeals && progress.currentMeals.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {progress.currentMeals.map((meal, idx) => {
-                        const isDone = progress.completedMeals[`db-meal-${meal.id}`];
-                        return (
-                          <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
-                              <i className={isDone ? "fa-solid fa-circle-check" : "fa-regular fa-circle"} style={{ color: isDone ? '#10b981' : '#cbd5e1', fontSize: '1.15rem' }}></i>
-                              <div>
-                                <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: isDone ? '#94a3b8' : 'var(--text)', textDecoration: isDone ? 'line-through' : 'none' }}>
-                                  {meal.title}
-                                </div>
-                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                  {meal.description} ({meal.calories} kcal)
-                                </div>
-                              </div>
-                            </div>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: isDone ? '#10b981' : '#64748b', backgroundColor: isDone ? '#e6f4ea' : '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
-                              {isDone ? 'Đã ăn' : 'Chưa ăn'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: '0.85rem', color: '#64748b', textAlign: 'center', padding: '10px' }}>Chưa có thực đơn cho ngày hôm nay / tương lai.</div>
-                  )}
-                </div>
 
               </div>
 

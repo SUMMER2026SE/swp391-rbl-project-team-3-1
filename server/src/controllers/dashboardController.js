@@ -1351,12 +1351,7 @@ exports.getTrainerMembers = async (req, res) => {
         workoutExercisesCount = workoutExercises.length;
       }
 
-      const mealPlans = await models.MealPlans.findAll({
-        where: { member_id: m.member_id, trainer_id: trainerUser.trainer_id },
-        order: [['meal_plan_id', 'DESC']]
-      });
-
-      const todayMeals = mealPlans.filter(mp => isToday(mp.created_at));
+      const todayMeals = [];
 
       let remainingDays = 0;
       matchedActiveMemberships.forEach(ms => {
@@ -1619,55 +1614,43 @@ exports.assignPlanToMember = async (req, res) => {
       return res.status(400).json({ message: 'Chỉ huấn luyện viên mới được giao giáo án!' });
     }
 
-    if (type === 'workout') {
-      const config = await models.AppConfigs.findOne({ where: { config_key: 'workout_templates' } }, { transaction });
-      let templates = [];
-      if (config && config.config_value) {
-        templates = JSON.parse(config.config_value);
-      }
-      const matchedTemplate = templates.find(t => t.title === name);
-
-      const newPlan = await models.WorkoutPlans.create({
-        trainer_id: trainerUser.trainer_id,
-        member_id: memberId,
-        title: name,
-        description: matchedTemplate?.description || 'Giáo án được giao từ huấn luyện viên qua dashboard.'
-      }, { transaction });
-
-      const exercises = matchedTemplate?.exercises || [
-        { exercise_name: name, sets: 3, reps: 10, duration_minutes: 15, calories_burned: 100, rpe: 7 }
-      ];
-
-      const exercisesToCreate = exercises.map(ex => ({
-        workout_plan_id: newPlan.workout_plan_id,
-        exercise_name: ex.exercise_name,
-        sets: ex.sets,
-        reps: ex.reps,
-        duration_minutes: ex.duration_minutes,
-        calories_burned: ex.calories_burned,
-        rpe: ex.rpe
-      }));
-
-      await models.WorkoutExercises.bulkCreate(exercisesToCreate, { transaction });
-    } else {
-      const config = await models.AppConfigs.findOne({ where: { config_key: 'meal_templates' } }, { transaction });
-      let templates = [];
-      if (config && config.config_value) {
-        templates = JSON.parse(config.config_value);
-      }
-      const matchedTemplate = templates.find(t => t.title === name);
-
-      await models.MealPlans.create({
-        trainer_id: trainerUser.trainer_id,
-        member_id: memberId,
-        title: name,
-        calories_per_day: 2000,
-        description: matchedTemplate?.description || 'Chế độ dinh dưỡng giao trực tiếp từ huấn luyện viên.'
-      }, { transaction });
+    if (type !== 'workout') {
+      await transaction.rollback();
+      return res.status(400).json({ message: 'Chức năng giao thực đơn dinh dưỡng đã bị gỡ bỏ!' });
     }
 
+    const config = await models.AppConfigs.findOne({ where: { config_key: 'workout_templates' } }, { transaction });
+    let templates = [];
+    if (config && config.config_value) {
+      templates = JSON.parse(config.config_value);
+    }
+    const matchedTemplate = templates.find(t => t.title === name);
+
+    const newPlan = await models.WorkoutPlans.create({
+      trainer_id: trainerUser.trainer_id,
+      member_id: memberId,
+      title: name,
+      description: matchedTemplate?.description || 'Giáo án được giao từ huấn luyện viên qua dashboard.'
+    }, { transaction });
+
+    const exercises = matchedTemplate?.exercises || [
+      { exercise_name: name, sets: 3, reps: 10, duration_minutes: 15, calories_burned: 100, rpe: 7 }
+    ];
+
+    const exercisesToCreate = exercises.map(ex => ({
+      workout_plan_id: newPlan.workout_plan_id,
+      exercise_name: ex.exercise_name,
+      sets: ex.sets,
+      reps: ex.reps,
+      duration_minutes: ex.duration_minutes,
+      calories_burned: ex.calories_burned,
+      rpe: ex.rpe
+    }));
+
+    await models.WorkoutExercises.bulkCreate(exercisesToCreate, { transaction });
+
     await transaction.commit();
-    return res.status(201).json({ message: `Đã giao thành công ${type === 'workout' ? 'giáo án tập luyện' : 'thực đơn dinh dưỡng'}: ${name}` });
+    return res.status(201).json({ message: `Đã giao thành công giáo án tập luyện: ${name}` });
   } catch (error) {
     console.error('❌ Error assigning plan:', error);
     try {
@@ -1713,14 +1696,6 @@ exports.finishMemberProgress = async (req, res) => {
       }
     );
 
-    // 2. Move all meal plans of this member to history
-    await models.MealPlans.update(
-      { created_at: yesterday },
-      {
-        where: { member_id: memberId },
-        transaction
-      }
-    );
 
     // 3. Notify member
     try {

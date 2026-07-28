@@ -32,7 +32,6 @@ IF OBJECT_ID(N'dbo.[Announcements]', N'U') IS NOT NULL DROP TABLE dbo.[Announcem
 IF OBJECT_ID(N'dbo.[AIConsultations]', N'U') IS NOT NULL DROP TABLE dbo.[AIConsultations];
 IF OBJECT_ID(N'dbo.[WorkoutExercises]', N'U') IS NOT NULL DROP TABLE dbo.[WorkoutExercises];
 IF OBJECT_ID(N'dbo.[WorkoutPlans]', N'U') IS NOT NULL DROP TABLE dbo.[WorkoutPlans];
-IF OBJECT_ID(N'dbo.[MealPlans]', N'U') IS NOT NULL DROP TABLE dbo.[MealPlans];
 IF OBJECT_ID(N'dbo.[CheckIns]', N'U') IS NOT NULL DROP TABLE dbo.[CheckIns];
 IF OBJECT_ID(N'dbo.[PtOffRequests]', N'U') IS NOT NULL DROP TABLE dbo.[PtOffRequests];
 IF OBJECT_ID(N'dbo.[PtBookings]', N'U') IS NOT NULL DROP TABLE dbo.[PtBookings];
@@ -233,17 +232,6 @@ CREATE TABLE dbo.[CheckIns] (
 );
 GO
 
-CREATE TABLE dbo.[MealPlans] (
-    [meal_plan_id] INT IDENTITY(1,1) NOT NULL,
-    [trainer_id] INT NOT NULL,
-    [member_id] INT NOT NULL,
-    [title] NVARCHAR(200) NULL,
-    [description] NVARCHAR(MAX) NULL,
-    [calories_per_day] INT NULL,
-    [created_at] DATETIME NULL DEFAULT (getdate()),
-    CONSTRAINT [PK_MealPlans] PRIMARY KEY CLUSTERED ([meal_plan_id])
-);
-GO
 
 CREATE TABLE dbo.[WorkoutPlans] (
     [workout_plan_id] INT IDENTITY(1,1) NOT NULL,
@@ -640,20 +628,6 @@ INSERT INTO dbo.[CheckIns] ([checkin_id], [member_id], [checkin_time]) VALUES (2
 SET IDENTITY_INSERT dbo.[CheckIns] OFF;
 GO
 
--- Data for table [MealPlans] (10 rows)
-SET IDENTITY_INSERT dbo.[MealPlans] ON;
-INSERT INTO dbo.[MealPlans] ([meal_plan_id], [trainer_id], [member_id], [title], [description], [calories_per_day], [created_at]) VALUES (12, 2, 20, N'Tăng cơ nạc (Lean Bulking)', N'Dư thừa calo sạch. Sáng: 100g yến mạch + 1 muỗng Whey + 1 quả chuối. Trưa: 200g thịt bò + 1.5 chén cơm trắng + rau cải. Tối: 200g ức gà + 1 chén cơm lứt + măng tây.', 2500, '2026-07-14 00:17:01');
-INSERT INTO dbo.[MealPlans] ([meal_plan_id], [trainer_id], [member_id], [title], [description], [calories_per_day], [created_at]) VALUES (13, 2, 20, N'Tăng cơ nạc (Lean Bulking)', N'Dư thừa calo sạch. Sáng: 100g yến mạch + 1 muỗng Whey + 1 quả chuối. Trưa: 200g thịt bò + 1.5 chén cơm trắng + rau cải. Tối: 200g ức gà + 1 chén cơm lứt + măng tây.', 2500, '2026-07-14 00:17:01');
-INSERT INTO dbo.[MealPlans] ([meal_plan_id], [trainer_id], [member_id], [title], [description], [calories_per_day], [created_at]) VALUES (14, 2, 20, N'Chế độ giảm cân thâm hụt 500kcal', N'Sáng: 2 quả trứng luộc + 1 lát bánh mì đen. Trưa: 150g ức gà áp chảo + 100g súp lơ luộc + 1/2 chén cơm lứt. Tối: 150g cá hồi áp chảo + salad rau xanh dầu ô liu.', 1500, '2026-07-14 00:17:01');
-INSERT INTO dbo.[MealPlans] ([meal_plan_id], [trainer_id], [member_id], [title], [description], [calories_per_day], [created_at]) VALUES (15, 2, 20, N'Tăng cơ nạc (Lean Bulking)', N'Chế độ dinh dưỡng giao trực tiếp từ huấn luyện viên.', 2000, '2026-07-14 00:17:01');
-INSERT INTO dbo.[MealPlans] ([meal_plan_id], [trainer_id], [member_id], [title], [description], [calories_per_day], [created_at]) VALUES (16, 2, 20, N'Ăn kiêng Low-Carb cơ bản', N'Chế độ dinh dưỡng giao trực tiếp từ huấn luyện viên.', 2000, '2026-07-14 00:17:01');
-INSERT INTO dbo.[MealPlans] ([meal_plan_id], [trainer_id], [member_id], [title], [description], [calories_per_day], [created_at]) VALUES (17, 2, 20, N'Chế độ giảm cân thâm hụt 500kcal', N'Chế độ dinh dưỡng giao trực tiếp từ huấn luyện viên.', 2000, '2026-07-14 00:17:01');
-INSERT INTO dbo.[MealPlans] ([meal_plan_id], [trainer_id], [member_id], [title], [description], [calories_per_day], [created_at]) VALUES (18, 2, 20, N'Chế độ giảm cân thâm hụt 500kcal', N'Chế độ dinh dưỡng giao trực tiếp từ huấn luyện viên.', 2000, '2026-07-14 00:17:01');
-INSERT INTO dbo.[MealPlans] ([meal_plan_id], [trainer_id], [member_id], [title], [description], [calories_per_day], [created_at]) VALUES (19, 2, 20, N'Tăng cơ nạc (Lean Bulking)', N'Dư thừa nhẹ 200kcal, ưu tiên đạm tinh khiết cho sự phát triển của thớ cơ. Sử dụng yến mạch, whey protein hỗ trợ.', 2000, '2026-07-14 00:17:01');
-INSERT INTO dbo.[MealPlans] ([meal_plan_id], [trainer_id], [member_id], [title], [description], [calories_per_day], [created_at]) VALUES (20, 2, 20, N'Chế độ giảm cân thâm hụt 500kcal', N'Giàu đạm, ít tinh bột nhanh. Sáng ức gà chiên không dầu, trưa cơm gạo lứt cá hồi, tối salad xanh.', 2000, '2026-07-14 00:17:01');
-INSERT INTO dbo.[MealPlans] ([meal_plan_id], [trainer_id], [member_id], [title], [description], [calories_per_day], [created_at]) VALUES (21, 2, 20, N'Tăng cơ nạc (Lean Bulking)', N'Dư thừa nhẹ 200kcal, ưu tiên đạm tinh khiết cho sự phát triển của thớ cơ. Sử dụng yến mạch, whey protein hỗ trợ.', 2000, '2026-07-14 00:17:01');
-SET IDENTITY_INSERT dbo.[MealPlans] OFF;
-GO
 
 -- Data for table [WorkoutPlans] (16 rows)
 SET IDENTITY_INSERT dbo.[WorkoutPlans] ON;
