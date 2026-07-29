@@ -1374,13 +1374,14 @@ exports.getTrainerMembers = async (req, res) => {
         weight: m.weight || 70,
         bmi: m.bmi || 22.5,
         remainingDays: remainingDays,
-        workoutAssigned: isWorkoutToday ? latestWorkoutPlan.title : 'Chưa phân công',
+        workoutAssigned: (isWorkoutToday && !latestWorkoutPlan.is_completed) ? latestWorkoutPlan.title : 'Chưa phân công',
         mealAssigned: todayMeals.length > 0 ? todayMeals[0].title : 'Chưa phân công',
-        workoutPlanId: isWorkoutToday ? latestWorkoutPlan.workout_plan_id : null,
-        workoutCreatedAt: isWorkoutToday ? latestWorkoutPlan.created_at : null,
-        workoutExercisesCount,
-        workoutExercises: workoutExercises.map(e => ({ name: e.exercise_name, sets: e.sets, reps: e.reps })),
-        assignedMeals: todayMeals.map(mp => ({ id: mp.meal_plan_id, title: mp.title, description: mp.description, calories: mp.calories_per_day, createdAt: mp.created_at }))
+        workoutPlanId: (isWorkoutToday && !latestWorkoutPlan.is_completed) ? latestWorkoutPlan.workout_plan_id : null,
+        workoutCreatedAt: (isWorkoutToday && !latestWorkoutPlan.is_completed) ? latestWorkoutPlan.created_at : null,
+        workoutExercisesCount: (isWorkoutToday && !latestWorkoutPlan.is_completed) ? workoutExercisesCount : 0,
+        workoutExercises: (isWorkoutToday && !latestWorkoutPlan.is_completed) ? workoutExercises.map(e => ({ name: e.exercise_name, sets: e.sets, reps: e.reps })) : [],
+        assignedMeals: todayMeals.map(mp => ({ id: mp.meal_plan_id, title: mp.title, description: mp.description, calories: mp.calories_per_day, createdAt: mp.created_at })),
+        isCompleted: isWorkoutToday ? latestWorkoutPlan.is_completed : false
       };
     }));
 
@@ -1682,16 +1683,14 @@ exports.finishMemberProgress = async (req, res) => {
       return res.status(400).json({ message: 'Chỉ huấn luyện viên mới được thực hiện thao tác này!' });
     }
 
-    const yesterday = sequelize.literal("DATEADD(day, -1, GETUTCDATE())");
-
-    // 1. Move all workout plans of this member to history
+    // 1. Mark all active workout plans of this member as completed
     await models.WorkoutPlans.update(
       {
-        created_at: yesterday,
-        updated_at: yesterday
+        is_completed: true,
+        updated_at: sequelize.fn('GETDATE')
       },
       {
-        where: { member_id: memberId },
+        where: { member_id: memberId, is_completed: false },
         transaction
       }
     );

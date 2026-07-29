@@ -109,13 +109,46 @@ function MemberDashboard({
   const [aiMealGender, setAiMealGender] = useState('Nam');
   const [aiMealHeight, setAiMealHeight] = useState('');
   const [aiMealWeight, setAiMealWeight] = useState('');
-  const [aiMealMode, setAiMealMode] = useState('workout'); // 'workout' | 'goal'
+  const [aiMealMode, setAiMealMode] = useState('pt_workout'); // 'pt_workout' | 'goal'
   const [aiMealSport, setAiMealSport] = useState('Gym'); // 'Gym' | 'Yoga' | 'Boxing'
   const [aiMealGoal, setAiMealGoal] = useState('Tăng cơ'); // 'Tăng cơ' | 'Giảm mỡ' | 'Dẻo dai' | 'Sức bền'
   const [aiMealResult, setAiMealResult] = useState(null);
+  const [selectedHistoryMeal, setSelectedHistoryMeal] = useState(null);
   const [aiMealLoading, setAiMealLoading] = useState(false);
   const [aiMealLoadingStep, setAiMealLoadingStep] = useState('');
   const [aiMealError, setAiMealError] = useState('');
+
+  const calculateHistoryCalories = (item) => {
+    if (!item) return 2000;
+    try {
+      const parsed = JSON.parse(item.recommendedSchedule);
+      if (parsed && parsed.target_calories) return parsed.target_calories;
+    } catch (e) {}
+
+    let h = item.height || 170;
+    let w = item.weight || 65;
+    let a = item.age || 25;
+    let g = item.gender || 'Nam';
+    
+    let bmr = 10 * w + 6.25 * h - 5 * a;
+    if (g === 'Nam') {
+      bmr += 5;
+    } else {
+      bmr -= 161;
+    }
+    let tdee = Math.round(bmr * 1.375);
+    
+    if (item.fitnessGoal && item.fitnessGoal.toLowerCase().includes('giáo án')) {
+      return Math.round(tdee + 250);
+    } else if (item.fitnessGoal && (item.fitnessGoal.toLowerCase().includes('tăng cơ') || item.fitnessGoal.toLowerCase().includes('gym'))) {
+      return Math.round(tdee + 300);
+    } else if (item.fitnessGoal && (item.fitnessGoal.toLowerCase().includes('giảm mỡ') || item.fitnessGoal.toLowerCase().includes('boxing'))) {
+      return Math.round(tdee - 350);
+    } else if (item.fitnessGoal && (item.fitnessGoal.toLowerCase().includes('dẻo dai') || item.fitnessGoal.toLowerCase().includes('yoga'))) {
+      return Math.round(tdee - 100);
+    }
+    return tdee;
+  };
 
   const syncMealPlanMetricsWithProfile = () => {
     if (profileData && profileData.memberInfo) {
@@ -408,6 +441,10 @@ function MemberDashboard({
         if (['BOOKING_CREATED', 'BOOKING_APPROVED', 'BOOKING_REJECTED', 'BOOKING_CANCELLED', 'BOOKING_CANCEL_REQUESTED', 'BOOKING_CANCEL_ACCEPTED', 'BOOKING_CANCEL_REJECTED', 'SCHEDULE_SLOT_UPDATED'].includes(data.type || newNotif.type)) {
           reloadMemberAppointments();
           setRefreshTrigger(prev => prev + 1);
+        }
+
+        if (['plan_completed', 'PLAN_COMPLETED'].includes(data.type || newNotif.type)) {
+          reloadPlans();
         }
 
         if (data.type === 'MEMBER_CHECKED_IN') {
@@ -1129,7 +1166,7 @@ function MemberDashboard({
     if (plan.WorkoutExercises) {
       plan.WorkoutExercises.forEach((ex, idx) => {
         const key = `db-${plan.workout_plan_id}-${idx}`;
-        if (completedExercises[key]) {
+        if (plan.is_completed || completedExercises[key]) {
           completedExsCount++;
         }
       });
@@ -1752,15 +1789,10 @@ function MemberDashboard({
                         {plan.WorkoutExercises && plan.WorkoutExercises.length > 0 ? (
                           plan.WorkoutExercises.map((ex, idx) => {
                             const key = `db-${plan.workout_plan_id}-${idx}`;
+                            const isDone = plan.is_completed || completedExercises[key];
                             return (
-                              <div className={`member-workout-ex-item ${completedExercises[key] ? 'completed' : ''}`} key={idx}>
-                                <div className="member-workout-ex-left">
-                                  <input
-                                    type="checkbox"
-                                    className="member-workout-ex-checkbox"
-                                    checked={!!completedExercises[key]}
-                                    onChange={() => toggleExercise(key)}
-                                  />
+                              <div className={`member-workout-ex-item ${isDone ? 'completed' : ''}`} key={idx}>
+                                <div className="member-workout-ex-left" style={{ paddingLeft: '8px' }}>
                                   <div>
                                     <div className="member-workout-ex-name">{ex.exercise_name}</div>
                                     <div className="member-workout-ex-specs">
@@ -1768,7 +1800,7 @@ function MemberDashboard({
                                     </div>
                                   </div>
                                 </div>
-                                <i className={`fa-solid ${completedExercises[key] ? 'fa-circle-check' : 'fa-circle'}`} style={{ color: completedExercises[key] ? '#22c55e' : '#cbd5e1' }}></i>
+                                <i className={`fa-solid ${isDone ? 'fa-circle-check' : 'fa-circle'}`} style={{ color: isDone ? '#22c55e' : '#cbd5e1', fontSize: '1.2rem' }}></i>
                               </div>
                             );
                           })
@@ -2420,14 +2452,6 @@ function MemberDashboard({
                     <div className="ai-meal-mode-tabs" style={{ marginTop: '20px' }}>
                       <button
                         type="button"
-                        className={`mode-tab-btn ${aiMealMode === 'workout' ? 'active' : ''}`}
-                        onClick={() => setAiMealMode('workout')}
-                        disabled={aiMealLoading}
-                      >
-                        <i className="fa-solid fa-circle-nodes"></i> Theo Gói Tập Đăng Ký
-                      </button>
-                      <button
-                        type="button"
                         className={`mode-tab-btn ${aiMealMode === 'pt_workout' ? 'active' : ''}`}
                         onClick={() => setAiMealMode('pt_workout')}
                         disabled={aiMealLoading}
@@ -2452,7 +2476,7 @@ function MemberDashboard({
                           {todayWorkoutPlans && todayWorkoutPlans.length > 0 ? (
                             <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1.5px solid #e2e8f0' }}>
                               {todayWorkoutPlans.slice(0, 1).map((p) => {
-                                const isCompleted = workoutProgressPct === 100;
+                                const isCompleted = p.is_completed || workoutProgressPct === 100;
                                 return (
                                   <div key={p.workout_plan_id}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
@@ -2470,7 +2494,7 @@ function MemberDashboard({
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                         {p.WorkoutExercises && p.WorkoutExercises.map((ex, exIdx) => {
                                           const key = `db-${p.workout_plan_id}-${exIdx}`;
-                                          const exDone = completedExercises[key];
+                                          const exDone = p.is_completed || completedExercises[key];
                                           return (
                                             <div key={exIdx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.84rem' }}>
                                               <i className={exDone ? "fa-solid fa-circle-check" : "fa-regular fa-circle"} style={{ color: exDone ? '#10b981' : '#cbd5e1', fontSize: '1rem' }}></i>
@@ -2507,32 +2531,6 @@ function MemberDashboard({
                             </div>
                           )}
                         </div>
-                      ) : aiMealMode === 'workout' ? (
-                        <div>
-                          <label className="member-form-label">Chọn bộ môn đăng ký tập luyện:</label>
-                          {registeredSports.length > 0 ? (
-                            <select
-                              className="member-form-select"
-                              value={aiMealSport}
-                              onChange={(e) => setAiMealSport(e.target.value)}
-                              disabled={aiMealLoading}
-                            >
-                              {registeredSports.includes('Gym') && (
-                                <option value="Gym">Tập Gym & Thể hình (Fitness)</option>
-                              )}
-                              {registeredSports.includes('Yoga') && (
-                                <option value="Yoga">Tập Yoga & Phục hồi dẻo dai</option>
-                              )}
-                              {registeredSports.includes('Boxing') && (
-                                <option value="Boxing">Tập Boxing & Kickboxing cường độ cao</option>
-                              )}
-                            </select>
-                          ) : (
-                            <div style={{ color: '#ef4444', fontSize: '0.86rem', fontWeight: 'bold', background: '#fef2f2', border: '1px solid #fee2e2', padding: '10px', borderRadius: '8px' }}>
-                              ⚠️ Bạn chưa đăng ký gói tập nào đang hoạt động. Hãy đăng ký gói tập để sử dụng tính năng này!
-                            </div>
-                          )}
-                        </div>
                       ) : (
                         <div>
                           <label className="member-form-label">Chọn nhu cầu / mục tiêu sức khỏe của bạn:</label>
@@ -2562,7 +2560,7 @@ function MemberDashboard({
                       type="submit"
                       className="member-btn-submit ai-meal-submit-btn"
                       style={{ width: '100%', marginTop: '20px', padding: '14px', background: (aiMealMode === 'pt_workout' && (workoutProgressPct < 100 || todayWorkoutPlans.length === 0)) ? '#94a3b8' : 'linear-gradient(135deg, #10b981, #059669)', border: 'none', fontSize: '1rem', fontWeight: 'bold' }}
-                      disabled={aiMealLoading || (aiMealMode === 'pt_workout' && (workoutProgressPct < 100 || !todayWorkoutPlans || todayWorkoutPlans.length === 0)) || (aiMealMode === 'workout' && registeredSports.length === 0)}
+                      disabled={aiMealLoading || (aiMealMode === 'pt_workout' && (workoutProgressPct < 100 || !todayWorkoutPlans || todayWorkoutPlans.length === 0))}
                     >
                       {aiMealLoading ? (
                         <span><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px' }}></i> Đang xử lý thực đơn...</span>
@@ -2703,6 +2701,7 @@ function MemberDashboard({
                             scientific_advice: item.recommendationDetail,
                             createdAt: item.createdAt
                           });
+                          setSelectedHistoryMeal(item);
                         }}
                         style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s ease-in-out' }}
                       >
@@ -2710,11 +2709,12 @@ function MemberDashboard({
                           <span>{new Date(item.createdAt).toLocaleDateString('vi-VN')}</span>
                           <span style={{ fontWeight: '800', color: '#10b981' }}>Meal Plan</span>
                         </div>
-                        <div style={{ fontWeight: 'bold', marginTop: '6px', fontSize: '0.86rem', color: '#1e293b' }}>
-                          Cân nặng: {item.weight}kg | Cao: {item.height}cm
-                        </div>
-                        <div style={{ fontSize: '0.76rem', color: '#475569', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          Chế độ: {item.fitnessGoal || 'Tư vấn'}
+                        <div style={{ fontWeight: 'bold', marginTop: '8px', fontSize: '0.88rem', color: 'var(--orange)', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                          {item.fitnessGoal 
+                            ? (item.fitnessGoal.startsWith('Giáo án') || item.fitnessGoal.startsWith('Nhu cầu') 
+                                ? item.fitnessGoal 
+                                : `Nhu cầu: ${item.fitnessGoal}`)
+                            : 'Tư vấn Dinh dưỡng'}
                         </div>
                       </div>
                     ))}
@@ -3383,6 +3383,272 @@ function MemberDashboard({
                 }}
               >
                 Đồng ý hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedHistoryMeal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            width: '100%',
+            maxWidth: '650px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            border: '1px solid #e2e8f0',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '20px 24px',
+              borderBottom: '1px solid #f1f5f9',
+              background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+              borderTopLeftRadius: '16px',
+              borderTopRightRadius: '16px'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: '#1e293b' }}>
+                  Chi tiết Thực đơn Dinh dưỡng
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                  Ngày tạo: {new Date(selectedHistoryMeal.createdAt).toLocaleDateString('vi-VN')} {new Date(selectedHistoryMeal.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedHistoryMeal(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.5rem',
+                  color: '#64748b',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  borderRadius: '50%',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#e2e8f0'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Info Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '12px',
+                background: '#f8fafc',
+                padding: '16px',
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0'
+              }}>
+                <div>
+                  <span style={{ fontSize: '0.78rem', color: '#64748b', display: 'block' }}>PHÂN LOẠI TƯ VẤN:</span>
+                  <span style={{ fontSize: '0.92rem', fontWeight: 'bold', color: 'var(--orange)' }}>
+                    {selectedHistoryMeal.fitnessGoal 
+                      ? (selectedHistoryMeal.fitnessGoal.startsWith('Giáo án') || selectedHistoryMeal.fitnessGoal.startsWith('Nhu cầu') 
+                          ? selectedHistoryMeal.fitnessGoal 
+                          : `Nhu cầu: ${selectedHistoryMeal.fitnessGoal}`)
+                      : 'Tư vấn Dinh dưỡng'}
+                  </span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.78rem', color: '#64748b', display: 'block' }}>MỤC TIÊU NĂNG LƯỢNG TỐI ƯU:</span>
+                  <span style={{ fontSize: '0.92rem', fontWeight: 'bold', color: '#10b981' }}>
+                    {calculateHistoryCalories(selectedHistoryMeal)} Kcal / ngày
+                  </span>
+                </div>
+              </div>
+
+              {/* Meals Table/List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h4 style={{ margin: '0 0 4px 0', fontSize: '0.95rem', fontWeight: 'bold', color: '#334155' }}>
+                  <i className="fa-solid fa-utensils" style={{ marginRight: '8px', color: '#10b981' }}></i>
+                  Thực đơn bữa ăn chi tiết trong ngày:
+                </h4>
+                
+                {/* Breakfast */}
+                <div style={{
+                  display: 'flex',
+                  gap: '16px',
+                  padding: '14px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #f1f5f9',
+                  borderLeft: '4px solid #f59e0b',
+                  borderRadius: '8px'
+                }}>
+                  <div style={{ color: '#d97706', fontSize: '1.2rem', display: 'flex', alignItems: 'flex-start', paddingTop: '2px' }}>
+                    <i className="fa-solid fa-egg"></i>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <strong style={{ display: 'block', fontSize: '0.88rem', color: '#d97706', marginBottom: '4px' }}>Bữa Sáng:</strong>
+                    <p style={{ margin: 0, fontSize: '0.86rem', color: '#334155', lineHeight: '1.5' }}>
+                      {(() => {
+                        try {
+                          const parsed = JSON.parse(selectedHistoryMeal.recommendedSchedule);
+                          return parsed.breakfast;
+                        } catch (e) {
+                          return selectedHistoryMeal.recommendedSchedule;
+                        }
+                      })()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Lunch */}
+                <div style={{
+                  display: 'flex',
+                  gap: '16px',
+                  padding: '14px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #f1f5f9',
+                  borderLeft: '4px solid #10b981',
+                  borderRadius: '8px'
+                }}>
+                  <div style={{ color: '#059669', fontSize: '1.2rem', display: 'flex', alignItems: 'flex-start', paddingTop: '2px' }}>
+                    <i className="fa-solid fa-bowl-food"></i>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <strong style={{ display: 'block', fontSize: '0.88rem', color: '#059669', marginBottom: '4px' }}>Bữa Trưa:</strong>
+                    <p style={{ margin: 0, fontSize: '0.86rem', color: '#334155', lineHeight: '1.5' }}>
+                      {(() => {
+                        try {
+                          const parsed = JSON.parse(selectedHistoryMeal.recommendedSchedule);
+                          return parsed.lunch || 'Tham khảo chế độ dinh dưỡng';
+                        } catch (e) {
+                          return 'Tham khảo chế độ dinh dưỡng';
+                        }
+                      })()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Dinner */}
+                <div style={{
+                  display: 'flex',
+                  gap: '16px',
+                  padding: '14px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #f1f5f9',
+                  borderLeft: '4px solid #3b82f6',
+                  borderRadius: '8px'
+                }}>
+                  <div style={{ color: '#2563eb', fontSize: '1.2rem', display: 'flex', alignItems: 'flex-start', paddingTop: '2px' }}>
+                    <i className="fa-solid fa-fish"></i>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <strong style={{ display: 'block', fontSize: '0.88rem', color: '#2563eb', marginBottom: '4px' }}>Bữa Tối:</strong>
+                    <p style={{ margin: 0, fontSize: '0.86rem', color: '#334155', lineHeight: '1.5' }}>
+                      {(() => {
+                        try {
+                          const parsed = JSON.parse(selectedHistoryMeal.recommendedSchedule);
+                          return parsed.dinner || 'Liên hệ HLV hoặc AI tư vấn thêm';
+                        } catch (e) {
+                          return 'Liên hệ HLV hoặc AI tư vấn thêm';
+                        }
+                      })()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Snack / Drinks */}
+                <div style={{
+                  display: 'flex',
+                  gap: '16px',
+                  padding: '14px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #f1f5f9',
+                  borderLeft: '4px solid #8b5cf6',
+                  borderRadius: '8px'
+                }}>
+                  <div style={{ color: '#7c3aed', fontSize: '1.2rem', display: 'flex', alignItems: 'flex-start', paddingTop: '2px' }}>
+                    <i className="fa-solid fa-wine-glass-empty"></i>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <strong style={{ display: 'block', fontSize: '0.88rem', color: '#7c3aed', marginBottom: '4px' }}>Bữa Phụ & Uống:</strong>
+                    <p style={{ margin: 0, fontSize: '0.86rem', color: '#334155', lineHeight: '1.5' }}>
+                      {(() => {
+                        try {
+                          const parsed = JSON.parse(selectedHistoryMeal.recommendedSchedule);
+                          return parsed.snack_drinks || parsed.snack || 'Uống đủ nước, bổ sung khoáng chất';
+                        } catch (e) {
+                          return 'Uống đủ nước, bổ sung khoáng chất';
+                        }
+                      })()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Scientific Advice */}
+              {selectedHistoryMeal.recommendationDetail && (
+                <div style={{
+                  padding: '14px',
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderLeft: '4px solid #6366f1',
+                  borderRadius: '8px'
+                }}>
+                  <strong style={{ display: 'block', fontSize: '0.88rem', color: '#4f46e5', marginBottom: '6px' }}>
+                    <i className="fa-solid fa-lightbulb" style={{ marginRight: '6px' }}></i> Lời khuyên Khoa học từ AI:
+                  </strong>
+                  <p style={{ margin: 0, fontSize: '0.86rem', color: '#475569', lineHeight: '1.6', textAlign: 'justify' }}>
+                    {selectedHistoryMeal.recommendationDetail}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: '16px 24px',
+              borderTop: '1px solid #f1f5f9',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              background: '#f8fafc',
+              borderBottomLeftRadius: '16px',
+              borderBottomRightRadius: '16px'
+            }}>
+              <button
+                onClick={() => setSelectedHistoryMeal(null)}
+                style={{
+                  padding: '10px 24px',
+                  backgroundColor: '#64748b',
+                  border: 'none',
+                  color: '#ffffff',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#475569'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#64748b'; }}
+              >
+                Đóng
               </button>
             </div>
           </div>

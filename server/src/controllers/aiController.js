@@ -208,6 +208,7 @@ exports.getHistory = async (req, res) => {
         height: hCm,
         weight: item.weight,
         bmi: bmiVal,
+        fitnessGoal: item.fitness_goal,
         recommendedSport: item.recommended_sport,
         recommendedMembership: item.recommended_membership,
         recommendedSchedule: item.recommended_schedule,
@@ -706,9 +707,13 @@ Hãy trả về kết quả dưới định dạng JSON duy nhất, KHÔNG chứ
       gender: genderVal,
       height: heightInMeters,
       weight: weightVal,
-      fitness_goal: mode === 'pt_workout' ? 'Theo giáo án PT' : mode === 'workout' ? `Bài tập: ${sport}` : `Nhu cầu: ${goal}`,
-      recommended_sport: sport || (mode === 'workout' ? sport : ''),
-      recommended_membership: mode === 'pt_workout' ? 'PT Workout Mode' : mode === 'workout' ? 'Workout Mode' : 'Goal Mode',
+      fitness_goal: mode === 'pt_workout'
+        ? (activeWorkoutPlans && activeWorkoutPlans[0]
+            ? `Giáo án: ${activeWorkoutPlans[0].title} (${new Date(activeWorkoutPlans[0].created_at).toLocaleDateString('vi-VN')})`
+            : 'Theo giáo án PT')
+        : `Nhu cầu: ${goal}`,
+      recommended_sport: sport || '',
+      recommended_membership: mode === 'pt_workout' ? 'PT Workout Mode' : 'Goal Mode',
       recommended_schedule: JSON.stringify(advice.meals), // Store meals JSON string
       recommendation_detail: advice.scientific_advice // Store scientific advice
     });

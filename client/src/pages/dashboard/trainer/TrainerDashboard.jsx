@@ -268,14 +268,18 @@ function TrainerDashboard({
       let hasCurrentWorkout = false;
       if (member.workoutPlanId && member.workoutExercisesCount > 0 && isTodayOrFuture(member.workoutCreatedAt)) {
         hasCurrentWorkout = true;
-        let checkedCount = 0;
-        for (let idx = 0; idx < member.workoutExercisesCount; idx++) {
-          const key = `db-${member.workoutPlanId}-${idx}`;
-          if (completedExercises[key]) {
-            checkedCount++;
+        if (member.isCompleted) {
+          workoutPct = 100;
+        } else {
+          let checkedCount = 0;
+          for (let idx = 0; idx < member.workoutExercisesCount; idx++) {
+            const key = `db-${member.workoutPlanId}-${idx}`;
+            if (completedExercises[key]) {
+              checkedCount++;
+            }
           }
+          workoutPct = Math.round((checkedCount / member.workoutExercisesCount) * 100);
         }
-        workoutPct = Math.round((checkedCount / member.workoutExercisesCount) * 100);
       }
 
       return { workoutPct, mealPct: 0, completedExercises, completedMeals: {}, hasCurrentWorkout, currentMeals: [] };
@@ -930,6 +934,27 @@ function TrainerDashboard({
     setCustomWorkoutName('');
   };
 
+  const handleToggleMemberExercise = (memberId, planId, exerciseIdx) => {
+    try {
+      const key = `db-${planId}-${exerciseIdx}`;
+      const saved = localStorage.getItem(`member_progress_${memberId}`);
+      const parsed = saved ? JSON.parse(saved) : {};
+      const completedExercises = parsed.completedExercises || {};
+      
+      completedExercises[key] = !completedExercises[key];
+      
+      localStorage.setItem(`member_progress_${memberId}`, JSON.stringify({
+        ...parsed,
+        completedExercises
+      }));
+      
+      // Force refresh of the component state
+      setRefreshTrigger(prev => prev + 1);
+    } catch (e) {
+      console.error('Error toggling member exercise:', e);
+    }
+  };
+
   const handleFinishProgress = (member, progressData) => {
     if (!member) return;
 
@@ -967,6 +992,11 @@ function TrainerDashboard({
       })
       .then(data => {
         alert(data.message || 'Đã kết thúc tiến độ học viên thành công!');
+        try {
+          localStorage.removeItem(`member_progress_${member.id}`);
+        } catch (e) {
+          console.error('Error clearing member progress from localStorage:', e);
+        }
         setSelectedMember(null);
         reloadTrainerDashboardData();
       })
@@ -1335,26 +1365,32 @@ function TrainerDashboard({
                           <button
                             type="button"
                             className="trainer-btn-submit"
+                            disabled={progress.workoutPct < 100 || selectedMember.isCompleted}
                             style={{
                               padding: '10px',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               gap: '8px',
-                              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                              background: selectedMember.isCompleted
+                                ? '#e2e8f0'
+                                : progress.workoutPct < 100
+                                ? '#cbd5e1'
+                                : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                               border: 'none',
-                              color: '#fff',
+                              color: (progress.workoutPct < 100 || selectedMember.isCompleted) ? '#94a3b8' : '#fff',
                               borderRadius: '8px',
                               fontWeight: 'bold',
-                              cursor: 'pointer',
-                              boxShadow: '0 4px 10px rgba(16, 185, 129, 0.2)',
+                              cursor: (progress.workoutPct < 100 || selectedMember.isCompleted) ? 'not-allowed' : 'pointer',
+                              boxShadow: (progress.workoutPct < 100 || selectedMember.isCompleted) ? 'none' : '0 4px 10px rgba(16, 185, 129, 0.2)',
                               transition: 'transform 0.2s ease',
                               width: '100%',
                               margin: 0
                             }}
                             onClick={() => handleFinishProgress(selectedMember, progress)}
+                            title={selectedMember.isCompleted ? "Buổi tập đã hoàn thành & kết thúc" : progress.workoutPct < 100 ? "Cần hoàn thành 100% bài tập để kết thúc tiến độ" : "Kết thúc tiến độ giáo án"}
                           >
-                            <i className="fa-solid fa-circle-check"></i> Kết thúc tiến độ
+                            <i className="fa-solid fa-circle-check"></i> {selectedMember.isCompleted ? "Đã kết thúc tiến độ" : "Kết thúc tiến độ"}
                           </button>
                         </div>
                       </div>
@@ -2402,9 +2438,32 @@ function TrainerDashboard({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {selectedMember.workoutExercises && selectedMember.workoutExercises.length > 0 ? (
                         selectedMember.workoutExercises.map((ex, idx) => {
-                          const isDone = progress.completedExercises[`db-${selectedMember.workoutPlanId}-${idx}`];
+                          const isDone = selectedMember.isCompleted || progress.completedExercises[`db-${selectedMember.workoutPlanId}-${idx}`];
                           return (
-                            <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                            <div
+                              key={idx}
+                              onClick={() => {
+                                if (selectedMember.isCompleted) {
+                                  alert('Giáo án đã kết thúc tiến độ, không thể thay đổi!');
+                                  return;
+                                }
+                                handleToggleMemberExercise(selectedMember.id, selectedMember.workoutPlanId, idx);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '10px 12px',
+                                backgroundColor: '#fff',
+                                borderRadius: '8px',
+                                border: '1px solid #f1f5f9',
+                                cursor: 'pointer',
+                                transition: 'background-color 0.2s',
+                                userSelect: 'none'
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#fafafa'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#fff'; }}
+                            >
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
                                 <i className={isDone ? "fa-solid fa-circle-check" : "fa-regular fa-circle"} style={{ color: isDone ? '#10b981' : '#cbd5e1', fontSize: '1.15rem' }}></i>
                                 <div>
@@ -2431,15 +2490,56 @@ function TrainerDashboard({
                   )}
                 </div>
 
-
-
               </div>
 
-              <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ marginTop: '24px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+                {progress.hasCurrentWorkout && (
+                  <button
+                    type="button"
+                    disabled={progress.workoutPct < 100 || selectedMember.isCompleted}
+                    style={{
+                      padding: '10px 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      background: selectedMember.isCompleted
+                        ? '#e2e8f0'
+                        : progress.workoutPct < 100
+                        ? '#cbd5e1'
+                        : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      border: 'none',
+                      color: (progress.workoutPct < 100 || selectedMember.isCompleted) ? '#94a3b8' : '#fff',
+                      borderRadius: '8px',
+                      fontWeight: 'bold',
+                      cursor: (progress.workoutPct < 100 || selectedMember.isCompleted) ? 'not-allowed' : 'pointer',
+                      boxShadow: (progress.workoutPct < 100 || selectedMember.isCompleted) ? 'none' : '0 4px 10px rgba(16, 185, 129, 0.2)',
+                      transition: 'transform 0.2s ease',
+                      margin: 0,
+                      flex: 1
+                    }}
+                    onClick={() => {
+                      handleFinishProgress(selectedMember, progress);
+                      setShowProgressModal(false);
+                    }}
+                    title={selectedMember.isCompleted ? "Buổi tập đã hoàn thành & kết thúc" : progress.workoutPct < 100 ? "Cần hoàn thành 100% bài tập để kết thúc tiến độ" : "Kết thúc tiến độ giáo án"}
+                  >
+                    <i className="fa-solid fa-circle-check"></i> {selectedMember.isCompleted ? "Đã kết thúc tiến độ" : "Kết thúc tiến độ"}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="trainer-success-modal-btn"
-                  style={{ margin: 0, padding: '10px 24px' }}
+                  style={{
+                    margin: 0,
+                    padding: '10px 24px',
+                    flex: progress.hasCurrentWorkout ? 1 : 'none',
+                    width: progress.hasCurrentWorkout ? 'auto' : '120px',
+                    marginLeft: progress.hasCurrentWorkout ? '0' : 'auto',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
                   onClick={() => setShowProgressModal(false)}
                 >
                   Đóng

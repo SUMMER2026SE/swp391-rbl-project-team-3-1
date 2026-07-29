@@ -31,6 +31,8 @@ async function seedTemplates() {
           { "exercise_name": "Squat (Bodyweight)", "sets": 4, "reps": 15, "duration_minutes": 2, "calories_burned": 50, "rpe": 8 },
           { "exercise_name": "Plank giữ cơ bụng", "sets": 3, "reps": 1, "duration_minutes": 1, "calories_burned": 20, "rpe": 6 },
           { "exercise_name": "Burpees", "sets": 4, "reps": 15, "duration_minutes": 2, "calories_burned": 80, "rpe": 9 },
+          { "exercise_name": "Mountain Climbers (Leo núi)", "sets": 4, "reps": 30, "duration_minutes": 1, "calories_burned": 45, "rpe": 8 },
+          { "exercise_name": "Jumping Lunges", "sets": 3, "reps": 20, "duration_minutes": 2, "calories_burned": 55, "rpe": 8 },
           { "exercise_name": "Chạy nước rút (Sprint)", "sets": 3, "reps": 1, "duration_minutes": 1, "calories_burned": 60, "rpe": 9 }
         ]
       },
@@ -52,7 +54,21 @@ async function seedTemplates() {
         "exercises": [
           { "exercise_name": "Barbell Squat", "sets": 3, "reps": 5, "duration_minutes": 3, "calories_burned": 60, "rpe": 8 },
           { "exercise_name": "Barbell Deadlift", "sets": 3, "reps": 5, "duration_minutes": 4, "calories_burned": 80, "rpe": 9 },
-          { "exercise_name": "Barbell Bench Press", "sets": 3, "reps": 5, "duration_minutes": 3, "calories_burned": 50, "rpe": 8 }
+          { "exercise_name": "Barbell Bench Press", "sets": 3, "reps": 5, "duration_minutes": 3, "calories_burned": 50, "rpe": 8 },
+          { "exercise_name": "Barbell Overhead Press (Đẩy vai)", "sets": 3, "reps": 5, "duration_minutes": 3, "calories_burned": 45, "rpe": 8 },
+          { "exercise_name": "Barbell Row (Kéo lưng bụng)", "sets": 3, "reps": 5, "duration_minutes": 3, "calories_burned": 48, "rpe": 7 }
+        ]
+      },
+      {
+        "sport_type": "Gym",
+        "title": "Tập Bụng Core Săn Chắc",
+        "description": "Xây dựng cơ bụng khỏe mạnh và săn chắc vòng eo.",
+        "exercises": [
+          { "exercise_name": "Gập bụng cơ bản (Crunches)", "sets": 4, "reps": 20, "duration_minutes": 2, "calories_burned": 30, "rpe": 6 },
+          { "exercise_name": "Russian Twist", "sets": 4, "reps": 24, "duration_minutes": 2, "calories_burned": 35, "rpe": 7 },
+          { "exercise_name": "Nâng chân (Leg Raises)", "sets": 3, "reps": 15, "duration_minutes": 2, "calories_burned": 28, "rpe": 7 },
+          { "exercise_name": "Bicycle Crunches (Đạp xe)", "sets": 3, "reps": 20, "duration_minutes": 2, "calories_burned": 32, "rpe": 7 },
+          { "exercise_name": "Plank liên sườn (Side Plank)", "sets": 3, "reps": 1, "duration_minutes": 1, "calories_burned": 25, "rpe": 7 }
         ]
       },
       {
@@ -62,6 +78,8 @@ async function seedTemplates() {
         "exercises": [
           { "exercise_name": "Tư thế em bé (Child Pose)", "sets": 3, "reps": 1, "duration_minutes": 2, "calories_burned": 15, "rpe": 3 },
           { "exercise_name": "Tư thế chiến binh (Warrior Pose)", "sets": 3, "reps": 5, "duration_minutes": 2, "calories_burned": 25, "rpe": 5 },
+          { "exercise_name": "Tư thế chó úp mặt (Downward Dog)", "sets": 3, "reps": 1, "duration_minutes": 2, "calories_burned": 20, "rpe": 4 },
+          { "exercise_name": "Tư thế nhân sư (Sphinx Pose)", "sets": 3, "reps": 1, "duration_minutes": 2, "calories_burned": 18, "rpe": 3 },
           { "exercise_name": "Giãn cơ vai (Shoulder Stretch)", "sets": 3, "reps": 5, "duration_minutes": 2, "calories_burned": 20, "rpe": 4 }
         ]
       },
@@ -72,7 +90,21 @@ async function seedTemplates() {
         "exercises": [
           { "exercise_name": "Tư thế cây (Tree Pose)", "sets": 3, "reps": 1, "duration_minutes": 2, "calories_burned": 10, "rpe": 2 },
           { "exercise_name": "Tư thế tam giác (Triangle Pose)", "sets": 3, "reps": 5, "duration_minutes": 2, "calories_burned": 20, "rpe": 4 },
+          { "exercise_name": "Tư thế chiến binh III (Warrior III)", "sets": 3, "reps": 3, "duration_minutes": 2, "calories_burned": 22, "rpe": 6 },
+          { "exercise_name": "Tư thế ngồi thiền (Lotus Pose)", "sets": 1, "reps": 1, "duration_minutes": 5, "calories_burned": 8, "rpe": 1 },
           { "exercise_name": "Tư thế xác chết (Savasana)", "sets": 1, "reps": 1, "duration_minutes": 5, "calories_burned": 5, "rpe": 1 }
+        ]
+      },
+      {
+        "sport_type": "Yoga",
+        "title": "Yoga Trị Liệu Cột Sống",
+        "description": "Giảm đau lưng, tăng tính linh hoạt của cột sống và điều chỉnh tư thế.",
+        "exercises": [
+          { "exercise_name": "Tư thế Bò - Mèo (Cat-Cow)", "sets": 3, "reps": 10, "duration_minutes": 2, "calories_burned": 15, "rpe": 3 },
+          { "exercise_name": "Tư thế Cây Cầu (Bridge Pose)", "sets": 3, "reps": 8, "duration_minutes": 2, "calories_burned": 18, "rpe": 4 },
+          { "exercise_name": "Tư thế Vặn Mình (Spinal Twist)", "sets": 3, "reps": 6, "duration_minutes": 2, "calories_burned": 14, "rpe": 3 },
+          { "exercise_name": "Tư thế Rắn Hổ Mang Giãn (Cobra Stretch)", "sets": 3, "reps": 5, "duration_minutes": 2, "calories_burned": 16, "rpe": 4 },
+          { "exercise_name": "Tư thế Luồn Kim (Thread the Needle)", "sets": 3, "reps": 5, "duration_minutes": 2, "calories_burned": 12, "rpe": 3 }
         ]
       },
       {
@@ -80,9 +112,22 @@ async function seedTemplates() {
         "title": "Boxing Cardio Đốt Calo",
         "description": "Rèn luyện thể lực và phản xạ nhanh.",
         "exercises": [
+          { "exercise_name": "Nhảy dây khởi động (Warmup Jump Rope)", "sets": 3, "reps": 1, "duration_minutes": 3, "calories_burned": 45, "rpe": 5 },
           { "exercise_name": "Đấm thẳng (Jabs & Crosses)", "sets": 4, "reps": 50, "duration_minutes": 2, "calories_burned": 60, "rpe": 6 },
           { "exercise_name": "Đấm móc (Hooks & Uppercuts)", "sets": 4, "reps": 40, "duration_minutes": 2, "calories_burned": 70, "rpe": 7 },
+          { "exercise_name": "Đấm bao cát (Heavy Bag Work)", "sets": 3, "reps": 1, "duration_minutes": 3, "calories_burned": 85, "rpe": 8 },
           { "exercise_name": "Di chuyển tránh đòn (Slipping & Weaving)", "sets": 3, "reps": 30, "duration_minutes": 2, "calories_burned": 50, "rpe": 6 }
+        ]
+      },
+      {
+        "sport_type": "Boxing",
+        "title": "Boxing Kỹ Thuật Phản Xạ",
+        "description": "Phát triển tư duy chiến thuật và tốc độ né đấm tránh đòn.",
+        "exercises": [
+          { "exercise_name": "Đấm bóng phản xạ (Speed Bag)", "sets": 4, "reps": 1, "duration_minutes": 2, "calories_burned": 40, "rpe": 5 },
+          { "exercise_name": "Né đòn phối hợp (Shadow Boxing with Slip)", "sets": 4, "reps": 30, "duration_minutes": 2, "calories_burned": 55, "rpe": 6 },
+          { "exercise_name": "Đỡ đấm đích tay (Pad Work with Coach)", "sets": 3, "reps": 1, "duration_minutes": 3, "calories_burned": 75, "rpe": 7 },
+          { "exercise_name": "Phối hợp đấm né (Slip-Counter Combination)", "sets": 3, "reps": 20, "duration_minutes": 2, "calories_burned": 65, "rpe": 8 }
         ]
       },
       {
@@ -134,9 +179,13 @@ async function seedTemplates() {
         description: 'Workout Plan templates filtered by sport types'
       }
     });
-    if (!createdW) {
-      await workoutConfig.update({ config_value: JSON.stringify(workoutTemplates) });
-    }
+    // Force write raw Unicode to bypass TEXT non-unicode parameter binding of Sequelize
+    const escapedJson = JSON.stringify(workoutTemplates).replace(/'/g, "''");
+    await sequelize.query(`
+      UPDATE AppConfigs 
+      SET config_value = N'${escapedJson}' 
+      WHERE config_key = 'workout_templates'
+    `);
     console.log('✅ Workout templates initialized in AppConfigs');
   } catch (err) {
     console.error('❌ Error seeding templates:', err);

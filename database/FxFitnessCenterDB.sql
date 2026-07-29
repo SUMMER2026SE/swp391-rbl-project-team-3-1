@@ -438,9 +438,9 @@ INSERT INTO dbo.[MembershipPlans] ([membership_plan_id], [plan_name], [sport_typ
 INSERT INTO dbo.[MembershipPlans] ([membership_plan_id], [plan_name], [sport_type], [duration_months], [price], [description], [status]) VALUES (12, N'Boxing 3 Tháng', N'Boxing', 3, 4000000, N'Truy cập phòng Boxing. Tặng 2 buổi PT Boxing miễn phí (không chọn PT).', N'Active');
 INSERT INTO dbo.[MembershipPlans] ([membership_plan_id], [plan_name], [sport_type], [duration_months], [price], [description], [status]) VALUES (13, N'Boxing 6 Tháng', N'Boxing', 6, 7500000, N'Truy cập phòng Boxing. Tặng 2 buổi PT Boxing miễn phí (không chọn PT).', N'Active');
 INSERT INTO dbo.[MembershipPlans] ([membership_plan_id], [plan_name], [sport_type], [duration_months], [price], [description], [status]) VALUES (14, N'Boxing 12 Tháng', N'Boxing', 12, 15000, N'Trở thành phiên bản mạnh mẽ nhất của chính mình.', N'Active');
-INSERT INTO dbo.[MembershipPlans] ([membership_plan_id], [plan_name], [sport_type], [duration_months], [price], [description], [status]) VALUES (15, N'Zumba 3 Tháng', N'Mixed', 3, 5000, N'L?p h?c Zumba sôi d?ng gi?i phóng nang lu?ng co th?.', N'Inactive');
-INSERT INTO dbo.[MembershipPlans] ([membership_plan_id], [plan_name], [sport_type], [duration_months], [price], [description], [status]) VALUES (16, N'Zumba 6 Tháng', N'Mixed', 6, 10000, N'L?p h?c Zumba trung c?p cùng các HLV hàng d?u.', N'Inactive');
-INSERT INTO dbo.[MembershipPlans] ([membership_plan_id], [plan_name], [sport_type], [duration_months], [price], [description], [status]) VALUES (17, N'Zumba 12 Tháng', N'Mixed', 12, 15000, N'Hành trình 1 nam Zumba r?c r? và tràn d?y ni?m vui.', N'Inactive');
+INSERT INTO dbo.[MembershipPlans] ([membership_plan_id], [plan_name], [sport_type], [duration_months], [price], [description], [status]) VALUES (15, N'Zumba 3 Tháng', N'Mixed', 3, 5000, N'Lớp học Zumba sôi động giải phóng năng lượng cơ thể.', N'Inactive');
+INSERT INTO dbo.[MembershipPlans] ([membership_plan_id], [plan_name], [sport_type], [duration_months], [price], [description], [status]) VALUES (16, N'Zumba 6 Tháng', N'Mixed', 6, 10000, N'Lớp học Zumba trung cấp cùng các HLV hàng đầu.', N'Inactive');
+INSERT INTO dbo.[MembershipPlans] ([membership_plan_id], [plan_name], [sport_type], [duration_months], [price], [description], [status]) VALUES (17, N'Zumba 12 Tháng', N'Mixed', 12, 15000, N'Hành trình 1 năm Zumba rực rỡ và tràn đầy niềm vui.', N'Inactive');
 SET IDENTITY_INSERT dbo.[MembershipPlans] OFF;
 GO
 
