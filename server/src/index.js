@@ -108,29 +108,6 @@ async function seedTemplates() {
         ]
       },
       {
-        "sport_type": "Boxing",
-        "title": "Boxing Cardio Đốt Calo",
-        "description": "Rèn luyện thể lực và phản xạ nhanh.",
-        "exercises": [
-          { "exercise_name": "Nhảy dây khởi động (Warmup Jump Rope)", "sets": 3, "reps": 1, "duration_minutes": 3, "calories_burned": 45, "rpe": 5 },
-          { "exercise_name": "Đấm thẳng (Jabs & Crosses)", "sets": 4, "reps": 50, "duration_minutes": 2, "calories_burned": 60, "rpe": 6 },
-          { "exercise_name": "Đấm móc (Hooks & Uppercuts)", "sets": 4, "reps": 40, "duration_minutes": 2, "calories_burned": 70, "rpe": 7 },
-          { "exercise_name": "Đấm bao cát (Heavy Bag Work)", "sets": 3, "reps": 1, "duration_minutes": 3, "calories_burned": 85, "rpe": 8 },
-          { "exercise_name": "Di chuyển tránh đòn (Slipping & Weaving)", "sets": 3, "reps": 30, "duration_minutes": 2, "calories_burned": 50, "rpe": 6 }
-        ]
-      },
-      {
-        "sport_type": "Boxing",
-        "title": "Boxing Kỹ Thuật Phản Xạ",
-        "description": "Phát triển tư duy chiến thuật và tốc độ né đấm tránh đòn.",
-        "exercises": [
-          { "exercise_name": "Đấm bóng phản xạ (Speed Bag)", "sets": 4, "reps": 1, "duration_minutes": 2, "calories_burned": 40, "rpe": 5 },
-          { "exercise_name": "Né đòn phối hợp (Shadow Boxing with Slip)", "sets": 4, "reps": 30, "duration_minutes": 2, "calories_burned": 55, "rpe": 6 },
-          { "exercise_name": "Đỡ đấm đích tay (Pad Work with Coach)", "sets": 3, "reps": 1, "duration_minutes": 3, "calories_burned": 75, "rpe": 7 },
-          { "exercise_name": "Phối hợp đấm né (Slip-Counter Combination)", "sets": 3, "reps": 20, "duration_minutes": 2, "calories_burned": 65, "rpe": 8 }
-        ]
-      },
-      {
         "sport_type": "Gym",
         "title": "Upper Body (Cơ Thân Trên)",
         "description": "Phát triển nhóm cơ ngực, lưng, vai và bắp tay săn chắc.",
@@ -158,16 +135,6 @@ async function seedTemplates() {
           { "exercise_name": "Chào mặt trời A (Sun Salutation A)", "sets": 3, "reps": 1, "duration_minutes": 3, "calories_burned": 30, "rpe": 5 },
           { "exercise_name": "Tư thế rắn hổ mang (Cobra Pose)", "sets": 3, "reps": 5, "duration_minutes": 2, "calories_burned": 15, "rpe": 4 },
           { "exercise_name": "Tư thế chiến binh II (Warrior II)", "sets": 3, "reps": 5, "duration_minutes": 2, "calories_burned": 25, "rpe": 5 }
-        ]
-      },
-      {
-        "sport_type": "Boxing",
-        "title": "Boxing Footwork & Tốc Độ",
-        "description": "Rèn luyện di chuyển bộ chân linh hoạt và tung các tổ hợp đấm nhanh liên hoàn.",
-        "exercises": [
-          { "exercise_name": "Di chuyển bộ chân (Footwork drills)", "sets": 4, "reps": 1, "duration_minutes": 3, "calories_burned": 55, "rpe": 6 },
-          { "exercise_name": "Tổ hợp đấm 1-2 (Jab-Cross Combo)", "sets": 5, "reps": 30, "duration_minutes": 2, "calories_burned": 65, "rpe": 7 },
-          { "exercise_name": "Nhảy dây tốc độ cao (Speed Rope)", "sets": 3, "reps": 1, "duration_minutes": 2, "calories_burned": 50, "rpe": 8 }
         ]
       }
     ];

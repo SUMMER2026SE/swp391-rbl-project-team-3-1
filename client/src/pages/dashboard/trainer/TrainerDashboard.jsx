@@ -73,6 +73,76 @@ function TrainerDashboard({
   const [profileSuccessMsg, setProfileSuccessMsg] = useState('');
   const [profileErrorMsg, setProfileErrorMsg] = useState('');
 
+  // --- QR Code check-in states ---
+  const [trainerQrCodeUrl, setTrainerQrCodeUrl] = useState('');
+  const [isQrLoading, setIsQrLoading] = useState(false);
+  const [regenerateModalOpen, setRegenerateModalOpen] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [regenerateError, setRegenerateError] = useState('');
+  const [regenerateSuccess, setRegenerateSuccess] = useState('');
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  const fetchTrainerQrCode = async () => {
+    if (!token) return;
+    setIsQrLoading(true);
+    try {
+      const res = await fetch('/api/dashboard/trainer/checkin/qr-code', {
+        headers: {
+          Authorization: 'Bearer ' + token
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.qrCodeUrl) {
+        setTrainerQrCodeUrl(data.qrCodeUrl);
+      } else {
+        console.error('Error fetching trainer QR:', data.message);
+      }
+    } catch (err) {
+      console.error('Error fetching trainer QR:', err);
+    } finally {
+      setIsQrLoading(false);
+    }
+  };
+
+  const handleRegenerateQr = async () => {
+    if (!token) return;
+    setRegenerateError('');
+    setRegenerateSuccess('');
+    setIsRegenerating(true);
+    try {
+      const res = await fetch('/api/dashboard/trainer/checkin/qr-code/regenerate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token
+        },
+        body: JSON.stringify({ password: confirmPassword })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setRegenerateSuccess(data.message || 'Cấp lại mã QR thành công!');
+        setTrainerQrCodeUrl(data.qrCodeUrl);
+        setConfirmPassword('');
+        setTimeout(() => {
+          setRegenerateModalOpen(false);
+          setRegenerateSuccess('');
+        }, 1500);
+      } else {
+        setRegenerateError(data.message || 'Cấp lại mã QR thất bại!');
+      }
+    } catch (err) {
+      setRegenerateError('Lỗi kết nối máy chủ!');
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'qrcode') {
+      fetchTrainerQrCode();
+    }
+  }, [activeTab]);
+
   // Password change states
   const [cpwOld, setCpwOld] = useState('');
   const [cpwNew, setCpwNew] = useState('');
@@ -2221,6 +2291,58 @@ function TrainerDashboard({
           </div>
         );
 
+      case 'qrcode':
+        return (
+          <div className="trainer-card-panel" style={{ maxWidth: '480px', margin: '0 auto', textAlign: 'center', padding: '30px' }}>
+            <h3 className="trainer-card-title" style={{ marginBottom: '10px' }}>Mã QR Check-in của tôi</h3>
+            <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '24px', fontFamily: '"Be Vietnam Pro", sans-serif' }}>
+              Trình mã QR này cho lễ tân để quét điểm danh khi vào ca hoặc ra ca làm việc.
+            </p>
+            
+            {/* QR Image Display */}
+            <div style={{ margin: '30px 0' }}>
+              {isQrLoading ? (
+                <div style={{ padding: '40px 0' }}>
+                  <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: '2.5rem', color: 'var(--orange)' }}></i>
+                  <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '12px' }}>Đang tải mã QR...</p>
+                </div>
+              ) : trainerQrCodeUrl ? (
+                <div style={{ display: 'inline-block', padding: '16px', backgroundColor: '#fff', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+                  <img src={trainerQrCodeUrl} alt="Trainer QR Code" style={{ width: '220px', height: '220px', display: 'block' }} />
+                </div>
+              ) : (
+                <p style={{ color: '#ef4444', fontSize: '0.88rem' }}>Không thể tải mã QR!</p>
+              )}
+            </div>
+
+            {/* Regenerate Button */}
+            <button
+              type="button"
+              onClick={() => setRegenerateModalOpen(true)}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, #475569, #334155)',
+                color: '#ffffff',
+                border: 'none',
+                fontWeight: '700',
+                fontSize: '0.95rem',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(71,85,105,0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.2s',
+                marginTop: '10px'
+              }}
+            >
+              <i className="fa-solid fa-arrows-rotate"></i> Cấp lại mã QR mới
+            </button>
+          </div>
+        );
+
       default:
         return <div>Vui lòng chọn tab hợp lệ.</div>;
     }
@@ -2319,6 +2441,15 @@ function TrainerDashboard({
                 onClick={() => setActiveTab('chat')}
               >
                 <i className="fa-solid fa-comments"></i> Chat
+              </button>
+            </li>
+
+            <li>
+              <button
+                className={`trainer-menu-item ${activeTab === 'qrcode' ? 'active' : ''}`}
+                onClick={() => setActiveTab('qrcode')}
+              >
+                <i className="fa-solid fa-qrcode"></i> Mã Check-in
               </button>
             </li>
 
@@ -2781,6 +2912,131 @@ function TrainerDashboard({
                 }}
               >
                 {isTrainerCancelSubmitting ? 'Đang gửi...' : 'Gửi yêu cầu'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── PT CONFIRM PASSWORD MODAL FOR QR REGENERATION ── */}
+      {regenerateModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 99999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '380px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            padding: '24px',
+            position: 'relative',
+            boxSizing: 'border-box'
+          }}>
+            <button
+              type="button"
+              onClick={() => {
+                setRegenerateModalOpen(false);
+                setConfirmPassword('');
+                setRegenerateError('');
+                setRegenerateSuccess('');
+              }}
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                background: 'none',
+                border: 'none',
+                fontSize: '1.25rem',
+                cursor: 'pointer',
+                color: '#64748b'
+              }}
+            >
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '1.2rem', fontWeight: '800', color: '#0f172a', textAlign: 'center' }}>
+              XÁC NHẬN MẬT KHẨU
+            </h3>
+            <p style={{ margin: '0 0 20px 0', fontSize: '0.85rem', color: '#64748b', textAlign: 'center', lineHeight: '1.5' }}>
+              Vui lòng nhập mật khẩu hiện tại để xác nhận cấp lại mã QR mới. Mã QR cũ sẽ bị vô hiệu hóa ngay lập tức.
+            </p>
+            <input
+              type="password"
+              placeholder="Nhập mật khẩu của bạn"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                borderRadius: '10px',
+                border: '1.5px solid #e2e8f0',
+                fontSize: '0.9rem',
+                marginBottom: '15px',
+                boxSizing: 'border-box'
+              }}
+            />
+
+            {regenerateError && (
+              <div style={{ color: '#dc2626', backgroundColor: '#fef2f2', border: '1px solid #fca5a5', padding: '10px', borderRadius: '8px', fontSize: '0.8rem', marginBottom: '15px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <i className="fa-solid fa-circle-exclamation"></i> {regenerateError}
+              </div>
+            )}
+
+            {regenerateSuccess && (
+              <div style={{ color: '#16a34a', backgroundColor: '#f0fdf4', border: '1px solid #86efac', padding: '10px', borderRadius: '8px', fontSize: '0.8rem', marginBottom: '15px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <i className="fa-solid fa-circle-check"></i> {regenerateSuccess}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setRegenerateModalOpen(false);
+                  setConfirmPassword('');
+                  setRegenerateError('');
+                }}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '10px',
+                  backgroundColor: '#f1f5f9',
+                  border: 'none',
+                  color: '#475569',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={isRegenerating || !confirmPassword}
+                onClick={handleRegenerateQr}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, var(--orange), #ef4444)',
+                  border: 'none',
+                  color: '#fff',
+                  fontWeight: '700',
+                  cursor: (!confirmPassword || isRegenerating) ? 'not-allowed' : 'pointer',
+                  opacity: (!confirmPassword || isRegenerating) ? 0.7 : 1
+                }}
+              >
+                {isRegenerating ? 'Đang xử lý...' : 'Xác nhận'}
               </button>
             </div>
           </div>

@@ -643,7 +643,6 @@ Chế độ tư vấn thực đơn do hội viên yêu cầu:
 Yêu cầu thực đơn:
 1. Thực đơn phải hoàn toàn thực tế với các nguyên liệu dễ kiếm, phổ biến tại Việt Nam.
 2. Phải phù hợp logic:
-   - Nếu là Boxing: Cần chế độ ăn dồi dào năng lượng (Carb hấp thu nhanh trước tập và Protein phục hồi), hỗ trợ sự bùng nổ cơ bắp và bù nước/khoáng.
    - Nếu là Yoga: Cần chế độ ăn thanh lọc, giàu chất xơ, vitamin, các thực phẩm lành mạnh (Plant-based, chất béo tốt như hạt, bơ) giúp cơ thể dẻo dai nhẹ nhàng.
    - Nếu là Gym: Cần giàu Protein để phát triển cơ bắp, chia nhỏ các bữa ăn khoa học.
    - Nếu là Tăng cơ: Thặng dư Calo nhẹ, protein cao (1.8g - 2.2g/kg), carb phức hợp.
@@ -827,7 +826,7 @@ function getRuleBasedMealPlan({ age, gender, height, weight, bmi, mode, sport, g
       "2 quả trứng luộc lòng đào thơm ngậy bùi."
     ]);
     scientific_advice = `Chỉ số BMI của bạn là ${bmi}. Với mục tiêu tăng cơ bắp và rèn luyện Gym kháng lực, thực đơn này cung cấp thặng dư calo nhẹ và nạp protein chất lượng cao để kích thích tổng hợp protein trong cơ. Các nguồn carb phức hợp từ gạo lứt và khoai lang giúp duy trì năng lượng bền vững cho các buổi tập nâng tạ nặng mà PT giao cho bạn.`;
-  } else if (selectedOption.includes('giảm mỡ') || selectedOption.includes('boxing')) {
+  } else if (selectedOption.includes('giảm mỡ')) {
     target_calories = Math.round(tdee - 350);
     macro_protein_pct = 35;
     macro_carbs_pct = 35;
@@ -853,7 +852,7 @@ function getRuleBasedMealPlan({ age, gender, height, weight, bmi, mode, sport, g
       "1 quả dưa chuột thái lát ăn kèm 1 cốc trà xanh thanh mát.",
       "1/2 quả bưởi da xanh mọng nước giúp tiêu hóa tốt."
     ]);
-    scientific_advice = `Chỉ số BMI của bạn là ${bmi}. Thực đơn được tối ưu hóa thâm hụt calo lành mạnh giúp đốt cháy mỡ thừa hiệu quả đồng thời bảo toàn khối lượng cơ nạc. Hàm lượng protein cao hỗ trợ đẩy mạnh quá trình trao đổi chất và tăng cảm giác no lâu, giúp bạn tập luyện boxing hay cardio cường độ cao bền bỉ hơn.`;
+    scientific_advice = `Chỉ số BMI của bạn là ${bmi}. Thực đơn được tối ưu hóa thâm hụt calo lành mạnh giúp đốt cháy mỡ thừa hiệu quả đồng thời bảo toàn khối lượng cơ nạc. Hàm lượng protein cao hỗ trợ đẩy mạnh quá trình trao đổi chất và tăng cảm giác no lâu, giúp bạn tập luyện cardio cường độ cao bền bỉ hơn.`;
   } else if (selectedOption.includes('dẻo dai') || selectedOption.includes('yoga')) {
     target_calories = Math.round(tdee - 100);
     macro_protein_pct = 20;

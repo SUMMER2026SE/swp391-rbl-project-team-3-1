@@ -38,6 +38,24 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       defaultValue: true
     },
+    status: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      defaultValue: 'active'
+    },
+    purchase_date: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: Sequelize.Sequelize.fn('getdate')
+    },
+    activation_date: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    expiry_date: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,

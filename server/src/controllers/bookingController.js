@@ -3,6 +3,7 @@ const { validateBooking } = require('../services/bookingValidator');
 const { SHIFT_DEFINITIONS } = require('../constants/shifts');
 const { broadcastSSE } = require('./dashboardController');
 const { Op } = require('sequelize');
+const { checkAndActivatePendingPackages } = require('./checkoutController');
 
 // Helper to convert date to YYYY-MM-DD
 const formatDate = (d) => {
@@ -21,8 +22,11 @@ exports.getMemberTrainerPackages = async (req, res) => {
       return res.status(404).json({ message: 'Hồ sơ hội viên không tồn tại.' });
     }
 
+    // Chạy kiểm tra & kích hoạt gói hàng đợi trước khi trả về danh sách
+    await checkAndActivatePendingPackages(member.member_id);
+
     let packages = await models.MemberTrainerPackages.findAll({
-      where: { member_id: member.member_id, is_active: true },
+      where: { member_id: member.member_id, status: 'active' },
       include: [
         {
           model: models.Trainers,
@@ -182,9 +186,12 @@ exports.createBooking = async (req, res) => {
       return res.status(404).json({ message: 'Hồ sơ hội viên không tồn tại.' });
     }
 
+    // Chạy kiểm tra & kích hoạt hàng đợi trước khi tạo booking
+    await checkAndActivatePendingPackages(member.member_id);
+
     // Lấy package
     const trainerPackage = await models.MemberTrainerPackages.findOne({
-      where: { member_id: member.member_id, trainer_id: trainerId, is_active: true }
+      where: { member_id: member.member_id, trainer_id: trainerId, status: 'active' }
     });
 
     // Lấy off requests & bookings của PT để validate
@@ -419,7 +426,7 @@ exports.approveBooking = async (req, res) => {
 
     // Lấy package để cập nhật và trừ buổi
     const trainerPackage = await models.MemberTrainerPackages.findOne({
-      where: { member_id: booking.member_id, trainer_id: trainer.trainer_id, is_active: true },
+      where: { member_id: booking.member_id, trainer_id: trainer.trainer_id, status: 'active' },
       transaction: t
     });
 
@@ -436,11 +443,22 @@ exports.approveBooking = async (req, res) => {
 
     // Thực hiện trừ buổi tập
     trainerPackage.used_sessions += 1;
+    
+    // Nếu dùng hết số buổi, tự động hết hạn luôn để kích hoạt gói tiếp theo
+    if (trainerPackage.used_sessions >= trainerPackage.total_sessions) {
+        trainerPackage.status = 'expired';
+        trainerPackage.is_active = false;
+        console.log(`[PT QUEUE] Gói PT ID ${trainerPackage.package_id} đã dùng hết số buổi (${trainerPackage.used_sessions}/${trainerPackage.total_sessions}). Tự động đổi trạng thái sang 'expired'.`);
+    }
+    
     await trainerPackage.save({ transaction: t });
 
     // Cập nhật trạng thái booking
     booking.status = 'Approved';
     await booking.save({ transaction: t });
+
+    // Lazy check & kích hoạt tiếp gói pending trong hàng đợi
+    await checkAndActivatePendingPackages(booking.member_id, t);
 
     await t.commit();
 

@@ -9,7 +9,8 @@
     "create-admin": "node scripts/createAdmin.js",
     "db:init": "node scripts/initDatabase.js",
     "migrate": "sequelize-cli db:migrate",
-    "migrate:undo": "sequelize-cli db:migrate:undo"
+    "migrate:undo": "sequelize-cli db:migrate:undo",
+    "seed": "node src/seeders/seedAll.js"
   },
   "keywords": [],
   "author": "",

@@ -52,8 +52,8 @@ function App() {
     if (currentPath === '/login') return <LoginPage />;
     if (currentPath === '/checkout') return <CheckoutPage />;
     if (currentPath === '/pt-details') return <PTDetailPage />;
-    if (currentPath === '/detail/gym') return <GymDetail />;
-    if (currentPath === '/detail/yoga') return <YogaDetail />;
+    if (currentPath === '/services/gym') return <GymDetail />;
+    if (currentPath === '/services/yoga') return <YogaDetail />;
     if (currentPath === '/detail/pt') return <PtDetail />;
     if (currentPath === '/public-checkin') return <PublicCheckinPage />;
     

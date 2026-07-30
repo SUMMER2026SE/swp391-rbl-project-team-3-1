@@ -77,6 +77,16 @@ router.post('/admin/checkin/perform', dashboardController.performCheckIn);
 router.get('/admin/checkins', dashboardController.getAdminCheckIns);
 router.get('/member/checkins', dashboardController.getMemberCheckIns);
 router.get('/member/checkin/status', dashboardController.getMemberCheckInStatus);
-router.post('/member/checkin/send-qr', dashboardController.sendCheckinQr);
+
+// QR Code endpoints for Member
+router.get('/member/checkin/qr-code', dashboardController.getMemberQrCode);
+router.post('/member/checkin/qr-code/regenerate', dashboardController.regenerateMemberQrCode);
+
+// QR Code endpoints for Trainer
+router.get('/trainer/checkin/qr-code', dashboardController.getTrainerQrCode);
+router.post('/trainer/checkin/qr-code/regenerate', dashboardController.regenerateTrainerQrCode);
+
+// Admin scanning endpoint
+router.post('/admin/checkin/scan', dashboardController.performQrScan);
 
 module.exports = router;

@@ -372,8 +372,6 @@ exports.getWorkoutTemplates = async (req, res) => {
                 const trainerSpec = (trainer.specialization || '').toLowerCase();
                 if (trainerSpec.includes('yoga')) {
                     sportFilter = 'Yoga';
-                } else if (trainerSpec.includes('boxing')) {
-                    sportFilter = 'Boxing';
                 } else if (trainerSpec.includes('fitness') || trainerSpec.includes('bodybuilding') || trainerSpec.includes('gym')) {
                     sportFilter = 'Gym';
                 } else {
@@ -393,7 +391,6 @@ exports.getWorkoutTemplates = async (req, res) => {
             if (member && member.MemberMemberships && member.MemberMemberships.length > 0) {
                 const sport = (member.MemberMemberships[0].membership_plan?.sport_type || '').toLowerCase();
                 if (sport.includes('yoga')) sportFilter = 'Yoga';
-                else if (sport.includes('boxing')) sportFilter = 'Boxing';
                 else if (sport.includes('gym')) sportFilter = 'Gym';
             }
         }

@@ -93,6 +93,11 @@ function CheckoutPage() {
   const [isServiceOnly, setIsServiceOnly] = useState(false);
   const [addPTRequested, setAddPTRequested] = useState(false);
 
+  // PT monthly package selection states
+  const [ptPackages, setPtPackages] = useState([]);
+  const [selectedPtPackage, setSelectedPtPackage] = useState(null);
+  const [selectedPtDuration, setSelectedPtDuration] = useState(1); // default 1 month
+
   // ── Trainer Detail Popup states ───────────────────────────────────
   const [trainerPopup, setTrainerPopup] = useState(null);       // trainer object to display
   const [trainerSchedule, setTrainerSchedule] = useState([]);   // schedule slots
@@ -225,6 +230,30 @@ function CheckoutPage() {
         }
       })
       .catch(() => {});
+
+    // 4. Load PT monthly subscription packages catalog
+    fetch('/api/checkout/pt-packages')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.success && data.packages) {
+          setPtPackages(data.packages);
+
+          const urlParams = new URLSearchParams(window.location.search);
+          const ptPackId = urlParams.get('ptPackage');
+          const ptDur = urlParams.get('ptDuration');
+
+          if (ptPackId) {
+            const matchedPkg = data.packages.find(p => String(p.id) === ptPackId);
+            if (matchedPkg) {
+              setSelectedPtPackage(matchedPkg);
+            }
+          }
+          if (ptDur) {
+            setSelectedPtDuration(parseInt(ptDur) || 1);
+          }
+        }
+      })
+      .catch(err => console.error('Error fetching PT packages catalog at checkout:', err));
   }, [isLoggedIn]);
 
   // Listen to auth changes
@@ -250,7 +279,7 @@ function CheckoutPage() {
   }, [otpCountdown]);
 
   useEffect(() => {
-    if (step !== 2 || (!selectedPlan && selectedServices.length === 0)) return;
+    if (step !== 2 || (!selectedPlan && selectedServices.length === 0 && !selectedPtPackage)) return;
 
     const createPayosPayment = async () => {
       setAlert({ show: false, msg: '', type: 'error' });
@@ -265,7 +294,9 @@ function CheckoutPage() {
           body: JSON.stringify({ 
             planId: selectedPlan?.planId || null,
             services: selectedServices,
-            couponCode: couponApplied ? appliedCouponCode : null
+            couponCode: couponApplied ? appliedCouponCode : null,
+            ptPackageId: selectedPtPackage?.id || null,
+            ptDurationMonths: selectedPtDuration
           })
         });
         const data = await res.json();
@@ -273,17 +304,17 @@ function CheckoutPage() {
         if (res.ok && data.payment) {
           setPayosPayment(data.payment);
         } else {
-          setAlert({ show: true, msg: data.message || 'Khong the tao thanh toan payOS!', type: 'error' });
+          setAlert({ show: true, msg: data.message || 'Không thể tạo thanh toán PayOS!', type: 'error' });
         }
       } catch {
-        setAlert({ show: true, msg: 'Khong the ket noi toi payOS!', type: 'error' });
+        setAlert({ show: true, msg: 'Không thể kết nối tới PayOS!', type: 'error' });
       } finally {
         setIsCreatingPayment(false);
       }
     };
 
     createPayosPayment();
-  }, [step, selectedPlan, selectedServices, couponApplied, appliedCouponCode]);
+  }, [step, selectedPlan, selectedServices, couponApplied, appliedCouponCode, selectedPtPackage, selectedPtDuration]);
 
   // ── Navigation helpers ─────────────────────────────────────────────
   const goHome = () => {
@@ -310,7 +341,9 @@ function CheckoutPage() {
           trainerId: selectedTrainer?.userId || null,
           services: selectedServices,
           payosOrderCode: payosPayment?.orderCode,
-          couponCode: couponApplied ? appliedCouponCode : null
+          couponCode: couponApplied ? appliedCouponCode : null,
+          ptPackageId: selectedPtPackage?.id || null,
+          ptDurationMonths: selectedPtDuration
         })
       });
       const data = await res.json();
@@ -818,6 +851,27 @@ function CheckoutPage() {
                   </div>
                 </div>
               )}
+
+              {/* Previous Clients & Results */}
+              <div className="tpm-section">
+                <h3 className="tpm-section-title"><i className="fa-solid fa-trophy"></i> Khách Hàng Tiêu Biểu & Kết Quả</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '12px' }}>
+                  <div style={{ background: 'rgba(249,115,22,0.04)', border: '1px solid rgba(249,115,22,0.15)', borderRadius: '8px', padding: '12px' }}>
+                    <div style={{ fontWeight: 'bold', color: 'var(--orange)', fontSize: '0.88rem', marginBottom: '4px' }}>Hội viên: Nguyễn Minh Anh</div>
+                    <div style={{ fontSize: '0.84rem', color: '#475569', lineHeight: '1.4' }}>
+                      <i className="fa-solid fa-fire" style={{ color: 'var(--orange)', marginRight: '6px' }}></i>
+                      <strong>Giảm 8.2kg mỡ thừa</strong>, thu gọn 10cm vòng eo sau 12 tuần tập luyện chuyên sâu.
+                    </div>
+                  </div>
+                  <div style={{ background: 'rgba(249,115,22,0.04)', border: '1px solid rgba(249,115,22,0.15)', borderRadius: '8px', padding: '12px' }}>
+                    <div style={{ fontWeight: 'bold', color: 'var(--orange)', fontSize: '0.88rem', marginBottom: '4px' }}>Hội viên: Lê Hoàng Nam</div>
+                    <div style={{ fontSize: '0.84rem', color: '#475569', lineHeight: '1.4' }}>
+                      <i className="fa-solid fa-chart-line" style={{ color: 'var(--orange)', marginRight: '6px' }}></i>
+                      <strong>Tăng 3.5kg cơ nạc</strong>, cải thiện hoàn toàn tư thế lệch vai và gù lưng.
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               {/* Schedule Calendar */}
               <div className="tpm-section">
@@ -1644,6 +1698,22 @@ function CheckoutPage() {
                 </div>
               )}
 
+              {selectedPtPackage && (
+                <>
+                  <div className="pay-divider"></div>
+                  <div className="pay-row">
+                    <span className="label">Gói PT:</span>
+                    <span className="value" style={{ color: 'var(--orange)', fontWeight: 'bold' }}>
+                      {selectedPtPackage.name} ({selectedPtDuration} Tháng)
+                    </span>
+                  </div>
+                  <div className="pay-row">
+                    <span className="label">Giá gói PT:</span>
+                    <span className="value" style={{ color: 'var(--orange)' }}>+{fmt(ptPrice)}</span>
+                  </div>
+                </>
+              )}
+
               <div className="pay-divider"></div>
 
               {selectedServices.length > 0 && (
@@ -1721,7 +1791,7 @@ function CheckoutPage() {
               {step === 1 && (
                 <button
                   className="btn-confirm-pay"
-                  disabled={!selectedPlan && selectedServices.length === 0}
+                  disabled={!selectedPlan && selectedServices.length === 0 && !selectedPtPackage}
                   onClick={() => setStep(2)}
                 >
                   <i className="fa-solid fa-arrow-right"></i>

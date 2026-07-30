@@ -50,6 +50,7 @@ function AdminDashboard({ token, userInfo, logout }) {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const animFrameRef = useRef(null);
+  const isScanDisabledRef = useRef(false);
 
   const isAppointmentPast = (ap) => {
     if (!ap) return false;
@@ -124,7 +125,7 @@ function AdminDashboard({ token, userInfo, logout }) {
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [paymentFilterType, setPaymentFilterType] = useState('ALL'); // ALL, DAY, MONTH, YEAR
   const [paymentFilterValue, setPaymentFilterValue] = useState(''); // Value for the filter (e.g. '2026-06-17')
-  const [trainerSpecialtyFilter, setTrainerSpecialtyFilter] = useState('ALL'); // ALL, Yoga, Gym, Boxing
+  const [trainerSpecialtyFilter, setTrainerSpecialtyFilter] = useState('ALL'); // ALL, Yoga, Gym
   const [trainerSortKey, setTrainerSortKey] = useState(null); // 'expYears', 'activeMembers', 'rating'
   const [trainerSortOrder, setTrainerSortOrder] = useState('desc'); // 'asc' or 'desc'
   
@@ -223,21 +224,24 @@ function AdminDashboard({ token, userInfo, logout }) {
       });
   };
 
-  // Hàm thực hiện check-in sau khi quét được QR (bỏ qua broadcast lập tức)
-  const performCheckinFromQr = async (memberId) => {
+  // Hàm thực hiện check-in sau khi quét được QR
+  const performCheckinFromQr = async (qrToken) => {
     setQrScanStatus('processing');
     setQrScanMessage('Đang xác nhận check-in...');
     try {
-      const res = await fetch('/api/checkout/public-checkin', {
+      const res = await fetch('/api/dashboard/admin/checkin/scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId, skipBroadcast: true })
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ qrToken })
       });
       const data = await res.json();
       if (res.ok && data.success) {
         setQrScanStatus('success');
-        setQrScanResult(data.checkIn);
-        setQrScanMessage('CHECK-IN THÀNH CÔNG!');
+        setQrScanResult(data);
+        setQrScanMessage(data.message || 'Check-in thành công!');
         fetchCheckinsList();
       } else {
         setQrScanStatus('error');
@@ -284,6 +288,13 @@ function AdminDashboard({ token, userInfo, logout }) {
     setQrScanStatus('scanning');
     setQrScanMessage('');
     setQrScanResult(null);
+
+    // Bật debounce 2.5s khi vừa mở scanner
+    isScanDisabledRef.current = true;
+    setTimeout(() => {
+      isScanDisabledRef.current = false;
+    }, 2500);
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280, min: 640 }, height: { ideal: 720, min: 480 } }
@@ -308,20 +319,16 @@ function AdminDashboard({ token, userInfo, logout }) {
             inversionAttempts: 'dontInvert'
           });
           if (code && code.data) {
-            // Đã detect được QR, parse lấy memberId
-            stopQrScanner();
-            let memberId = null;
-            try {
-              const url = new URL(code.data);
-              memberId = url.searchParams.get('memberId');
-            } catch {
-              // Nếu không phải URL, thử parse trực tiếp như số memberId
-              if (/^\d+$/.test(code.data.trim())) {
-                memberId = code.data.trim();
-              }
+            if (isScanDisabledRef.current) {
+              // Vẫn đang trong thời gian giãn cách (debounce), tiếp tục chạy loop
+              animFrameRef.current = requestAnimationFrame(scanFrame);
+              return;
             }
-            if (memberId) {
-              performCheckinFromQr(memberId);
+            // Đã detect được QR, lấy trực tiếp token
+            stopQrScanner();
+            const qrToken = code.data.trim();
+            if (qrToken) {
+              performCheckinFromQr(qrToken);
             } else {
               setQrScanStatus('error');
               setQrScanMessage('Mã QR không hợp lệ! Vui lòng thử lại.');
@@ -339,10 +346,6 @@ function AdminDashboard({ token, userInfo, logout }) {
   };
 
   const closeQrScanner = () => {
-    // Nếu quét thành công mà đóng scanner, tự động phát thông báo check-in cho hội viên
-    if (qrScanStatus === 'success' && qrScanResult && qrScanResult.memberId) {
-      notifyCheckinComplete(qrScanResult.memberId);
-    }
     stopQrScanner();
     setQrScannerOpen(false);
     setQrScanStatus('idle');
@@ -1043,7 +1046,7 @@ function AdminDashboard({ token, userInfo, logout }) {
   const sortedAndFilteredPackages = packagesList
     .filter(pkg => packageFilter === 'ALL' || pkg.sportType === packageFilter)
     .sort((a, b) => {
-      const order = { 'Gym': 1, 'Yoga': 2, 'Boxing': 3, 'Combo': 4, 'VIP': 5 };
+      const order = { 'Gym': 1, 'Yoga': 2, 'Combo': 3, 'VIP': 4 };
       const rankA = order[a.sportType] || 99;
       const rankB = order[b.sportType] || 99;
       
@@ -1450,7 +1453,6 @@ function AdminDashboard({ token, userInfo, logout }) {
                   <option value="ALL">Tất cả bộ môn</option>
                   <option value="Yoga">Yoga</option>
                   <option value="Gym">Gym</option>
-                  <option value="Boxing">Boxing</option>
                 </select>
               </div>
             </div>
@@ -1616,7 +1618,7 @@ function AdminDashboard({ token, userInfo, logout }) {
             
             
               <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-                {['ALL', 'Gym', 'Yoga', 'Boxing', 'Combo', 'VIP'].map(filter => (
+                {['ALL', 'Gym', 'Yoga', 'Combo', 'VIP'].map(filter => (
                   <button
                     key={filter}
                     onClick={() => setPackageFilter(filter)}
@@ -2250,7 +2252,7 @@ function AdminDashboard({ token, userInfo, logout }) {
         return (
           <div className="admin-card-panel">
             <h3 className="admin-card-title" style={{ marginBottom: '20px' }}>Cấu hình nội dung Trang Chủ</h3>
-            <p className="admin-card-desc" style={{ marginBottom: '30px' }}>Thay đổi các tiêu đề chính và các thẻ dịch vụ cốt lõi hiển thị ở trang chủ (Gym, Yoga, Boxing).</p>
+            <p className="admin-card-desc" style={{ marginBottom: '30px' }}>Thay đổi các tiêu đề chính và các thẻ dịch vụ cốt lõi hiển thị ở trang chủ (Gym, Yoga).</p>
 
             {/* HERO SECTION CONFIG */}
             <div className="admin-card-panel" style={{ backgroundColor: '#fff7ed', border: '1px solid #ffedd5', marginBottom: '30px', padding: '24px' }}>
@@ -2612,22 +2614,35 @@ function AdminDashboard({ token, userInfo, logout }) {
                         }}>
                           <i className="fa-solid fa-circle-check" style={{ fontSize: '2.5rem', color: '#fff' }}></i>
                         </div>
-                        <h3 style={{ color: '#059669', fontWeight: '800', fontSize: '1.4rem', margin: '0 0 8px 0' }}>CHECK-IN THÀNH CÔNG!</h3>
-                        {qrScanResult && (
-                          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '14px', margin: '12px 0', textAlign: 'left' }}>
-                            <div style={{ fontSize: '0.85rem', color: '#166534', fontWeight: '600' }}>
-                              <div><i className="fa-solid fa-user" style={{ width: '16px', marginRight: '8px' }}></i>{qrScanResult.memberName || 'Hội viên'}</div>
-                              <div style={{ marginTop: '6px' }}><i className="fa-solid fa-clock" style={{ width: '16px', marginRight: '8px' }}></i>
-                                {new Date(qrScanResult.checkinTime).toLocaleTimeString('vi-VN')} - {new Date(qrScanResult.checkinTime).toLocaleDateString('vi-VN')}
+                        <h3 style={{ color: '#059669', fontWeight: '800', fontSize: '1.4rem', margin: '0 0 8px 0' }}>
+                          {qrScanMessage || 'CHECK-IN THÀNH CÔNG!'}
+                        </h3>
+                        {qrScanResult && qrScanResult.data && (
+                          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #86efac', borderRadius: '12px', padding: '16px', margin: '12px 0', textAlign: 'left', display: 'flex', gap: '14px', alignItems: 'center' }}>
+                            {qrScanResult.data.avatarUrl ? (
+                              <img src={qrScanResult.data.avatarUrl} alt="Avatar" style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }} />
+                            ) : (
+                              <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: 'var(--orange)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem' }}>
+                                {qrScanResult.data.name?.charAt(0).toUpperCase() || 'U'}
+                              </div>
+                            )}
+                            <div style={{ fontSize: '0.88rem', color: '#166534', fontWeight: '600', lineHeight: '1.5' }}>
+                              <div style={{ fontSize: '1rem', color: '#14532d', fontWeight: '800' }}>
+                                {qrScanResult.data.name}
+                              </div>
+                              <div style={{ color: '#475569', fontSize: '0.8rem', textTransform: 'uppercase', marginTop: '2px', fontWeight: 'bold' }}>
+                                {qrScanResult.type === 'MEMBER' ? 'Hội viên' : 'Huấn luyện viên (PT)'}
+                              </div>
+                              <div style={{ marginTop: '6px', color: '#15803d' }}>
+                                <i className="fa-solid fa-clock" style={{ marginRight: '6px' }}></i>
+                                {qrScanResult.type === 'TRAINER_CHECKOUT' ? 'Giờ ra (Checkout): ' : 'Giờ vào (Checkin): '}
+                                {new Date(qrScanResult.type === 'TRAINER_CHECKOUT' ? qrScanResult.data.checkoutTime : qrScanResult.data.checkinTime).toLocaleTimeString('vi-VN')} - {new Date(qrScanResult.type === 'TRAINER_CHECKOUT' ? qrScanResult.data.checkoutTime : qrScanResult.data.checkinTime).toLocaleDateString('vi-VN')}
                               </div>
                             </div>
                           </div>
                         )}
                         <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
                           <button onClick={() => {
-                            if (qrScanResult && qrScanResult.memberId) {
-                              notifyCheckinComplete(qrScanResult.memberId);
-                            }
                             setQrScanStatus('scanning');
                             setQrScanResult(null);
                             startQrScanner();
@@ -2934,7 +2949,6 @@ function AdminDashboard({ token, userInfo, logout }) {
                       >
                         <option value="Gym">HLV Gym (PT)</option>
                         <option value="Yoga">HLV Yoga</option>
-                        <option value="Boxing">HLV Boxing</option>
                       </select>
                     </div>
                     <div className="admin-form-group">
@@ -2955,7 +2969,7 @@ function AdminDashboard({ token, userInfo, logout }) {
                     <input
                       type="text"
                       className="admin-form-input"
-                      placeholder="Ví dụ: NASM-CPT, Liên đoàn Boxing..."
+                      placeholder="Ví dụ: NASM-CPT, Liên đoàn Gym/Yoga..."
                       value={newPtCertifications}
                       onChange={(e) => setNewPtCertifications(e.target.value)}
                     />
@@ -3098,7 +3112,6 @@ function AdminDashboard({ token, userInfo, logout }) {
                 >
                   <option value="Gym">Gym</option>
                   <option value="Yoga">Yoga</option>
-                  <option value="Boxing">Boxing</option>
                   <option value="Combo">Combo</option>
                   <option value="VIP">VIP</option>
                 </select>

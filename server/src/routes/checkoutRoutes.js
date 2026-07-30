@@ -8,6 +8,7 @@ router.get('/trainers', checkoutController.getTrainers);
 router.get('/trainers/:trainerId/schedule', checkoutController.getTrainerSchedule);
 router.get('/plans', checkoutController.getPlans);
 router.get('/services', checkoutController.getServices);
+router.get('/pt-packages', checkoutController.getPtPackages);
 router.post('/payos/create-payment', checkoutController.createPayosPayment);
 router.get('/payos/status/:orderCode', checkoutController.getPayosStatus);
 router.post('/check-email', checkoutController.checkEmail);
@@ -16,8 +17,6 @@ router.post('/verify-guest-otp', checkoutController.verifyGuestOtp);
 router.post('/resend-otp', checkoutController.resendOtp);
 const dashboardController = require('../controllers/dashboardController');
 router.get('/homepage-config', dashboardController.getHomepageConfig);
-router.post('/public-checkin', dashboardController.performCheckIn);
-router.post('/notify-checkin', dashboardController.notifyCheckInComplete);
 
 // Protected routes – cần token
 router.post('/loggedIn-checkout', authMiddleware, checkoutController.loggedInCheckout);

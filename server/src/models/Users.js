@@ -63,12 +63,36 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.DATE,
       allowNull: true,
       defaultValue: Sequelize.fn('getdate')
+    },
+    qr_token: {
+      type: DataTypes.STRING(64),
+      allowNull: false,
+      unique: "UQ_Users_qr_token"
+    },
+    qr_created_at: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    qr_is_active: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true
     }
   }, {
     sequelize,
     tableName: 'Users',
     schema: 'dbo',
     timestamps: false,
+    hooks: {
+      beforeValidate: (user) => {
+        if (!user.qr_token) {
+          const crypto = require('crypto');
+          user.qr_token = crypto.randomBytes(32).toString('hex');
+          user.qr_created_at = new Date();
+          user.qr_is_active = true;
+        }
+      }
+    },
     indexes: [
       {
         name: "PK__Users__B9BE370FFCC18A38",
@@ -82,6 +106,13 @@ module.exports = function(sequelize, DataTypes) {
         unique: true,
         fields: [
           { name: "email" }
+        ]
+      },
+      {
+        name: "UQ_Users_qr_token",
+        unique: true,
+        fields: [
+          { name: "qr_token" }
         ]
       }
     ]

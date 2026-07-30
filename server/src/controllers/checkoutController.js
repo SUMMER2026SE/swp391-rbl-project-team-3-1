@@ -100,6 +100,98 @@ const formatDateToYYYYMMDD = (date) => {
 };
 
 // =====================================================
+// HELPER: KIỂM TRA HẾT HẠN & KÍCH HOẠT GÓI PT CHỜ ĐỢI (LAZY FIFO)
+// Được gọi mỗi khi có tương tác (đặt lịch, xem lịch, lấy danh sách gói...)
+// =====================================================
+const checkAndActivatePendingPackages = async (memberId, transaction = null) => {
+    try {
+        const queryOptions = transaction ? { transaction } : {};
+        const now = new Date();
+
+        // 1. Tìm tất cả các gói active đã hết hạn sử dụng
+        const expiredActivePackages = await models.MemberTrainerPackages.findAll({
+            where: {
+                member_id: memberId,
+                status: 'active',
+                expiry_date: { [models.Sequelize.Op.lt]: now }
+            },
+            ...queryOptions
+        });
+
+        if (expiredActivePackages.length > 0) {
+            for (const pkg of expiredActivePackages) {
+                pkg.status = 'expired';
+                pkg.is_active = false;
+                await pkg.save(queryOptions);
+                console.log(`[PT QUEUE] Gói PT ID ${pkg.package_id} đã hết hạn. Đổi trạng thái sang 'expired'.`);
+            }
+        }
+
+        // 2. Kiểm tra xem hội viên còn gói nào ở trạng thái 'active' không
+        const currentActive = await models.MemberTrainerPackages.findOne({
+            where: {
+                member_id: memberId,
+                status: 'active'
+            },
+            ...queryOptions
+        });
+
+        // 3. Nếu không còn gói nào active, lấy gói 'pending' cũ nhất ra kích hoạt (FIFO)
+        if (!currentActive) {
+            const nextPending = await models.MemberTrainerPackages.findOne({
+                where: {
+                    member_id: memberId,
+                    status: 'pending'
+                },
+                order: [['purchase_date', 'ASC']],
+                ...queryOptions
+            });
+
+            if (nextPending) {
+                let durationMonths = 1;
+                if (nextPending.total_sessions > 20 && nextPending.total_sessions <= 60) {
+                    durationMonths = 3;
+                } else if (nextPending.total_sessions > 60) {
+                    durationMonths = 6;
+                }
+
+                const expiry = new Date();
+                expiry.setMonth(expiry.getMonth() + durationMonths);
+
+                nextPending.status = 'active';
+                nextPending.is_active = true;
+                nextPending.activation_date = now;
+                nextPending.expiry_date = expiry;
+                await nextPending.save(queryOptions);
+
+                console.log(`[PT QUEUE] Đã kích hoạt gói PT pending ID ${nextPending.package_id} thành 'active'. Hạn dùng đến ${expiry.toLocaleDateString()}`);
+            }
+        }
+    } catch (err) {
+        console.error('❌ Lỗi khi tự động cập nhật hàng đợi gói PT:', err.message);
+    }
+};
+
+// =====================================================
+// API: LẤY DANH SÁCH GÓI PT ĐỘNG TỪ CATALOG (PUBLIC)
+// GET /api/checkout/pt-packages
+// =====================================================
+exports.getPtPackages = async (req, res) => {
+    try {
+        const packages = await models.PtPackageCatalog.findAll({
+            where: { is_active: true }
+        });
+        return res.status(200).json({ success: true, packages });
+    } catch (error) {
+        console.error('❌ Lỗi lấy danh sách gói PT:', error.message);
+        return res.status(500).json({ message: 'Lỗi server khi tải gói PT!' });
+    }
+};
+
+// Export helper để dùng ở các controller khác
+exports.checkAndActivatePendingPackages = checkAndActivatePendingPackages;
+
+// =====================================================
 // 1. LẤY DANH SÁCH HUẤN LUYỆN VIÊN (PUBLIC)
 // GET /api/checkout/trainers
 // =====================================================
@@ -340,10 +432,10 @@ exports.getServices = async (req, res) => {
 // =====================================================
 exports.createPayosPayment = async (req, res) => {
     try {
-        const { planId, services = [], couponCode } = req.body;
+        const { planId, services = [], couponCode, ptPackageId, ptDurationMonths } = req.body;
 
-        if (!planId && (!services || services.length === 0)) {
-            return res.status(400).json({ message: 'Vui lòng chọn gói tập hoặc dịch vụ!' });
+        if (!planId && (!services || services.length === 0) && !ptPackageId) {
+            return res.status(400).json({ message: 'Vui lòng chọn gói tập, gói PT hoặc dịch vụ!' });
         }
 
         let planAmount = 0;
@@ -366,7 +458,20 @@ exports.createPayosPayment = async (req, res) => {
             servicesAmount = selectedServicesRecords.reduce((sum, s) => sum + parseFloat(s.price), 0);
         }
 
-        const originalAmount = planAmount + servicesAmount;
+        // Add PT package amount
+        let ptAmount = 0;
+        if (ptPackageId) {
+            const ptPackage = await models.PtPackageCatalog.findByPk(ptPackageId);
+            if (ptPackage) {
+                const dur = parseInt(ptDurationMonths) || 1;
+                if (dur === 1) ptAmount = parseFloat(ptPackage.price_1_month);
+                else if (dur === 3) ptAmount = parseFloat(ptPackage.price_3_months);
+                else if (dur === 6) ptAmount = parseFloat(ptPackage.price_6_months);
+                planName = `${ptPackage.name} (${dur}T)`;
+            }
+        }
+
+        const originalAmount = planAmount + servicesAmount + ptAmount;
         let discountPercent = 0;
         if (couponCode) {
             const code = couponCode.toUpperCase().trim();
@@ -480,7 +585,7 @@ exports.getPayosStatus = async (req, res) => {
 exports.guestCheckoutAndRegister = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const { email, fullName, phoneNumber, password, planId, trainerId, services = [], serviceIds = [], height, weight, bmi, fitnessGoal, payosOrderCode, couponCode } = req.body;
+        const { email, fullName, phoneNumber, password, planId, trainerId, services = [], serviceIds = [], height, weight, bmi, fitnessGoal, payosOrderCode, couponCode, ptPackageId, ptDurationMonths } = req.body;
 
         // 1. Validate input
         if (!email || !password) {
@@ -491,9 +596,9 @@ exports.guestCheckoutAndRegister = async (req, res) => {
         // Consolidate services
         const finalServices = services.length > 0 ? services : (serviceIds && serviceIds.length > 0 ? serviceIds : []);
 
-        if (!planId && finalServices.length === 0) {
+        if (!planId && finalServices.length === 0 && !ptPackageId) {
             await t.rollback();
-            return res.status(400).json({ message: 'Vui lòng chọn gói tập hoặc dịch vụ!' });
+            return res.status(400).json({ message: 'Vui lòng chọn gói tập, gói PT hoặc dịch vụ!' });
         }
 
         // 2. Check if email exists
@@ -565,7 +670,7 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             transaction: t
         });
         await models.MemberTrainerPackages.destroy({
-            where: { member_id: newMember.member_id, is_active: false },
+            where: { member_id: newMember.member_id, status: ['pending', 'active'] },
             transaction: t
         });
 
@@ -590,7 +695,20 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             servicesAmount = selectedServicesRecords.reduce((sum, s) => sum + parseFloat(s.price), 0);
         }
 
-        const originalAmount = planAmount + servicesAmount;
+        // 3b. Find PT package details if dynamic PT package selected
+        let ptPackage = null;
+        let ptAmount = 0;
+        if (ptPackageId) {
+            ptPackage = await models.PtPackageCatalog.findByPk(ptPackageId);
+            if (ptPackage) {
+                const dur = parseInt(ptDurationMonths) || 1;
+                if (dur === 1) ptAmount = parseFloat(ptPackage.price_1_month);
+                else if (dur === 3) ptAmount = parseFloat(ptPackage.price_3_months);
+                else if (dur === 6) ptAmount = parseFloat(ptPackage.price_6_months);
+            }
+        }
+
+        const originalAmount = planAmount + servicesAmount + ptAmount;
         let discountPercent = 0;
         if (couponCode) {
             const code = couponCode.toUpperCase().trim();
@@ -667,7 +785,7 @@ exports.guestCheckoutAndRegister = async (req, res) => {
             await models.Payments.create({
                 member_id: newMember.member_id,
                 amount: amount,
-                payment_type: plan ? 'Membership' : 'Service',
+                payment_type: plan ? 'Membership' : (ptPackage ? 'PT' : 'Service'),
                 payment_method: 'PayOS',
                 payment_status: 'Paid',
                 transaction_code: transactionCode
@@ -690,13 +808,51 @@ exports.guestCheckoutAndRegister = async (req, res) => {
                 }, { transaction: t });
             }
 
-            await models.MemberTrainerPackages.create({
-                member_id: newMember.member_id,
-                trainer_id: trainerRecord.trainer_id,
-                total_sessions: 12,
-                used_sessions: 0,
-                is_active: false // Inactive until OTP verified
-            }, { transaction: t });
+            let ptSessions = 12;
+            if (ptPackage) {
+                const dur = parseInt(ptDurationMonths) || 1;
+                ptSessions = ptPackage.sessions_per_month * dur;
+            }
+
+            // Check if there is an active PT package
+            const hasActivePT = await models.MemberTrainerPackages.findOne({
+                where: { member_id: newMember.member_id, status: 'active' },
+                transaction: t
+            });
+
+            if (hasActivePT) {
+                // Queue: status = pending, will activate when current one expires
+                await models.MemberTrainerPackages.create({
+                    member_id: newMember.member_id,
+                    trainer_id: trainerRecord.trainer_id,
+                    total_sessions: ptSessions,
+                    used_sessions: 0,
+                    is_active: false, 
+                    status: 'pending',
+                    purchase_date: new Date(),
+                    activation_date: null,
+                    expiry_date: null
+                }, { transaction: t });
+                console.log(`[PT QUEUE] Guest added PT package to Queue (pending). Total sessions: ${ptSessions}`);
+            } else {
+                // Activate immediately but mark is_active = false until OTP verified
+                const expiry = new Date();
+                const dur = parseInt(ptDurationMonths) || 1;
+                expiry.setMonth(expiry.getMonth() + dur);
+
+                await models.MemberTrainerPackages.create({
+                    member_id: newMember.member_id,
+                    trainer_id: trainerRecord.trainer_id,
+                    total_sessions: ptSessions,
+                    used_sessions: 0,
+                    is_active: false, 
+                    status: 'active',
+                    purchase_date: new Date(),
+                    activation_date: new Date(),
+                    expiry_date: expiry
+                }, { transaction: t });
+                console.log(`[PT QUEUE] Guest PT package active immediately upon verification. Total sessions: ${ptSessions}`);
+            }
         }
 
         // Commit transaction
@@ -802,8 +958,10 @@ exports.verifyGuestOtp = async (req, res) => {
             // Activate trainer packages
             await models.MemberTrainerPackages.update(
                 { is_active: true },
-                { where: { member_id: member.member_id, is_active: false }, transaction: t }
+                { where: { member_id: member.member_id, status: 'active', is_active: false }, transaction: t }
             );
+            // Kích hoạt lazy hàng đợi
+            await checkAndActivatePendingPackages(member.member_id, t);
         }
 
         // Commit transaction
@@ -987,11 +1145,11 @@ exports.loggedInCheckout = async (req, res) => {
     const t = await sequelize.transaction();
     try {
         const userId = req.user.userId || req.user.id;
-        const { planId, trainerId, services = [], payosOrderCode, couponCode } = req.body;
+        const { planId, trainerId, services = [], payosOrderCode, couponCode, ptPackageId, ptDurationMonths } = req.body;
 
-        if (!planId && (!services || services.length === 0)) {
+        if (!planId && (!services || services.length === 0) && !ptPackageId) {
             await t.rollback();
-            return res.status(400).json({ message: 'Vui lòng chọn gói tập hoặc dịch vụ!' });
+            return res.status(400).json({ message: 'Vui lòng chọn gói tập, gói PT hoặc dịch vụ!' });
         }
 
         // 1. Check if user exists
@@ -1022,7 +1180,20 @@ exports.loggedInCheckout = async (req, res) => {
             servicesAmount = selectedServicesRecords.reduce((sum, s) => sum + parseFloat(s.price), 0);
         }
 
-        const originalAmount = planAmount + servicesAmount;
+        // 2b. Find PT package details if dynamic PT package selected
+        let ptPackage = null;
+        let ptAmount = 0;
+        if (ptPackageId) {
+            ptPackage = await models.PtPackageCatalog.findByPk(ptPackageId);
+            if (ptPackage) {
+                const dur = parseInt(ptDurationMonths) || 1;
+                if (dur === 1) ptAmount = parseFloat(ptPackage.price_1_month);
+                else if (dur === 3) ptAmount = parseFloat(ptPackage.price_3_months);
+                else if (dur === 6) ptAmount = parseFloat(ptPackage.price_6_months);
+            }
+        }
+
+        const originalAmount = planAmount + servicesAmount + ptAmount;
         let discountPercent = 0;
         if (couponCode) {
             const code = couponCode.toUpperCase().trim();
@@ -1111,7 +1282,7 @@ exports.loggedInCheckout = async (req, res) => {
         await models.Payments.create({
             member_id: member.member_id,
             amount: amount,
-            payment_type: plan ? 'Membership' : 'Service',
+            payment_type: plan ? 'Membership' : (ptPackage ? 'PT' : 'Service'),
             payment_method: 'PayOS',
             payment_status: 'Paid',
             transaction_code: transactionCode
@@ -1148,32 +1319,55 @@ exports.loggedInCheckout = async (req, res) => {
             }
         }
 
-        // 9. Link trainer in WorkoutPlans if trainer is selected
-        if (trainerRecord) {
+        // 9. PT Package FIFO Queue Stacking logic
+        if (trainerRecord && ptPackage) {
+            let ptSessions = ptPackage.sessions_per_month * (parseInt(ptDurationMonths) || 1);
+
+            const hasActivePT = await models.MemberTrainerPackages.findOne({
+                where: { member_id: member.member_id, status: 'active' },
+                transaction: t
+            });
+
+            if (hasActivePT) {
+                // Queue: status = pending
+                await models.MemberTrainerPackages.create({
+                    member_id: member.member_id,
+                    trainer_id: trainerRecord.trainer_id,
+                    total_sessions: ptSessions,
+                    used_sessions: 0,
+                    is_active: true,
+                    status: 'pending',
+                    purchase_date: new Date(),
+                    activation_date: null,
+                    expiry_date: null
+                }, { transaction: t });
+                console.log(`[PT QUEUE] Logged-in added PT package to Queue (pending). Total sessions: ${ptSessions}`);
+            } else {
+                // Active immediately
+                const expiry = new Date();
+                const dur = parseInt(ptDurationMonths) || 1;
+                expiry.setMonth(expiry.getMonth() + dur);
+
+                await models.MemberTrainerPackages.create({
+                    member_id: member.member_id,
+                    trainer_id: trainerRecord.trainer_id,
+                    total_sessions: ptSessions,
+                    used_sessions: 0,
+                    is_active: true,
+                    status: 'active',
+                    purchase_date: new Date(),
+                    activation_date: new Date(),
+                    expiry_date: expiry
+                }, { transaction: t });
+                console.log(`[PT QUEUE] Logged-in PT package active immediately. Total sessions: ${ptSessions}`);
+            }
+
             await models.WorkoutPlans.create({
                 trainer_id: trainerRecord.trainer_id,
                 member_id: member.member_id,
                 title: `Lộ trình luyện tập với HLV ${trainerRecord.trainer_id}`,
                 description: `Lộ trình được tạo tự động sau khi đăng ký gói tập cùng HLV.`
             }, { transaction: t });
-
-            const existingPkg = await models.MemberTrainerPackages.findOne({
-                where: { member_id: member.member_id, trainer_id: trainerRecord.trainer_id, is_active: true },
-                transaction: t
-            });
-            if (existingPkg) {
-                await existingPkg.update({
-                    total_sessions: existingPkg.total_sessions + 12
-                }, { transaction: t });
-            } else {
-                await models.MemberTrainerPackages.create({
-                    member_id: member.member_id,
-                    trainer_id: trainerRecord.trainer_id,
-                    total_sessions: 12,
-                    used_sessions: 0,
-                    is_active: true
-                }, { transaction: t });
-            }
 
             // Notify Trainer
             try {
@@ -1183,7 +1377,7 @@ exports.loggedInCheckout = async (req, res) => {
                     await emailService.sendEmail(
                         ptUser.email,
                         'FxFitness - Bạn có học viên mới',
-                        `<h3>Xin chào ${ptUser.full_name},</h3>
+                        `<h3>Xin chào HLV ${ptUser.full_name},</h3>
                          <p>Hệ thống vừa ghi nhận hội viên <strong>${user.full_name}</strong> đã gia hạn/mua gói và chọn bạn làm HLV.</p>
                          <p>Vui lòng đăng nhập vào Dashboard để kiểm tra và lên giáo án.</p>`
                     );

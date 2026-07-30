@@ -48,30 +48,6 @@ const plansData = [
     price: 12000000,
     description: 'Thoải mái tham gia các lớp Yoga hàng tuần. Tặng 2 buổi PT Yoga miễn phí (không chọn PT).',
     status: 'Active'
-  },
-  {
-    plan_name: 'Boxing 3 Tháng',
-    sport_type: 'Boxing',
-    duration_months: 3,
-    price: 4000000,
-    description: 'Truy cập phòng Boxing. Tặng 2 buổi PT Boxing miễn phí (không chọn PT).',
-    status: 'Active'
-  },
-  {
-    plan_name: 'Boxing 6 Tháng',
-    sport_type: 'Boxing',
-    duration_months: 6,
-    price: 7500000,
-    description: 'Truy cập phòng Boxing. Tặng 2 buổi PT Boxing miễn phí (không chọn PT).',
-    status: 'Active'
-  },
-  {
-    plan_name: 'Boxing 12 Tháng',
-    sport_type: 'Boxing',
-    duration_months: 12,
-    price: 14000000,
-    description: 'Truy cập phòng Boxing. Tặng 2 buổi PT Boxing miễn phí (không chọn PT).',
-    status: 'Active'
   }
 ];
 

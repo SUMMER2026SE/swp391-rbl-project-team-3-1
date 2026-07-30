@@ -15,6 +15,8 @@ function HomePage() {
 
   const [plans, setPlans] = useState([]);
   const [services, setServices] = useState([]);
+  const [ptPackages, setPtPackages] = useState([]);
+  const [ptDurationTab, setPtDurationTab] = useState(3); // default 3 Months
   const [coreSports, setCoreSports] = useState([]);
   const [heroTitle, setHeroTitle] = useState('Bứt Phá Giới Hạn');
   const [heroSubtitle, setHeroSubtitle] = useState('Hệ thống quản lý phòng gym thông minh, tối ưu hóa quy trình tập luyện và trải nghiệm khách hàng đẳng cấp.');
@@ -96,7 +98,7 @@ function HomePage() {
     return () => {
       reveals.forEach(r => observer.unobserve(r));
     };
-  }, [plans, services]); // Depend on dynamic data so observer updates
+  }, [plans, services, ptPackages]); // Depend on dynamic data so observer updates
 
   useEffect(() => {
     // Fetch Plans
@@ -114,6 +116,14 @@ function HomePage() {
         if (data.services) setServices(data.services);
       })
       .catch(err => console.error('Error fetching services:', err));
+
+    // Fetch PT Packages Catalog
+    fetch('/api/checkout/pt-packages')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.packages) setPtPackages(data.packages);
+      })
+      .catch(err => console.error('Error fetching PT packages:', err));
 
     // Fetch Homepage config
     fetch('/api/checkout/homepage-config')
@@ -139,6 +149,13 @@ function HomePage() {
   const goToServiceCheckout = (serviceId) => {
     localStorage.removeItem('checkoutPlan');
     window.history.pushState({}, '', `/checkout?service=${serviceId}`);
+    window.dispatchEvent(new Event('popstate'));
+  };
+
+  // Navigate to checkout with selected PT monthly package
+  const goToPtCheckout = (packageId, durationMonths) => {
+    localStorage.removeItem('checkoutPlan');
+    window.history.pushState({}, '', `/checkout?ptPackage=${packageId}&ptDuration=${durationMonths}`);
     window.dispatchEvent(new Event('popstate'));
   };
 
@@ -674,6 +691,108 @@ function HomePage() {
           );
         })}
         {plans.length === 0 && <p style={{textAlign: 'center', width: '100%'}}>Đang tải gói tập...</p>}
+      </section>
+
+      {/* ========================================== */}
+      {/* PT MONTHLY PACKAGES SECTION                */}
+      {/* ========================================== */}
+      <section className="section-pricing" id="pt-packages" style={{ backgroundColor: '#fafafa', borderBottom: '1px solid #e2e8f0' }}>
+        <div className="section-header reveal">
+          <h2 className="section-title">Bảng Giá Gói PT Theo Tháng</h2>
+          <p style={{ textAlign: 'center', marginTop: '10px', color: '#64748b' }}>
+            Tối ưu kết quả vóc dáng nhanh chóng với các gói tập kèm Huấn Luyện Viên cá nhân chuyên nghiệp.
+          </p>
+
+          {/* Kỳ hạn chọn: 1 tháng / 3 tháng / 6 tháng */}
+          <div className="pt-duration-tabs" style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '24px' }}>
+            {[1, 3, 6].map(months => (
+              <button
+                key={months}
+                onClick={() => setPtDurationTab(months)}
+                className={`pt-tab-btn${ptDurationTab === months ? ' active' : ''}`}
+              >
+                {months} Tháng
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="pricing-grid">
+          {ptPackages.map((pkg, index) => {
+            const isFeatured = pkg.name === 'PT Chuyên sâu';
+            let price = pkg.price_3_months;
+            if (ptDurationTab === 1) price = pkg.price_1_month;
+            else if (ptDurationTab === 6) price = pkg.price_6_months;
+
+            const parsedPrice = parseFloat(price);
+            const pricePerMonth = parsedPrice / ptDurationTab;
+
+            return (
+              <div
+                key={pkg.id}
+                className={`pricing-card reveal reveal-delay-${(index % 4) + 1} ${isFeatured ? 'featured' : ''}`}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  borderTop: isFeatured ? '4px solid var(--orange)' : '4px solid #94a3b8',
+                  position: 'relative'
+                }}
+              >
+                {isFeatured && <div className="popular-badge" style={{ background: 'var(--orange)', color: 'white', position: 'absolute', top: '-14px', left: '50%', transform: 'translateX(-50%)', padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Phổ biến nhất</div>}
+                
+                <p className="plan-name" style={{ color: isFeatured ? 'var(--orange)' : '#475569', fontSize: '1.25rem', fontWeight: 'bold', margin: '10px 0' }}>{pkg.name}</p>
+                
+                <div className="plan-price" style={{ marginTop: '10px', minHeight: '80px' }}>
+                  <div className="price-amount" style={{ fontSize: '1.8rem', fontWeight: '800' }}>
+                    {parsedPrice.toLocaleString('vi-VN')}đ
+                    <span className="price-period" style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'normal' }}>
+                      /{ptDurationTab} tháng
+                    </span>
+                  </div>
+                  {ptDurationTab > 1 && (
+                    <div style={{ fontSize: '0.8rem', color: 'var(--orange)', marginTop: '4px', fontWeight: 'bold' }}>
+                      (~{Math.round(pricePerMonth).toLocaleString('vi-VN')}đ/tháng)
+                    </div>
+                  )}
+                </div>
+
+                <div className="plan-divider" style={{ margin: '15px 0' }}></div>
+                
+                <ul className="plan-features" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '10px', textAlign: 'left', padding: '0 10px' }}>
+                  <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <i className="fa-solid fa-calendar-week" style={{ color: isFeatured ? 'var(--orange)' : '#94a3b8' }}></i>
+                    <span>Tần suất: <strong>{pkg.frequency_per_week} buổi/tuần</strong></span>
+                  </li>
+                  <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <i className="fa-solid fa-dumbbell" style={{ color: isFeatured ? 'var(--orange)' : '#94a3b8' }}></i>
+                    <span>Tổng số buổi: <strong>{pkg.sessions_per_month * ptDurationTab} buổi tập</strong></span>
+                  </li>
+                  <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <i className="fa-solid fa-circle-check" style={{ color: isFeatured ? 'var(--orange)' : '#94a3b8' }}></i>
+                    <span>Hỗ trợ đo chỉ số InBody định kỳ</span>
+                  </li>
+                  <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <i className="fa-solid fa-circle-check" style={{ color: isFeatured ? 'var(--orange)' : '#94a3b8' }}></i>
+                    <span>Thiết kế giáo án cá nhân hóa</span>
+                  </li>
+                </ul>
+
+                <button
+                  onClick={() => goToPtCheckout(pkg.id, ptDurationTab)}
+                  className={`btn-plan ${isFeatured ? 'btn-featured' : ''}`}
+                  style={{
+                    marginTop: '20px',
+                    borderColor: isFeatured ? 'var(--orange)' : '#94a3b8',
+                    color: isFeatured ? 'white' : '#475569',
+                    background: isFeatured ? 'var(--orange)' : 'transparent'
+                  }}
+                >
+                  Đăng ký gói này
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       {/* ========================================== */}

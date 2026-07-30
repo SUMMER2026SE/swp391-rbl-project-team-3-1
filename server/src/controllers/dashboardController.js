@@ -2943,55 +2943,302 @@ exports.cancelOffRequest = async (req, res) => {
 // CHECK-IN CONTROLLERS
 // =====================================================
 
-// POST /api/dashboard/member/checkin/send-qr
-// Member tự gửi QR check-in về gmail của mình
-exports.sendCheckinQr = async (req, res) => {
+// GET /api/dashboard/member/checkin/qr-code
+exports.getMemberQrCode = async (req, res) => {
   try {
-    const { sendCheckinQrEmail } = require('../utils/emailService');
+    const user = await models.Users.findByPk(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy tài khoản!' });
+    }
+    
+    // Lazy initialization check: if user doesn't have qr_token (e.g. edge case)
+    if (!user.qr_token) {
+      const crypto = require('crypto');
+      user.qr_token = crypto.randomBytes(32).toString('hex');
+      user.qr_created_at = new Date();
+      user.qr_is_active = true;
+      await user.save();
+    }
 
-    // Lấy thông tin member từ token
-    const user = await models.Users.findByPk(req.user.userId, {
-      include: [{ model: models.Members, as: 'Member' }]
+    const QRCode = require('qrcode');
+    const qrDataUrl = await QRCode.toDataURL(user.qr_token);
+    return res.status(200).json({ qrCodeUrl: qrDataUrl, token: user.qr_token });
+  } catch (error) {
+    console.error('❌ Lỗi khi lấy QR Code của hội viên:', error);
+    return res.status(500).json({ message: 'Lỗi server khi tạo QR Code!' });
+  }
+};
+
+// GET /api/dashboard/trainer/checkin/qr-code
+exports.getTrainerQrCode = async (req, res) => {
+  try {
+    const user = await models.Users.findByPk(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy tài khoản!' });
+    }
+
+    if (!user.qr_token) {
+      const crypto = require('crypto');
+      user.qr_token = crypto.randomBytes(32).toString('hex');
+      user.qr_created_at = new Date();
+      user.qr_is_active = true;
+      await user.save();
+    }
+
+    const QRCode = require('qrcode');
+    const qrDataUrl = await QRCode.toDataURL(user.qr_token);
+    return res.status(200).json({ qrCodeUrl: qrDataUrl, token: user.qr_token });
+  } catch (error) {
+    console.error('❌ Lỗi khi lấy QR Code của huấn luyện viên:', error);
+    return res.status(500).json({ message: 'Lỗi server khi tạo QR Code!' });
+  }
+};
+
+// POST /api/dashboard/member/checkin/qr-code/regenerate
+exports.regenerateMemberQrCode = async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ message: 'Vui lòng cung cấp mật khẩu để xác nhận!' });
+    }
+
+    const user = await models.Users.findByPk(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy tài khoản!' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Mật khẩu xác nhận không chính xác!' });
+    }
+
+    const crypto = require('crypto');
+    user.qr_token = crypto.randomBytes(32).toString('hex');
+    user.qr_created_at = new Date();
+    user.qr_is_active = true;
+    await user.save();
+
+    const QRCode = require('qrcode');
+    const qrDataUrl = await QRCode.toDataURL(user.qr_token);
+    return res.status(200).json({ 
+      success: true, 
+      message: 'Mã QR check-in đã được cấp lại thành công!',
+      qrCodeUrl: qrDataUrl
+    });
+  } catch (error) {
+    console.error('❌ Lỗi khi cấp lại QR Code của hội viên:', error);
+    return res.status(500).json({ message: 'Lỗi server khi cấp lại QR Code!' });
+  }
+};
+
+// POST /api/dashboard/trainer/checkin/qr-code/regenerate
+exports.regenerateTrainerQrCode = async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ message: 'Vui lòng cung cấp mật khẩu để xác nhận!' });
+    }
+
+    const user = await models.Users.findByPk(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy tài khoản!' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Mật khẩu xác nhận không chính xác!' });
+    }
+
+    const crypto = require('crypto');
+    user.qr_token = crypto.randomBytes(32).toString('hex');
+    user.qr_created_at = new Date();
+    user.qr_is_active = true;
+    await user.save();
+
+    const QRCode = require('qrcode');
+    const qrDataUrl = await QRCode.toDataURL(user.qr_token);
+    return res.status(200).json({ 
+      success: true, 
+      message: 'Mã QR check-in đã được cấp lại thành công!',
+      qrCodeUrl: qrDataUrl
+    });
+  } catch (error) {
+    console.error('❌ Lỗi khi cấp lại QR Code của huấn luyện viên:', error);
+    return res.status(500).json({ message: 'Lỗi server khi cấp lại QR Code!' });
+  }
+};
+
+// POST /api/dashboard/admin/checkin/scan
+exports.performQrScan = async (req, res) => {
+  try {
+    const { qrToken } = req.body;
+    if (!qrToken) {
+      return res.status(400).json({ message: 'Thiếu mã QR token!' });
+    }
+
+    const user = await models.Users.findOne({
+      where: { qr_token: qrToken }
     });
 
-    if (!user || !user.Member) {
-      return res.status(404).json({ message: 'Không tìm thấy thông tin hội viên!' });
+    if (!user) {
+      return res.status(404).json({ message: 'Mã QR không hợp lệ!' });
     }
 
-    const memberId = user.Member.member_id;
-    const email = user.email;
-    const fullName = user.full_name || 'Hội viên';
-
-    // Xây dựng URL check-in (URL này sẽ encode trong QR)
-    const origin = req.get('origin') || `${req.protocol}://${req.get('host')}`;
-    const checkinUrl = `${origin}/public-checkin?memberId=${memberId}`;
-
-    // Sử dụng QR image service bên ngoài (api.qrserver.com) thay vì base64 data URI
-    // vì Gmail chặn hiển thị ảnh dạng base64 (data:image/png;base64) để bảo mật.
-    const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(checkinUrl)}&color=0f172a&bgcolor=ffffff`;
-
-
-    // Kiểm tra cấu hình email
-    const emailUser = process.env.EMAIL_USER || process.env.SMTP_USER;
-    const emailPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
-    if (!emailUser || !emailPass) {
-      return res.status(500).json({ message: 'Hệ thống email chưa được cấu hình!' });
+    if (user.qr_is_active === false) {
+      return res.status(403).json({ message: 'Mã QR đã bị thu hồi!' });
     }
 
-    // Gửi email
-    const result = await sendCheckinQrEmail(email, fullName, memberId, qrDataUrl, checkinUrl);
+    const now = new Date();
 
-    if (result && result.success) {
+    // Rẽ nhánh dựa trên vai trò
+    if (user.role_id === ROLE.MEMBER) {
+      // Tìm hội viên
+      const member = await models.Members.findOne({
+        where: { user_id: user.user_id }
+      });
+      if (!member) {
+        return res.status(404).json({ message: 'Không tìm thấy thông tin hội viên!' });
+      }
+
+      // 1. Kiểm tra gói tập còn hạn không
+      const todayStr = now.toISOString().slice(0, 10);
+      const activeMemberships = await models.MemberMemberships.findAll({
+        where: {
+          member_id: member.member_id,
+          membership_status: 'Active'
+        }
+      });
+
+      const hasActive = activeMemberships.some(ms => ms.end_date >= todayStr);
+      if (!hasActive) {
+        return res.status(403).json({ message: 'Gói tập đã hết hạn, vui lòng gia hạn để tiếp tục check-in!' });
+      }
+
+      // 2. Kiểm tra khoảng cách check-in trùng lặp (MIN_CHECKIN_GAP_HOURS = 4)
+      const MIN_CHECKIN_GAP_HOURS = 4;
+      const lastCheckIn = await models.CheckIns.findOne({
+        where: { member_id: member.member_id },
+        order: [['checkin_time', 'DESC']]
+      });
+
+      if (lastCheckIn) {
+        const gapMs = now - new Date(lastCheckIn.checkin_time);
+        const gapHours = gapMs / (1000 * 60 * 60);
+        if (gapHours < MIN_CHECKIN_GAP_HOURS) {
+          return res.status(429).json({ message: `Bạn vừa check-in cách đây chưa đủ ${MIN_CHECKIN_GAP_HOURS} giờ!` });
+        }
+      }
+
+      // 3. Ghi nhận check-in
+      const newCheckIn = await models.CheckIns.create({
+        member_id: member.member_id,
+        checkin_time: now
+      });
+
+      // 4. Phát tin SSE
+      const finalTime = newCheckIn.checkin_time || now;
+      const notificationEmitter = require('../utils/notificationEmitter');
+      notificationEmitter.emit('notification_created', {
+        user_id: user.user_id,
+        notification: {
+          type: 'MEMBER_CHECKED_IN',
+          checkinTime: finalTime,
+          message: `Bạn đã check-in thành công tại phòng tập lúc ${new Date(finalTime).toLocaleTimeString('vi-VN')} ngày ${new Date(finalTime).toLocaleDateString('vi-VN')}! Cảm ơn và chúc tập luyện tốt.`
+        }
+      });
+
+      broadcastSSE({
+        type: 'MEMBER_CHECKED_IN',
+        userId: user.user_id,
+        checkinTime: finalTime,
+        message: `Bạn đã check-in thành công tại phòng tập lúc ${new Date(finalTime).toLocaleTimeString('vi-VN')} ngày ${new Date(finalTime).toLocaleDateString('vi-VN')}!`
+      });
+
       return res.status(200).json({
         success: true,
-        message: `Mã QR check-in đã được gửi đến email ${email}. Vui lòng kiểm tra hộp thư!`
+        type: 'MEMBER',
+        message: 'Hội viên check-in thành công!',
+        data: {
+          userId: user.user_id,
+          memberId: member.member_id,
+          name: user.full_name,
+          avatarUrl: user.avatar_url,
+          checkinTime: finalTime
+        }
       });
+
+    } else if (user.role_id === ROLE.PT) {
+      // Tìm PT
+      const trainer = await models.Trainers.findOne({
+        where: { user_id: user.user_id }
+      });
+      if (!trainer) {
+        return res.status(404).json({ message: 'Không tìm thấy thông tin huấn luyện viên!' });
+      }
+
+      // Tìm bản ghi check-in trong ngày hôm nay mà chưa check-out
+      const { Op } = require('sequelize');
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const lastOpenCheckIn = await models.CheckIns.findOne({
+        where: {
+          trainer_id: trainer.trainer_id,
+          checkin_time: {
+            [Op.gte]: startOfDay
+          },
+          checkout_time: null
+        },
+        order: [['checkin_time', 'DESC']]
+      });
+
+      if (lastOpenCheckIn) {
+        // Ghi nhận CHECK-OUT
+        lastOpenCheckIn.checkout_time = now;
+        await lastOpenCheckIn.save();
+
+        return res.status(200).json({
+          success: true,
+          type: 'TRAINER_CHECKOUT',
+          message: 'Huấn luyện viên check-out thành công!',
+          data: {
+            userId: user.user_id,
+            trainerId: trainer.trainer_id,
+            name: user.full_name,
+            avatarUrl: user.avatar_url,
+            checkinTime: lastOpenCheckIn.checkin_time,
+            checkoutTime: now
+          }
+        });
+      } else {
+        // Ghi nhận CHECK-IN
+        const newCheckIn = await models.CheckIns.create({
+          trainer_id: trainer.trainer_id,
+          checkin_time: now,
+          checkout_time: null
+        });
+
+        return res.status(200).json({
+          success: true,
+          type: 'TRAINER_CHECKIN',
+          message: 'Huấn luyện viên check-in thành công!',
+          data: {
+            userId: user.user_id,
+            trainerId: trainer.trainer_id,
+            name: user.full_name,
+            avatarUrl: user.avatar_url,
+            checkinTime: now
+          }
+        });
+      }
+
     } else {
-      return res.status(500).json({ message: 'Không thể gửi email. Vui lòng thử lại sau!' });
+      return res.status(403).json({ message: 'Tài khoản có quyền này không hỗ trợ quét check-in bằng mã QR!' });
     }
+
   } catch (error) {
-    console.error('❌ Lỗi khi gửi QR check-in:', error);
-    return res.status(500).json({ message: 'Lỗi server khi gửi mã QR!', error: error.message });
+    console.error('❌ Lỗi khi quét mã QR check-in:', error);
+    return res.status(500).json({ message: 'Lỗi server khi xử lý quét mã QR check-in!' });
   }
 };
 
