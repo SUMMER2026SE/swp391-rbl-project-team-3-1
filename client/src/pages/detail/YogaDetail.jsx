@@ -7,7 +7,7 @@ function YogaDetail() {
   }, []);
 
   const handleGoHome = (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     window.history.pushState({}, '', '/');
     window.dispatchEvent(new Event('popstate'));
   };
@@ -30,135 +30,199 @@ function YogaDetail() {
         <a href="/" onClick={handleGoHome} className="detail-back-btn">
           <i className="fa-solid fa-arrow-left"></i> QUAY LẠI TRANG CHỦ
         </a>
-        <span className="detail-header-logo">FX FITNESS / YOGA</span>
+        <span className="detail-header-logo">FX FITNESS / YOGA SERVICE</span>
       </header>
 
-      {/* HERO SECTION */}
+      {/* BREADCRUMB */}
+      <div className="detail-breadcrumb">
+        <a href="/" onClick={handleGoHome}>Trang chủ</a>
+        <span className="breadcrumb-separator">/</span>
+        <span className="breadcrumb-current">Dịch vụ Yoga</span>
+      </div>
+
+      {/* HERO BANNER SECTION */}
       <section className="yoga-hero">
         <div className="yoga-hero-overlay"></div>
         <div className="yoga-hero-content">
-          <div className="detail-tag" style={{ background: '#10b981' }}>TĨNH LẶNG & PHỤC HỒI</div>
-          <h1 className="yoga-title">BỘ MÔN YOGA & TÂM TRÍ</h1>
+          <div className="detail-tag">PHÒNG TẬP YOGA CHUẨN QUỐC TẾ</div>
+          <h1 className="yoga-title">BỘ MÔN YOGA &amp; TÂM TRÍ</h1>
           <p className="yoga-subtitle">
-            Cân bằng thân - tâm - trí, tìm lại sự an yên trong tâm hồn và khôi phục sự linh hoạt tối đa cho cơ thể của bạn.
+            Cân bằng thân – tâm – trí, tìm lại sự an yên trong tâm hồn và khôi phục sự linh hoạt tối đa cho cơ thể.
           </p>
         </div>
       </section>
 
-      {/* CONTENT WRAPPER */}
+      {/* MAIN CONTENT */}
       <main className="detail-main-content">
-        {/* WHAT IS YOGA */}
-        <section className="intro-section">
-          <div className="intro-text">
-            <h2>Yoga Là Gì?</h2>
+
+        {/* INTRO + STATS */}
+        <section className="intro-stats-section">
+          <div className="intro-text-block">
+            <h2>Giới thiệu Phòng Yoga</h2>
             <p>
-              Yoga là một phương pháp luyện tập lâu đời có nguồn gốc từ Ấn Độ cổ đại, kết hợp hài hòa giữa tư thế 
-              (Asana), kỹ thuật thở (Pranayama) và thiền định (Dhyana). Đây không chỉ đơn thuần là các bài tập uốn dẻo 
-              mà là một triết lý sống giúp con người hòa quyện thể chất và tinh thần làm một.
+              Lớp Yoga tại FX Fitness đem đến không gian thiền định yên tĩnh biệt lập, tránh xa ồn ào đô thị.
+              Các bài tập thở, chuyển động khớp và chuỗi tư thế Asana được thiết kế tinh tế giúp thư giãn hệ cơ xương,
+              tăng tuần hoàn máu và đào thải độc tố cơ thể.
             </p>
             <p>
-              Tại các lớp học Yoga của FX Fitness, bạn sẽ được hướng dẫn tỉ mỉ từ những bài tập thở cơ bản, cách kiểm soát 
-              chuyển động của khớp xương đến những chuỗi tư thế nâng cao thử thách trọng lực, giúp giải phóng hoàn toàn 
-              năng lượng tiêu cực tích tụ lâu ngày.
+              Dưới sự dẫn dắt của các giáo viên dày dặn kinh nghiệm với chứng chỉ quốc tế RYT 200/500,
+              bạn sẽ dễ dàng làm quen với Yoga từ những bước đầu tiên.
             </p>
           </div>
-          <div className="intro-card-visual" style={{ border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-            <div className="visual-icon-wrap" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: '#10b981' }}>
-              <i className="fas fa-person-praying" style={{ color: '#10b981' }}></i>
+          <div className="stats-bar yoga-stats">
+            <div className="stat-item">
+              <span className="stat-num">12+</span>
+              <span className="stat-label">Lớp học mỗi tuần</span>
             </div>
-            <h3 style={{ color: '#10b981' }}>Sự Bình Yên Nội Tâm</h3>
-            <p>Hơi thở sâu và tư thế chuẩn xác là chìa khóa thấu hiểu tiếng nói cơ thể.</p>
-          </div>
-        </section>
-
-        {/* BENEFITS GRID */}
-        <section className="benefits-section">
-          <h2 className="section-title-center">Yoga Mang Lại Những Lợi Ích Gì Cho Con Người?</h2>
-          <p className="section-subtitle-center">Khám phá sức mạnh của việc kết nối nhịp thở với từng chuyển động dẻo dai</p>
-
-          <div className="benefits-grid">
-            <div className="benefit-card">
-              <div className="benefit-icon" style={{ background: 'rgba(16, 185, 129, 0.08)', color: '#10b981' }}>
-                <i className="fa-solid fa-arrows-up-down-left-right"></i>
-              </div>
-              <h3>Tăng Độ Linh Hoạt</h3>
-              <p>
-                Kéo giãn sâu các bó cơ và dây chằng bị căng cứng do thói quen ngồi nhiều, gia tăng biên độ vận động cho toàn cơ thể.
-              </p>
+            <div className="stat-divider"></div>
+            <div className="stat-item">
+              <span className="stat-num">200m²</span>
+              <span className="stat-label">Phòng tập rộng rãi</span>
             </div>
-
-            <div className="benefit-card">
-              <div className="benefit-icon" style={{ background: 'rgba(16, 185, 129, 0.08)', color: '#10b981' }}>
-                <i className="fa-solid fa-face-smile"></i>
-              </div>
-              <h3>Giải Tỏa Căng Thẳng</h3>
-              <p>
-                Hạ thấp nồng độ hormone Cortisol (gây stress), đưa hệ thần kinh về trạng thái thư giãn sâu, làm dịu tâm trí lo âu.
-              </p>
+            <div className="stat-divider"></div>
+            <div className="stat-item">
+              <span className="stat-num">RYT 500</span>
+              <span className="stat-label">Chứng chỉ quốc tế</span>
             </div>
-
-            <div className="benefit-card">
-              <div className="benefit-icon" style={{ background: 'rgba(16, 185, 129, 0.08)', color: '#10b981' }}>
-                <i className="fa-solid fa-accessibility"></i>
-              </div>
-              <h3>Cải Thiện Tư Thế</h3>
-              <p>
-                Định hình lại cột sống, sửa các tật lệch vai, gù lưng, giúp vóc dáng thon gọn, bước đi thanh thoát và tự tin hơn.
-              </p>
-            </div>
-
-            <div className="benefit-card">
-              <div className="benefit-icon" style={{ background: 'rgba(16, 185, 129, 0.08)', color: '#10b981' }}>
-                <i className="fa-solid fa-lungs"></i>
-              </div>
-              <h3>Tăng Dung Tích Phổi</h3>
-              <p>
-                Kỹ thuật thở Pranayama giúp trao đổi oxy tối đa, thanh lọc buồng phổi và tăng cường chức năng hệ hô hấp.
-              </p>
+            <div className="stat-divider"></div>
+            <div className="stat-item">
+              <span className="stat-num">100%</span>
+              <span className="stat-label">HLV chất lượng cao</span>
             </div>
           </div>
         </section>
 
-        {/* WHY FX FITNESS */}
-        <section className="features-section">
-          <h2>Tại Sao Nên Chọn Tập Yoga Tại FX Fitness?</h2>
-          <div className="features-list">
-            <div className="feature-item">
-              <span className="feature-number" style={{ color: 'rgba(16, 185, 129, 0.25)' }}>01</span>
-              <div>
-                <h4>Giáo Viên Chuẩn Ấn Độ & Việt Nam</h4>
-                <p>Đội ngũ Master có chứng chỉ quốc tế Yoga Alliance, giàu kinh nghiệm sư phạm và thấu hiểu học viên.</p>
+        {/* GALLERY SECTION */}
+        <section className="gallery-section">
+          <h3 className="sub-section-title">Hình ảnh lớp học Yoga</h3>
+          <div className="gallery-grid">
+            <div className="gallery-item">
+              <img
+                src="https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?auto=format&fit=crop&w=700&q=80"
+                alt="Lớp học Yoga"
+              />
+              <div className="gallery-caption">Tập luyện cùng giáo viên chuyên nghiệp</div>
+            </div>
+            <div className="gallery-item">
+              <img
+                src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=700&q=80"
+                alt="Không gian thiền định"
+              />
+              <div className="gallery-caption">Không gian thiền định yên tĩnh</div>
+            </div>
+            <div className="gallery-item">
+              <img
+                src="https://images.unsplash.com/photo-1599447421416-3414500d18a5?auto=format&fit=crop&w=700&q=80"
+                alt="Trang bị Yoga"
+              />
+              <div className="gallery-caption">Thảm tập và phụ kiện đầy đủ</div>
+            </div>
+          </div>
+        </section>
+
+        {/* EQUIPMENT / FACILITIES */}
+        <section className="equipment-details-section">
+          <h2>Dụng cụ &amp; Không gian tiêu chuẩn</h2>
+          <p className="section-desc">Chúng tôi trang bị mọi phụ kiện cần thiết giúp bạn tối ưu hóa từng động tác uốn dẻo.</p>
+
+          <div className="equipment-grid">
+            <div className="equipment-card yoga-card">
+              <div className="eq-icon yoga-icon">
+                <i className="fa-solid fa-spa"></i>
               </div>
+              <h3>Dụng cụ tập luyện</h3>
+              <ul>
+                <li>Thảm tập 4 lớp cao cấp chống trơn trượt</li>
+                <li>Khử khuẩn thảm 100% sau mỗi buổi học</li>
+                <li>Khăn lau mồ hôi kháng khuẩn cá nhân</li>
+              </ul>
             </div>
 
-            <div className="feature-item">
-              <span className="feature-number" style={{ color: 'rgba(16, 185, 129, 0.25)' }}>02</span>
-              <div>
-                <h4>Phòng Tập Yên Tĩnh & Chuẩn Zen</h4>
-                <p>Không gian cách âm tuyệt đối với tiếng nhạc thiền du dương và hương thơm thảo mộc tự nhiên dịu nhẹ.</p>
+            <div className="equipment-card yoga-card">
+              <div className="eq-icon yoga-icon">
+                <i className="fa-solid fa-toolbox"></i>
               </div>
+              <h3>Phụ kiện hỗ trợ</h3>
+              <ul>
+                <li>Yoga Block – gạch xốp hỗ trợ tư thế khó</li>
+                <li>Yoga Ring – vòng mở vai, giãn lưng</li>
+                <li>Resistance Band – dây kháng lực tăng dẻo dai</li>
+              </ul>
             </div>
 
-            <div className="feature-item">
-              <span className="feature-number" style={{ color: 'rgba(16, 185, 129, 0.25)' }}>03</span>
-              <div>
-                <h4>Đa Dạng Loại Hình Lớp Học</h4>
-                <p>Từ Hatha Yoga, Vinyasa Yoga, Yin Yoga đến các lớp trị liệu chuyên biệt cột sống, đau vai gáy.</p>
+            <div className="equipment-card yoga-card">
+              <div className="eq-icon yoga-icon">
+                <i className="fa-solid fa-wind"></i>
               </div>
+              <h3>Không gian &amp; Ánh sáng</h3>
+              <ul>
+                <li>Gương 3 chiều toàn cảnh tự sửa dáng</li>
+                <li>Ánh sáng tự nhiên nhẹ nhàng, thoáng mát</li>
+                <li>Không gian yên tĩnh biệt lập hoàn toàn</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        {/* INSTRUCTORS */}
+        <section className="instructors-section">
+          <h2>Đội ngũ Huấn luyện viên Yoga</h2>
+          <div className="instructor-highlight">
+            <div className="instructor-icon">
+              <i className="fa-solid fa-user-graduate"></i>
+            </div>
+            <div className="instructor-info">
+              <h4>100% Giáo viên Yoga chất lượng cao</h4>
+              <p>
+                Tất cả HLV đứng lớp tại FX Fitness đều có trên 2 năm kinh nghiệm thực tế,
+                sở hữu chứng chỉ quốc tế uy tín (Yoga Alliance RYT 200/500), nhiệt tình và tận tâm
+                chỉnh sửa từng tư thế cho học viên.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* BENEFITS */}
+        <section className="benefits-section yoga-benefits">
+          <h2 className="section-title-center">Lợi ích vượt trội từ Yoga</h2>
+          <div className="benefits-grid-custom">
+            <div className="benefit-item yoga-benefit-item">
+              <div className="benefit-icon-wrap yoga-icon-wrap">
+                <i className="fa-solid fa-person-running"></i>
+              </div>
+              <h4>Tăng Độ Linh Hoạt</h4>
+              <p>Kéo giãn tối đa các nhóm cơ bị bó cứng do thói quen ngồi nhiều của dân văn phòng.</p>
+            </div>
+            <div className="benefit-item yoga-benefit-item">
+              <div className="benefit-icon-wrap yoga-icon-wrap">
+                <i className="fa-solid fa-brain"></i>
+              </div>
+              <h4>Giải Tỏa Căng Thẳng</h4>
+              <p>Hơi thở sâu làm dịu hệ thần kinh, giảm stress và cải thiện chất lượng giấc ngủ.</p>
+            </div>
+            <div className="benefit-item yoga-benefit-item">
+              <div className="benefit-icon-wrap yoga-icon-wrap">
+                <i className="fa-solid fa-leaf"></i>
+              </div>
+              <h4>Cải Thiện Tư Thế</h4>
+              <p>Chỉnh sửa cột sống, mở vai và giảm đau mỏi lưng cổ vai gáy một cách rõ rệt.</p>
             </div>
           </div>
         </section>
 
         {/* CALL TO ACTION */}
-        <section className="detail-cta" style={{ borderColor: '#10b981' }}>
-          <h2>KHÁM PHÁ SỰ TĨNH LẶNG TRONG TÂM HỒN</h2>
-          <p>Tham gia các lớp Yoga đa dạng tại FX Fitness để tái tạo năng lượng tích cực cho cuộc sống.</p>
+        <section className="detail-cta yoga-cta">
+          <h2>TRẢI NGHIỆM LỚP HỌC YOGA ĐẲNG CẤP</h2>
+          <p>Tham gia lớp học ngay hôm nay để lấy lại sự cân bằng hoàn hảo cho cuộc sống của bạn.</p>
           <div className="cta-actions">
-            <button onClick={handleChoosePlan} className="cta-btn-primary" style={{ background: '#10b981', boxShadow: '0 8px 24px rgba(16, 185, 129, 0.4)' }} onMouseOver={(e) => e.target.style.background = '#059669'} onMouseOut={(e) => e.target.style.background = '#10b981'}>
-              MUA GÓI TẬP NGAY
+            <button
+              onClick={handleChoosePlan}
+              className="cta-btn-primary yoga-cta-primary"
+            >
+              Đăng ký tập ngay
             </button>
             <a href="/" onClick={handleGoHome} className="cta-btn-secondary">
-              QUAY LẠI TRANG CHỦ
+              Quay lại Trang chủ
             </a>
           </div>
         </section>

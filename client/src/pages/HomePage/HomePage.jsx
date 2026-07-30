@@ -440,51 +440,110 @@ function HomePage() {
         </div>
 
         <div className="services-grid">
-          {coreSports.length > 0 ? (
-            <>
-              {coreSports.map((sport, index) => (
-                <div key={index} className={`service-card reveal reveal-delay-${(index % 3) + 1}`} style={{ backgroundImage: `url('${sport.image}')` }}>
-                  <div className="service-overlay">
-                    <h3 className="service-name">{sport.name}</h3>
-                    <p className="service-desc">{sport.description}</p>
-                  </div>
-                </div>
-              ))}
-              {/* 4th Card: AI Consultation */}
-              <div 
-                className="service-card reveal reveal-delay-4" 
-                style={{ 
-                  backgroundImage: "url('/ai_consult_bg.png')",
-                  border: '1.5px solid rgba(249, 115, 22, 0.35)'
-                }}
-                onClick={() => setShowAiModal(true)}
-              >
-                <div className="service-overlay" style={{ background: 'linear-gradient(to top, rgba(10,10,10,0.95) 0%, rgba(10,10,10,0.6) 60%, transparent 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '36px 28px' }}>
-                  <div className="service-icon" style={{ marginBottom: '8px' }}>
-                    <i className="fa-solid fa-robot" style={{ color: 'var(--orange)', fontSize: '2rem' }}></i>
-                  </div>
-                  <h3 className="service-name" style={{ color: 'var(--orange)' }}>Tư vấn sức khỏe AI</h3>
-                  <p className="service-desc" style={{ fontSize: '0.9rem' }}>Tính chỉ số BMI, phân tích thể trạng và nhận lộ trình tập luyện & dinh dưỡng cá nhân hóa miễn phí.</p>
-                  <button 
-                    className="btn-primary-nav" 
-                    style={{ 
-                      marginTop: '12px', 
-                      fontSize: '0.8rem', 
-                      padding: '6px 16px', 
-                      borderRadius: '20px',
-                      boxShadow: '0 4px 12px rgba(249,115,22,0.3)',
-                      border: 'none',
-                      background: 'var(--orange)'
-                    }}
-                  >
-                    Trải nghiệm ngay
-                  </button>
-                </div>
+          {/* Gym Card */}
+          <div 
+            className="service-card reveal reveal-delay-1" 
+            style={{ 
+              backgroundImage: "url('/assets/images/gym.png')", 
+              cursor: 'pointer',
+              border: '1.5px solid rgba(249, 115, 22, 0.25)'
+            }}
+            onClick={() => {
+              window.history.pushState({}, '', '/services/gym');
+              window.dispatchEvent(new Event('popstate'));
+            }}
+          >
+            <div className="service-overlay" style={{ background: 'linear-gradient(to top, rgba(10,10,10,0.95) 0%, rgba(10,10,10,0.5) 60%, transparent 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '36px 28px', height: '100%' }}>
+              <div className="service-icon" style={{ marginBottom: '8px' }}>
+                <i className="fa-solid fa-dumbbell" style={{ color: 'var(--orange)', fontSize: '2rem' }}></i>
               </div>
-            </>
-          ) : (
-            <div style={{ textAlign: 'center', width: '100%', padding: '40px' }}>Đang tải dịch vụ...</div>
-          )}
+              <h3 className="service-name" style={{ color: 'var(--white)' }}>Luyện Tập Gym</h3>
+              <p className="service-desc" style={{ fontSize: '0.9rem', textAlign: 'center' }}>Hệ thống thiết bị hiện đại nhập khẩu, khu vực tạ tự do rộng rãi, phù hợp mọi mục tiêu tăng cơ giảm mỡ.</p>
+              <button 
+                className="btn-primary-nav" 
+                style={{ 
+                  marginTop: '12px', 
+                  fontSize: '0.8rem', 
+                  padding: '6px 16px', 
+                  borderRadius: '20px',
+                  boxShadow: '0 4px 12px rgba(249,115,22,0.3)',
+                  border: 'none',
+                  background: 'var(--orange)'
+                }}
+              >
+                Tìm hiểu ngay
+              </button>
+            </div>
+          </div>
+
+          {/* Yoga Card */}
+          <div 
+            className="service-card reveal reveal-delay-2" 
+            style={{ 
+              backgroundImage: "url('/assets/images/yoga.png')", 
+              cursor: 'pointer',
+              border: '1.5px solid rgba(249, 115, 22, 0.25)'
+            }}
+            onClick={() => {
+              window.history.pushState({}, '', '/services/yoga');
+              window.dispatchEvent(new Event('popstate'));
+            }}
+          >
+            <div className="service-overlay" style={{ background: 'linear-gradient(to top, rgba(10,10,10,0.95) 0%, rgba(10,10,10,0.5) 60%, transparent 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '36px 28px', height: '100%' }}>
+              <div className="service-icon" style={{ marginBottom: '8px' }}>
+                <i className="fa-solid fa-spa" style={{ color: 'var(--orange)', fontSize: '2rem' }}></i>
+              </div>
+              <h3 className="service-name" style={{ color: 'var(--white)' }}>Lớp Yoga & Thiền</h3>
+              <p className="service-desc" style={{ fontSize: '0.9rem', textAlign: 'center' }}>Lớp học đa dạng từ cơ bản đến nâng cao, không gian yên tĩnh giúp cân bằng thân tâm trí.</p>
+              <button 
+                className="btn-primary-nav" 
+                style={{ 
+                  marginTop: '12px', 
+                  fontSize: '0.8rem', 
+                  padding: '6px 16px', 
+                  borderRadius: '20px',
+                  boxShadow: '0 4px 12px rgba(249,115,22,0.3)',
+                  border: 'none',
+                  background: 'var(--orange)'
+                }}
+              >
+                Tìm hiểu ngay
+              </button>
+            </div>
+          </div>
+
+          {/* AI Consultation Card */}
+          <div 
+            className="service-card reveal reveal-delay-3" 
+            style={{ 
+              backgroundImage: "url('/ai_consult_bg.png')",
+              border: '1.5px solid rgba(249, 115, 22, 0.25)',
+              cursor: 'pointer'
+            }}
+            onClick={() => setShowAiModal(true)}
+          >
+            <div className="service-overlay" style={{ background: 'linear-gradient(to top, rgba(10,10,10,0.95) 0%, rgba(10,10,10,0.5) 60%, transparent 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '36px 28px', height: '100%' }}>
+              <div className="service-icon" style={{ marginBottom: '8px' }}>
+                <i className="fa-solid fa-robot" style={{ color: 'var(--orange)', fontSize: '2rem' }}></i>
+              </div>
+              <h3 className="service-name" style={{ color: 'var(--white)' }}>Tư vấn sức khỏe AI</h3>
+              <p className="service-desc" style={{ fontSize: '0.9rem', textAlign: 'center' }}>Tính chỉ số BMI, phân tích thể trạng và nhận lộ trình tập luyện & dinh dưỡng cá nhân hóa miễn phí.</p>
+              <button 
+                className="btn-primary-nav" 
+                style={{ 
+                  marginTop: '12px', 
+                  fontSize: '0.8rem', 
+                  padding: '6px 16px', 
+                  borderRadius: '20px',
+                  boxShadow: '0 4px 12px rgba(249,115,22,0.3)',
+                  border: 'none',
+                  background: 'var(--orange)'
+                }}
+              >
+                Trải nghiệm ngay
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -497,7 +556,7 @@ function HomePage() {
           <p style={{textAlign: 'center', marginTop: '10px', color: '#64748b'}}>Khám phá các lựa chọn phù hợp nhất cho mục tiêu của bạn.</p>
         </div>
 
-        {['VIP', 'Combo', 'Gym', 'Yoga', 'Boxing'].map((sport) => {
+        {['VIP', 'Combo', 'Gym', 'Yoga'].map((sport) => {
           const sportPlans = plans
             .filter(p => p.sportType === sport && p.price >= 100000)
             .sort((a, b) => b.durationMonths - a.durationMonths); // Higher durations / Premium to the top
@@ -506,7 +565,6 @@ function HomePage() {
           const displayTitles = {
             Gym: 'Gói Tập Gym',
             Yoga: 'Gói Tập Yoga',
-            Boxing: 'Gói Tập Boxing',
             Combo: 'Gói Tập Combo',
             VIP: 'Gói Tập VIP'
           };
@@ -542,7 +600,7 @@ function HomePage() {
                       <div className="pricing-card-banner">
                         {isFeatured && <div className="popular-badge">Khuyên Dùng</div>}
                         <div className="banner-sport-icon">
-                          <i className={plan.sportType === 'Yoga' ? 'fa-solid fa-spa' : plan.sportType === 'Boxing' ? 'fa-solid fa-hand-fist' : 'fa-solid fa-dumbbell'}></i>
+                          <i className={plan.sportType === 'Yoga' ? 'fa-solid fa-spa' : 'fa-solid fa-dumbbell'}></i>
                         </div>
                         <p className="banner-plan-name">{plan.planName}</p>
                         <span className="banner-duration-badge">{plan.durationMonths} Tháng</span>
@@ -568,7 +626,7 @@ function HomePage() {
                         <ul className="plan-features" style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
                           <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                             <i className="fas fa-check-circle" style={{ color: 'var(--orange)', marginTop: '4px' }}></i>
-                            <span>Bộ môn: <strong>{plan.sportType === 'VIP' || plan.sportType === 'Combo' ? 'Gym, Yoga, Boxing' : plan.sportType}</strong></span>
+                            <span>Bộ môn: <strong>{plan.sportType === 'VIP' || plan.sportType === 'Combo' ? 'Gym & Yoga (VIP)' : plan.sportType}</strong></span>
                           </li>
                           {plan.description && plan.description.split('\n').map((line, lIdx) => {
                             if (!line.trim()) return null;
@@ -580,13 +638,33 @@ function HomePage() {
                             );
                           })}
                         </ul>
-                        <button
-                          onClick={() => goToCheckout(plan.planId)}
-                          className={`btn-plan ${isFeatured ? 'btn-featured' : ''}`}
-                          style={{ marginTop: 'auto' }}
-                        >
-                          Mua Ngay
-                        </button>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: 'auto' }}>
+                          <button
+                            onClick={() => goToCheckout(plan.planId)}
+                            className={`btn-plan ${isFeatured ? 'btn-featured' : ''}`}
+                          >
+                            Mua Ngay
+                          </button>
+                          {/* PT add-on: chỉ hiện cho gói Gym */}
+                          {plan.sportType === 'Gym' && (
+                            <button
+                              onClick={() => {
+                                window.history.pushState({}, '', `/checkout?plan=${plan.planId}&addPT=true`);
+                                window.dispatchEvent(new Event('popstate'));
+                              }}
+                              className="btn-plan"
+                              style={{
+                                borderColor: 'var(--orange)',
+                                color: 'var(--orange)',
+                                background: 'rgba(249,115,22,0.07)',
+                                fontSize: '0.82rem',
+                              }}
+                            >
+                              <i className="fa-solid fa-dumbbell" style={{ marginRight: '6px', fontSize: '0.82rem' }}></i>
+                              Mua Kèm PT Tập Kèm
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );

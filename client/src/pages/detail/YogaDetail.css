@@ -2,6 +2,8 @@
    FX FITNESS - YOGA DETAIL STYLES
    ========================================== */
 
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@700;800;900&display=swap');
+
 :root {
     --green: #10B981;
     --green-dark: #059669;
@@ -18,6 +20,8 @@
     --text-muted: #6B7280;
 }
 
+* { box-sizing: border-box; }
+
 .yoga-detail-container {
     font-family: 'Barlow', sans-serif;
     background: var(--white);
@@ -26,32 +30,35 @@
     width: 100%;
 }
 
-/* Header style */
+/* ============================
+   HEADER / NAVBAR
+============================ */
 .detail-header {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     height: 64px;
-    background: rgba(10, 10, 10, 0.95);
+    background: rgba(10, 10, 10, 0.97);
     backdrop-filter: blur(10px);
     z-index: 100;
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 48px;
-    box-shadow: 0 2px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 20px rgba(0, 0, 0, 0.4);
 }
 
 .detail-back-btn {
     color: var(--white);
     text-decoration: none;
-    font-size: 0.9rem;
+    font-size: 0.88rem;
     font-weight: 700;
     display: flex;
     align-items: center;
     gap: 8px;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
     transition: color 0.2s ease;
 }
 
@@ -63,29 +70,68 @@
     font-family: 'Barlow Condensed', sans-serif;
     color: var(--green);
     font-weight: 900;
-    font-size: 1.25rem;
-    letter-spacing: 1.5px;
+    font-size: 1.1rem;
+    letter-spacing: 2px;
 }
 
-/* Hero Section */
+/* ============================
+   BREADCRUMB
+============================ */
+.detail-breadcrumb {
+    margin-top: 64px;
+    padding: 12px 48px;
+    background: var(--gray-50);
+    border-bottom: 1px solid var(--gray-200);
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.detail-breadcrumb a {
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.detail-breadcrumb a:hover {
+    color: var(--green);
+}
+
+.breadcrumb-separator {
+    color: var(--gray-400);
+}
+
+.breadcrumb-current {
+    color: var(--green);
+    font-weight: 600;
+}
+
+/* ============================
+   HERO BANNER
+============================ */
 .yoga-hero {
     position: relative;
-    height: 60vh;
-    min-height: 400px;
+    height: 65vh;
+    min-height: 420px;
     display: flex;
     align-items: center;
     justify-content: center;
     text-align: center;
     padding: 0 24px;
-    background: url('/HomePage.png') no-repeat center center;
+    background: url('https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?auto=format&fit=crop&w=1600&q=80') no-repeat center center;
     background-size: cover;
-    margin-top: 64px;
 }
 
 .yoga-hero-overlay {
     position: absolute;
     inset: 0;
-    background: linear-gradient(to bottom, rgba(10, 10, 10, 0.5) 0%, rgba(10, 10, 10, 0.85) 100%);
+    background: linear-gradient(
+        to bottom,
+        rgba(5, 30, 20, 0.55) 0%,
+        rgba(5, 30, 20, 0.85) 100%
+    );
     z-index: 1;
 }
 
@@ -101,60 +147,66 @@
     color: var(--white);
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 800;
-    font-size: 0.8rem;
-    padding: 4px 16px;
+    font-size: 0.78rem;
+    padding: 5px 18px;
     border-radius: 4px;
-    letter-spacing: 1px;
-    margin-bottom: 16px;
+    letter-spacing: 1.5px;
+    margin-bottom: 18px;
     text-transform: uppercase;
 }
 
 .yoga-title {
     font-family: 'Barlow Condensed', sans-serif;
     color: var(--white);
-    font-size: clamp(2.2rem, 5vw, 3.8rem);
+    font-size: clamp(2.4rem, 5vw, 4rem);
     font-weight: 900;
     letter-spacing: 1px;
     margin: 0 0 16px 0;
     text-transform: uppercase;
-    text-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    text-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    line-height: 1.05;
 }
 
 .yoga-subtitle {
-    color: var(--gray-200);
-    font-size: clamp(0.95rem, 1.8vw, 1.15rem);
-    line-height: 1.6;
-    margin: 0;
-    text-shadow: 0 2px 6px rgba(0,0,0,0.4);
-}
-
-/* Main Content */
-.detail-main-content {
-    max-width: 1140px;
+    color: rgba(255,255,255,0.85);
+    font-size: clamp(0.95rem, 1.8vw, 1.1rem);
+    line-height: 1.65;
+    max-width: 600px;
     margin: 0 auto;
-    padding: 60px 24px 80px 24px;
 }
 
-/* Intro Section */
-.intro-section {
-    display: grid;
-    grid-template-columns: 1.4fr 1fr;
-    gap: 48px;
-    align-items: center;
+/* ============================
+   MAIN CONTENT WRAPPER
+============================ */
+.detail-main-content {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 72px 24px 80px 24px;
+}
+
+/* ============================
+   INTRO + STATS
+============================ */
+.intro-stats-section {
     margin-bottom: 80px;
 }
 
-.intro-text h2 {
+.intro-text-block {
+    margin-bottom: 40px;
+}
+
+.intro-text-block h2 {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 2.2rem;
+    font-size: 2rem;
     font-weight: 800;
     color: var(--black);
     text-transform: uppercase;
     margin: 0 0 20px 0;
     position: relative;
+    display: inline-block;
 }
 
-.intro-text h2::after {
+.intro-text-block h2::after {
     content: '';
     position: absolute;
     bottom: -6px;
@@ -164,60 +216,309 @@
     background: var(--green);
 }
 
-.intro-text p {
+.intro-text-block p {
     font-size: 1rem;
     color: var(--gray-600);
-    line-height: 1.7;
-    margin: 0 0 20px 0;
-    text-align: justify;
+    line-height: 1.75;
+    margin: 0 0 16px 0;
+    max-width: 780px;
 }
 
-.intro-card-visual {
-    background: linear-gradient(135deg, var(--black) 0%, #1e1e1e 100%);
+/* Stats Bar */
+.stats-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    background: var(--black);
     border-radius: 16px;
-    padding: 40px;
+    overflow: hidden;
+    border: 1px solid rgba(16,185,129,0.2);
+}
+
+.yoga-stats .stat-num {
+    color: var(--green);
+}
+
+.stat-item {
+    padding: 32px 24px;
     text-align: center;
-    color: var(--white);
-    box-shadow: 0 15px 35px rgba(0,0,0,0.15);
-}
-
-.visual-icon-wrap {
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    margin: 0 auto 24px auto;
+    gap: 6px;
 }
 
-.visual-icon-wrap i {
-    font-size: 2rem;
+.stat-num {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: var(--green);
+    line-height: 1;
 }
 
-.intro-card-visual h3 {
+.stat-label {
+    font-size: 0.82rem;
+    color: var(--gray-400);
+    font-weight: 500;
+}
+
+.stat-divider {
+    width: 1px;
+    background: rgba(255,255,255,0.08);
+    align-self: stretch;
+}
+
+/* ============================
+   GALLERY SECTION
+============================ */
+.gallery-section {
+    margin-bottom: 80px;
+}
+
+.sub-section-title {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 1.5rem;
     font-weight: 800;
+    color: var(--black);
     text-transform: uppercase;
-    margin: 0 0 12px 0;
+    margin: 0 0 24px 0;
     letter-spacing: 0.5px;
 }
 
-.intro-card-visual p {
-    font-size: 0.92rem;
-    color: var(--gray-400);
-    line-height: 1.6;
+.gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+}
+
+.gallery-item {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    aspect-ratio: 4/3;
+    cursor: pointer;
+}
+
+.gallery-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+    display: block;
+}
+
+.gallery-item:hover img {
+    transform: scale(1.07);
+}
+
+.gallery-caption {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(5,30,20,0.88) 0%, transparent 100%);
+    color: var(--white);
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 24px 16px 14px 16px;
+}
+
+/* ============================
+   EQUIPMENT / FACILITIES
+============================ */
+.equipment-details-section {
+    margin-bottom: 80px;
+}
+
+.equipment-details-section h2 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--black);
+    text-transform: uppercase;
+    margin: 0 0 10px 0;
+    position: relative;
+    display: inline-block;
+}
+
+.equipment-details-section h2::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 0;
+    width: 44px;
+    height: 3px;
+    background: var(--green);
+}
+
+.section-desc {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin: 16px 0 36px 0;
+}
+
+.equipment-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+}
+
+.equipment-card {
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-top: 4px solid var(--green);
+    border-radius: 14px;
+    padding: 28px 24px;
+    transition: all 0.3s ease;
+}
+
+.equipment-card.yoga-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 32px rgba(16,185,129,0.12);
+    border-color: var(--green);
+}
+
+.eq-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background: rgba(16,185,129,0.1);
+    border: 1.5px solid rgba(16,185,129,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+    font-size: 1.4rem;
+    color: var(--green);
+}
+
+.eq-icon.yoga-icon {
+    background: rgba(16,185,129,0.1);
+    border-color: rgba(16,185,129,0.3);
+    color: var(--green);
+}
+
+.equipment-card h3 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--black);
+    text-transform: uppercase;
+    margin: 0 0 14px 0;
+    letter-spacing: 0.5px;
+}
+
+.equipment-card ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+
+.equipment-card ul li {
+    font-size: 0.9rem;
+    color: var(--gray-600);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.5;
+}
+
+.equipment-card ul li::before {
+    content: '›';
+    color: var(--green);
+    font-weight: 700;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    margin-top: -1px;
+}
+
+/* ============================
+   INSTRUCTORS SECTION
+============================ */
+.instructors-section {
+    margin-bottom: 80px;
+}
+
+.instructors-section h2 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--black);
+    text-transform: uppercase;
+    margin: 0 0 28px 0;
+    position: relative;
+    display: inline-block;
+}
+
+.instructors-section h2::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 0;
+    width: 44px;
+    height: 3px;
+    background: var(--green);
+}
+
+.instructor-highlight {
+    display: flex;
+    align-items: flex-start;
+    gap: 28px;
+    background: rgba(16, 185, 129, 0.04);
+    border: 1px solid rgba(16,185,129,0.2);
+    border-left: 4px solid var(--green);
+    border-radius: 14px;
+    padding: 32px 36px;
+}
+
+.instructor-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: rgba(16,185,129,0.1);
+    border: 1.5px solid rgba(16,185,129,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: var(--green);
+    flex-shrink: 0;
+}
+
+.instructor-info h4 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: var(--green);
+    text-transform: uppercase;
+    margin: 0 0 10px 0;
+    letter-spacing: 0.3px;
+}
+
+.instructor-info p {
+    font-size: 0.95rem;
+    color: var(--gray-600);
+    line-height: 1.7;
     margin: 0;
 }
 
-/* Benefits Section */
+/* ============================
+   BENEFITS SECTION
+============================ */
 .benefits-section {
     background: var(--gray-50);
     border-radius: 20px;
-    padding: 60px 40px;
+    padding: 60px 48px;
     border: 1px solid var(--gray-200);
     margin-bottom: 80px;
+}
+
+.yoga-benefits {
+    background: rgba(16, 185, 129, 0.03);
+    border-color: rgba(16,185,129,0.15);
 }
 
 .section-title-center {
@@ -227,132 +528,83 @@
     color: var(--black);
     text-align: center;
     text-transform: uppercase;
-    margin: 0 0 8px 0;
-}
-
-.section-subtitle-center {
-    font-size: 0.98rem;
-    color: var(--text-muted);
-    text-align: center;
     margin: 0 0 44px 0;
-}
-
-.benefits-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 24px;
-}
-
-.benefit-card {
-    background: var(--white);
-    border: 1px solid var(--gray-200);
-    border-radius: 12px;
-    padding: 32px 24px;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.02);
-}
-
-.benefit-card:hover {
-    border-color: var(--green);
-    transform: translateY(-4px);
-    box-shadow: 0 12px 30px rgba(16, 185, 129, 0.1);
-}
-
-.benefit-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.3rem;
-    margin-bottom: 20px;
-}
-
-.benefit-card h3 {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: var(--black);
-    margin: 0 0 10px 0;
-}
-
-.benefit-card p {
-    font-size: 0.88rem;
-    color: var(--gray-600);
-    line-height: 1.6;
-    margin: 0;
-    text-align: justify;
-}
-
-/* Features List */
-.features-section {
-    margin-bottom: 80px;
-}
-
-.features-section h2 {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 2.2rem;
-    font-weight: 800;
-    color: var(--black);
-    text-transform: uppercase;
-    margin: 0 0 36px 0;
     position: relative;
 }
 
-.features-section h2::after {
+.section-title-center::after {
     content: '';
     position: absolute;
-    bottom: -6px;
-    left: 0;
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
     width: 44px;
     height: 3px;
     background: var(--green);
 }
 
-.features-list {
-    display: flex;
-    flex-direction: column;
+.benefits-grid-custom {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     gap: 24px;
 }
 
-.feature-item {
+.benefit-item {
+    background: var(--white);
+    border: 1px solid var(--gray-200);
+    border-radius: 14px;
+    padding: 32px 24px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.yoga-benefit-item:hover {
+    border-color: var(--green);
+    transform: translateY(-5px);
+    box-shadow: 0 12px 28px rgba(16,185,129,0.1);
+}
+
+.benefit-icon-wrap {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    font-size: 1.4rem;
     display: flex;
-    gap: 24px;
-    align-items: flex-start;
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--gray-200);
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 18px auto;
 }
 
-.feature-item:last-child {
-    border-bottom: none;
+.yoga-icon-wrap {
+    background: rgba(16,185,129,0.1);
+    border: 1.5px solid rgba(16,185,129,0.25);
+    color: var(--green);
 }
 
-.feature-number {
+.benefit-item h4 {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 2.5rem;
-    font-weight: 900;
-    line-height: 1;
-}
-
-.feature-item h4 {
-    font-size: 1.15rem;
-    font-weight: 700;
+    font-size: 1.2rem;
+    font-weight: 800;
     color: var(--black);
-    margin: 0 0 6px 0;
+    text-transform: uppercase;
+    margin: 0 0 10px 0;
+    letter-spacing: 0.3px;
 }
 
-.feature-item p {
-    font-size: 0.95rem;
+.benefit-item p {
+    font-size: 0.9rem;
     color: var(--gray-600);
-    line-height: 1.6;
+    line-height: 1.65;
     margin: 0;
 }
 
-/* CTA Card */
+/* ============================
+   CTA SECTION
+============================ */
 .detail-cta {
-    background: linear-gradient(135deg, var(--black) 0%, #171717 100%);
-    border-radius: 16px;
-    padding: 60px 40px;
+    background: linear-gradient(135deg, #0a0a0a 0%, #101a15 100%);
+    border-radius: 20px;
+    padding: 64px 48px;
     text-align: center;
     color: var(--white);
     position: relative;
@@ -360,20 +612,37 @@
     box-shadow: 0 20px 40px rgba(0,0,0,0.25);
 }
 
+.yoga-cta {
+    border: 1.5px solid var(--green);
+}
+
+.detail-cta::before {
+    content: '';
+    position: absolute;
+    top: -60px;
+    right: -60px;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    background: rgba(16,185,129,0.06);
+    pointer-events: none;
+}
+
 .detail-cta h2 {
-    font-family: 'Barlow', sans-serif;
-    font-size: clamp(1.8rem, 4vw, 2.6rem);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: clamp(1.8rem, 4vw, 2.8rem);
     font-weight: 900;
     letter-spacing: 1px;
-    margin: 0 0 12px 0;
+    margin: 0 0 14px 0;
+    text-transform: uppercase;
 }
 
 .detail-cta p {
     color: var(--gray-400);
     font-size: 1.05rem;
-    max-width: 600px;
-    margin: 0 auto 36px auto;
-    line-height: 1.6;
+    max-width: 580px;
+    margin: 0 auto 40px auto;
+    line-height: 1.65;
 }
 
 .cta-actions {
@@ -381,39 +650,50 @@
     justify-content: center;
     align-items: center;
     gap: 16px;
+    flex-wrap: wrap;
 }
 
 .cta-btn-primary {
-    padding: 14px 36px;
+    padding: 14px 40px;
     color: var(--white);
-    font-family: 'Barlow', sans-serif;
-    font-size: 0.95rem;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 1rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 1px;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     transition: all 0.25s ease;
+    background: var(--green);
+    box-shadow: 0 8px 24px rgba(16,185,129,0.35);
 }
 
-.cta-btn-primary:hover {
+.yoga-cta-primary {
+    background: var(--green);
+    box-shadow: 0 8px 24px rgba(16,185,129,0.35);
+}
+
+.yoga-cta-primary:hover {
+    background: var(--green-dark);
     transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(16,185,129,0.45);
 }
 
 .cta-btn-secondary {
-    padding: 13px 36px;
+    padding: 13px 40px;
     background: transparent;
     color: var(--white);
-    font-family: 'Barlow', sans-serif;
-    font-size: 0.95rem;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 1rem;
     font-weight: 600;
-    border: 1.5px solid rgba(255,255,255,0.4);
-    border-radius: 4px;
+    border: 1.5px solid rgba(255,255,255,0.35);
+    border-radius: 6px;
     cursor: pointer;
     text-decoration: none;
     letter-spacing: 0.5px;
     transition: all 0.25s ease;
+    display: inline-block;
 }
 
 .cta-btn-secondary:hover {
@@ -421,7 +701,9 @@
     background: rgba(255, 255, 255, 0.08);
 }
 
-/* Footer */
+/* ============================
+   FOOTER
+============================ */
 .detail-footer {
     background: var(--black);
     color: var(--gray-600);
@@ -429,43 +711,68 @@
     text-align: center;
     font-size: 0.82rem;
     border-top: 1px solid #1a1a1a;
+    letter-spacing: 0.3px;
 }
 
-/* Responsiveness */
-@media (max-width: 900px) {
-    .intro-section {
-        grid-template-columns: 1fr;
-        gap: 32px;
+/* ============================
+   RESPONSIVE
+============================ */
+@media (max-width: 1024px) {
+    .equipment-grid {
+        grid-template-columns: repeat(2, 1fr);
     }
-
-    .benefits-grid {
-        grid-template-columns: 1fr 1fr;
+    .stats-bar {
+        grid-template-columns: repeat(2, 1fr);
     }
+    .stat-divider {
+        display: none;
+    }
+}
 
+@media (max-width: 768px) {
     .detail-header {
-        padding: 0 24px;
+        padding: 0 20px;
     }
-
+    .detail-breadcrumb {
+        padding: 12px 20px;
+    }
+    .gallery-grid {
+        grid-template-columns: 1fr;
+    }
+    .equipment-grid {
+        grid-template-columns: 1fr;
+    }
+    .benefits-grid-custom {
+        grid-template-columns: 1fr;
+    }
+    .instructor-highlight {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 28px 24px;
+    }
+    .detail-main-content {
+        padding: 48px 20px 60px 20px;
+    }
     .benefits-section {
         padding: 40px 24px;
     }
+    .detail-cta {
+        padding: 44px 24px;
+    }
 }
 
-@media (max-width: 600px) {
-    .benefits-grid {
+@media (max-width: 480px) {
+    .stats-bar {
         grid-template-columns: 1fr;
     }
-
     .cta-actions {
         flex-direction: column;
         width: 100%;
     }
-
-    .cta-btn-primary, .cta-btn-secondary {
+    .cta-btn-primary,
+    .cta-btn-secondary {
         width: 100%;
-    }
-
-    .detail-cta {
-        padding: 40px 20px;
+        text-align: center;
     }
 }

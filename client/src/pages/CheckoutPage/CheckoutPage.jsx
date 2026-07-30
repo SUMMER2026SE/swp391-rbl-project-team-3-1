@@ -31,21 +31,12 @@ const FALLBACK_PLANS = [
     featured: true,
   },
   {
-    planId: 4,
-    planName: 'Boxing 12 Tháng',
-    sportType: 'Boxing',
-    durationMonths: 12,
-    price: 30000,
-    features: ['Gói tập Boxing chuyên nghiệp 1 năm'],
-    featured: false,
-  },
-  {
     planId: 5,
     planName: 'Premium Toàn Diện 12 Tháng',
     sportType: 'Mixed',
     durationMonths: 12,
     price: 60000,
-    features: ['Sử dụng tất cả dịch vụ Gym, Yoga, Boxing'],
+    features: ['Sử dụng tất cả dịch vụ Gym, Yoga'],
     featured: false,
   },
 ];
@@ -100,6 +91,13 @@ function CheckoutPage() {
   const [selectedTrainer, setSelectedTrainer] = useState(null);   // trainer object | null
   const [showPlanPicker, setShowPlanPicker] = useState(false);
   const [isServiceOnly, setIsServiceOnly] = useState(false);
+  const [addPTRequested, setAddPTRequested] = useState(false);
+
+  // ── Trainer Detail Popup states ───────────────────────────────────
+  const [trainerPopup, setTrainerPopup] = useState(null);       // trainer object to display
+  const [trainerSchedule, setTrainerSchedule] = useState([]);   // schedule slots
+  const [isLoadingSchedule, setIsLoadingSchedule] = useState(false);
+  const [scheduleWeekOffset, setScheduleWeekOffset] = useState(0); // 0 = this week, 1 = next week
 
   // ── Form & Loading states ──────────────────────────────────────────
   const [regFullName, setRegFullName] = useState('');
@@ -138,6 +136,8 @@ function CheckoutPage() {
     const planKey = params.get('plan');   // e.g. 'monthly', 'quarterly', 'annual'
     const serviceKey = params.get('service');
     const storedPlan = localStorage.getItem('checkoutPlan');
+    const wantsAddPT = params.get('addPT') === 'true';
+    setAddPTRequested(wantsAddPT);
 
     // Determine service-only flow: must have service parameter and user must be logged in
     const serviceOnlyFlow = isLoggedIn && !!serviceKey;
@@ -203,11 +203,23 @@ function CheckoutPage() {
       .then(data => {
         if (data?.services?.length) {
           setServices(data.services);
-          const serviceKey = new URLSearchParams(window.location.search).get('service');
+          const urlParams = new URLSearchParams(window.location.search);
+          const serviceKey = urlParams.get('service');
+          const wantsPT = urlParams.get('addPT') === 'true';
+
           if (serviceKey) {
             const matchedSvc = data.services.find(s => String(s.serviceId) === serviceKey);
             if (matchedSvc) {
               setSelectedServices([matchedSvc.serviceId]);
+            }
+          } else if (wantsPT) {
+            // Auto pre-select the PT service (Huấn Luyện sportType)
+            const ptService = data.services.find(s =>
+              s.sportType === 'Huấn Luyện' ||
+              (s.serviceName && s.serviceName.toLowerCase().includes('pt'))
+            );
+            if (ptService) {
+              setSelectedServices([ptService.serviceId]);
             }
           }
         }
@@ -566,6 +578,45 @@ function CheckoutPage() {
     }
   };
 
+  // ─── Open Trainer Detail Popup ─────────────────────────────────────
+  const openTrainerPopup = async (trainer) => {
+    setTrainerPopup(trainer);
+    setScheduleWeekOffset(0);
+    setTrainerSchedule([]);
+    setIsLoadingSchedule(true);
+
+    // Fetch schedule for next 14 days
+    const today = new Date();
+    const start = new Date(today);
+    const end = new Date(today);
+    end.setDate(end.getDate() + 13);
+
+    const fmt2 = (d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    try {
+      const res = await fetch(
+        `/api/checkout/trainers/${trainer.trainerId}/schedule?startDate=${fmt2(start)}&endDate=${fmt2(end)}`
+      );
+      const data = await res.json();
+      setTrainerSchedule(data.schedules || []);
+    } catch {
+      setTrainerSchedule([]);
+    } finally {
+      setIsLoadingSchedule(false);
+    }
+  };
+
+  const closeTrainerPopup = () => {
+    setTrainerPopup(null);
+    setTrainerSchedule([]);
+    setScheduleWeekOffset(0);
+  };
+
   const handleApplyCoupon = () => {
     setCouponMsg(null);
     const code = couponInput.toUpperCase().trim();
@@ -607,6 +658,16 @@ function CheckoutPage() {
     });
   
   const includedServiceIds = selectedPlan?.includedServices?.map(s => s.serviceId) || [];
+
+  // PT is only for Gym plans — block if Yoga
+  const isYogaPlan = selectedPlan?.sportType === 'Yoga';
+  // Non-PT services to show for Yoga (filter out PT services)
+  const nonPTServices = services.filter(s =>
+    s.sportType !== 'Huấn Luyện' && !(s.serviceName?.toLowerCase().includes('pt'))
+  );
+  const ptServices = services.filter(s =>
+    s.sportType === 'Huấn Luyện' || s.serviceName?.toLowerCase().includes('pt')
+  );
 
   const qrCodeUrl = payosPayment?.qrCode
     ? `https://quickchart.io/qr?size=240&text=${encodeURIComponent(payosPayment.qrCode)}`
@@ -686,6 +747,190 @@ function CheckoutPage() {
   // ══════════════════════════════════════════════════════════════════
   return (
     <div className="checkout-page">
+      {/* ── TRAINER DETAIL POPUP ── */}
+      {trainerPopup && (
+        <div className="trainer-popup-overlay" onClick={closeTrainerPopup}>
+          <div className="trainer-popup-modal" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="tpm-header">
+              <div className="tpm-avatar">
+                {trainerPopup.avatarUrl
+                  ? <img src={trainerPopup.avatarUrl} alt={trainerPopup.fullName} />
+                  : <span>{getInitials(trainerPopup.fullName)}</span>
+                }
+              </div>
+              <div className="tpm-header-info">
+                <h2 className="tpm-name">{trainerPopup.fullName}</h2>
+                <div className="tpm-meta">
+                  <span className="tpm-spec"><i className="fa-solid fa-dumbbell"></i> {trainerPopup.specialization}</span>
+                  <span className="tpm-exp"><i className="fa-solid fa-clock"></i> {trainerPopup.experienceYears || 0} năm kinh nghiệm</span>
+                  <span className="tpm-rating"><i className="fa-solid fa-star"></i> {(trainerPopup.rating || 4.5).toFixed(1)}</span>
+                </div>
+                {trainerPopup.bio && <p className="tpm-bio">{trainerPopup.bio}</p>}
+              </div>
+              <button className="tpm-close" onClick={closeTrainerPopup}>
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            <div className="tpm-body">
+              {/* Certifications */}
+              {trainerPopup.certifications?.length > 0 && (
+                <div className="tpm-section">
+                  <h3 className="tpm-section-title"><i className="fa-solid fa-certificate"></i> Chứng chỉ &amp; Bằng cấp</h3>
+                  <div className="tpm-certs">
+                    {trainerPopup.certifications.map(c => (
+                      <div key={c.id} className="tpm-cert-badge">
+                        <i className="fa-solid fa-award"></i>
+                        <span>{c.name}{c.issuedBy ? ` — ${c.issuedBy}` : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Client Testimonials */}
+              {trainerPopup.feedbacks?.length > 0 && (
+                <div className="tpm-section">
+                  <h3 className="tpm-section-title"><i className="fa-solid fa-comments"></i> Đánh giá từ học viên</h3>
+                  <div className="tpm-feedbacks">
+                    {trainerPopup.feedbacks.map(fb => (
+                      <div key={fb.id} className="tpm-feedback-card">
+                        <div className="tpm-fb-avatar">
+                          {fb.imageUrl
+                            ? <img src={fb.imageUrl} alt={fb.user} />
+                            : <span>{fb.user?.[0]?.toUpperCase()}</span>
+                          }
+                        </div>
+                        <div className="tpm-fb-content">
+                          <div className="tpm-fb-top">
+                            <span className="tpm-fb-user">{fb.user}</span>
+                            <span className="tpm-fb-stars">
+                              {Array.from({ length: fb.rating || 5 }).map((_, i) => (
+                                <i key={i} className="fa-solid fa-star"></i>
+                              ))}
+                            </span>
+                          </div>
+                          <p className="tpm-fb-text">{fb.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Schedule Calendar */}
+              <div className="tpm-section">
+                <div className="tpm-schedule-header">
+                  <h3 className="tpm-section-title"><i className="fa-solid fa-calendar-days"></i> Lịch rảnh / bận (2 tuần tới)</h3>
+                  <div className="tpm-schedule-legend">
+                    <span className="legend-free"><i className="fa-solid fa-circle"></i> Còn trống</span>
+                    <span className="legend-busy"><i className="fa-solid fa-circle"></i> Đã kín</span>
+                  </div>
+                </div>
+
+                {isLoadingSchedule ? (
+                  <div className="tpm-schedule-loading">
+                    <i className="fa-solid fa-spinner fa-spin"></i>
+                    <span>Đang tải lịch...</span>
+                  </div>
+                ) : (() => {
+                  // Build 14-day grid
+                  const SHIFTS = [
+                    { code: 'CA1', label: '05:00–06:30' },
+                    { code: 'CA2', label: '07:00–08:30' },
+                    { code: 'CA3', label: '09:00–10:30' },
+                    { code: 'CA4', label: '11:00–12:30' },
+                    { code: 'CA5', label: '14:00–15:30' },
+                    { code: 'CA6', label: '16:00–17:30' },
+                    { code: 'CA7', label: '18:00–19:30' },
+                  ];
+                  const DAYS_VI = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+                  const today = new Date();
+                  const dates = Array.from({ length: 14 }, (_, i) => {
+                    const d = new Date(today);
+                    d.setDate(d.getDate() + i + (scheduleWeekOffset * 7));
+                    return d;
+                  }).slice(0, 7);
+
+                  const busySet = new Set(trainerSchedule.map(s => `${s.workingDate}|${s.startTime.slice(0,5)}`));
+
+                  return (
+                    <div className="tpm-schedule-grid-wrap">
+                      <div className="tpm-week-nav">
+                        <button
+                          className="tpm-week-btn"
+                          disabled={scheduleWeekOffset === 0}
+                          onClick={() => setScheduleWeekOffset(0)}
+                        >
+                          <i className="fa-solid fa-chevron-left"></i> Tuần này
+                        </button>
+                        <button
+                          className="tpm-week-btn"
+                          disabled={scheduleWeekOffset === 1}
+                          onClick={() => setScheduleWeekOffset(1)}
+                        >
+                          Tuần sau <i className="fa-solid fa-chevron-right"></i>
+                        </button>
+                      </div>
+                      <div className="tpm-schedule-grid">
+                        {/* Header row */}
+                        <div className="tpm-grid-corner"></div>
+                        {dates.map((d, idx) => (
+                          <div key={idx} className={`tpm-grid-day-header${d.toDateString() === today.toDateString() ? ' today' : ''}`}>
+                            <span className="tpm-day-name">{DAYS_VI[d.getDay()]}</span>
+                            <span className="tpm-day-date">{d.getDate()}/{d.getMonth()+1}</span>
+                          </div>
+                        ))}
+                        {/* Shift rows */}
+                        {SHIFTS.map(shift => (
+                          <>
+                            <div key={`lbl-${shift.code}`} className="tpm-grid-shift-label">{shift.label}</div>
+                            {dates.map((d, dIdx) => {
+                              const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                              const shiftStart = shift.label.split('–')[0];
+                              const isBusy = busySet.has(`${dateStr}|${shiftStart}`);
+                              const isPast = d < today && d.toDateString() !== today.toDateString();
+                              return (
+                                <div
+                                  key={`cell-${shift.code}-${dIdx}`}
+                                  className={`tpm-grid-cell ${isBusy ? 'busy' : isPast ? 'past' : 'free'}`}
+                                  title={isBusy ? 'Đã có lịch' : isPast ? 'Đã qua' : 'Còn trống'}
+                                >
+                                  {isBusy ? <i className="fa-solid fa-lock"></i> : isPast ? '' : <i className="fa-solid fa-circle-check"></i>}
+                                </div>
+                              );
+                            })}
+                          </>
+                        ))}
+                      </div>
+                      {trainerSchedule.length === 0 && (
+                        <p className="tpm-schedule-empty">Không có lịch bận — PT hoàn toàn rảnh trong 2 tuần tới!</p>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Select this trainer CTA */}
+              <div className="tpm-footer">
+                <button
+                  className="tpm-select-btn"
+                  onClick={() => {
+                    setSelectedTrainer(trainerPopup);
+                    closeTrainerPopup();
+                  }}
+                >
+                  <i className="fa-solid fa-user-check"></i>
+                  Chọn {trainerPopup.fullName} làm HLV của tôi
+                </button>
+                <button className="tpm-cancel-btn" onClick={closeTrainerPopup}>Đóng</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── NAVBAR ── */}
       <nav className="co-navbar">
         <div className="co-nav-brand" onClick={goHome}>
@@ -831,101 +1076,177 @@ function CheckoutPage() {
                 </div>
               )}
 
-              {/* Trainer list details */}
+              {/* ── PT / HLV section: Gym only ── */}
               {!isServiceOnly && (
                 <div className="co-section">
                   <div className="co-section-header">
                     <div className="co-section-title">
-                      <i className="fa-solid fa-user-tie"></i> Chọn Huấn Luyện Viên
+                      <i className="fa-solid fa-user-tie"></i> Gói PT Tập Kèm
                     </div>
-                    <span className="trainer-optional-label">Tùy chọn</span>
+                    {!isYogaPlan && <span className="trainer-optional-label">Tùy chọn – Chỉ dành cho Gym</span>}
                   </div>
 
                   <div className="co-section-body">
-                    {!hasPTService ? (
-                      <div className="co-empty" style={{ backgroundColor: '#fdf2f8', color: '#be185d', borderColor: '#fbcfe8' }}>
-                        <i className="fa-solid fa-circle-exclamation" style={{ color: '#be185d' }}></i>
-                        Vui lòng chọn mua một Dịch vụ PT (bên dưới) trước khi được phép chọn Huấn luyện viên!
-                      </div>
-                    ) : isLoadingTrainers ? (
-                      <div className="trainers-grid">
-                        {[1, 2, 3, 4].map(i => (
-                          <div key={i} className="trainer-skeleton">
-                            <div className="sk-circle"></div>
-                            <div className="sk-lines">
-                              <div className="sk-line"></div>
-                              <div className="sk-line short"></div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : trainers.length === 0 ? (
-                      <div className="co-empty">
-                        <i className="fa-solid fa-user-slash"></i>
-                        Hiện chưa có huấn luyện viên.
+                    {/* ── Yoga block notice ── */}
+                    {isYogaPlan ? (
+                      <div className="yoga-pt-block-notice">
+                        <div className="yoga-pt-block-icon">
+                          <i className="fa-solid fa-spa"></i>
+                        </div>
+                        <div className="yoga-pt-block-text">
+                          <strong>Gói Yoga không hỗ trợ PT tập kèm</strong>
+                          <p>Dịch vụ Huấn Luyện Viên cá nhân (PT) chỉ áp dụng cho các gói tập Gym.
+                          Nếu bạn muốn tập kèm PT, vui lòng đăng ký một gói Gym.</p>
+                        </div>
                       </div>
                     ) : (
                       <>
-                        <div className="trainers-grid">
-                          {trainers.map(t => (
-                            <div
-                              key={t.userId}
-                              className={`trainer-card${selectedTrainer?.userId === t.userId ? ' selected' : ''}`}
-                              onClick={() => setSelectedTrainer(
-                                selectedTrainer?.userId === t.userId ? null : t
-                              )}
-                            >
-                              <div className="trainer-avatar">
-                                {t.avatarUrl
-                                  ? <img src={t.avatarUrl} alt={t.fullName} />
-                                  : getInitials(t.fullName)
-                                }
-                              </div>
-                              <div className="trainer-info">
-                                <div className="trainer-name">{t.fullName}</div>
-                                <div className="trainer-spec">{t.specialization || 'Gym tổng hợp'}</div>
-                                <div className="trainer-rating">
-                                  <i className="fa-solid fa-star"></i>
-                                  {(t.rating || 4.5).toFixed(1)}
+                        {/* PT service cards */}
+                        {ptServices.length > 0 && (
+                          <div style={{ marginBottom: 20 }}>
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 12, marginTop: 0 }}>
+                              <i className="fa-solid fa-circle-info" style={{ marginRight: 6, color: 'var(--orange)' }}></i>
+                              Chọn gói PT để được tập kèm Huấn Luyện Viên chuyên nghiệp:
+                            </p>
+                            <div className="trainers-grid">
+                              {ptServices.map(svc => {
+                                const isIncluded = includedServiceIds.includes(svc.serviceId);
+                                const isSelected = selectedServices.includes(svc.serviceId) || isIncluded;
+                                return (
+                                  <div
+                                    key={svc.serviceId}
+                                    className={`trainer-card pt-service-card${isSelected ? ' selected' : ''}`}
+                                    style={isIncluded ? { opacity: 0.7, cursor: 'default' } : {}}
+                                    onClick={() => {
+                                      if (isIncluded) return;
+                                      setSelectedServices(prev =>
+                                        prev.includes(svc.serviceId)
+                                          ? prev.filter(id => id !== svc.serviceId)
+                                          : [...prev, svc.serviceId]
+                                      );
+                                    }}
+                                  >
+                                    <div className="trainer-avatar" style={{ background: 'linear-gradient(135deg, #f97316, #ea580c)', fontSize: '1.2rem' }}>
+                                      <i className="fa-solid fa-dumbbell"></i>
+                                    </div>
+                                    <div className="trainer-info">
+                                      <div className="trainer-name">{svc.serviceName}</div>
+                                      <div className="trainer-spec">{svc.description}</div>
+                                      <div className="trainer-rating" style={{ color: 'var(--orange)' }}>
+                                        <i className="fa-solid fa-tag"></i>
+                                        {isIncluded ? 'Đã bao gồm trong gói' : fmt(svc.price)}
+                                      </div>
+                                    </div>
+                                    <div className="trainer-select-btn" style={isSelected ? { background: 'var(--orange)' } : {}}>
+                                      {isSelected
+                                        ? <i className="fa-solid fa-check"></i>
+                                        : <i className="fa-solid fa-plus"></i>
+                                      }
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Trainer picker — only if PT service selected */}
+                        {!hasPTService ? (
+                          <div className="co-empty" style={{ backgroundColor: 'rgba(249,115,22,0.05)', color: '#92400e', borderColor: 'rgba(249,115,22,0.3)' }}>
+                            <i className="fa-solid fa-circle-info" style={{ color: 'var(--orange)' }}></i>
+                            Chọn gói PT bên trên để được chọn Huấn Luyện Viên đồng hành.
+                          </div>
+                        ) : isLoadingTrainers ? (
+                          <div className="trainers-grid">
+                            {[1, 2, 3, 4].map(i => (
+                              <div key={i} className="trainer-skeleton">
+                                <div className="sk-circle"></div>
+                                <div className="sk-lines">
+                                  <div className="sk-line"></div>
+                                  <div className="sk-line short"></div>
                                 </div>
                               </div>
-                              <div className="trainer-select-btn">
-                                {selectedTrainer?.userId === t.userId
-                                  ? <i className="fa-solid fa-check"></i>
-                                  : <i className="fa-solid fa-plus"></i>
-                                }
-                              </div>
+                            ))}
+                          </div>
+                        ) : trainers.length === 0 ? (
+                          <div className="co-empty">
+                            <i className="fa-solid fa-user-slash"></i>
+                            Hiện chưa có huấn luyện viên.
+                          </div>
+                        ) : (
+                          <>
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 12, marginTop: 0 }}>
+                              <i className="fa-solid fa-user-tie" style={{ marginRight: 6, color: 'var(--orange)' }}></i>
+                              Chọn Huấn Luyện Viên đồng hành (tùy chọn):
+                            </p>
+                            <div className="trainers-grid">
+                              {trainers.map(t => (
+                                <div
+                                  key={t.userId}
+                                  className={`trainer-card${selectedTrainer?.userId === t.userId ? ' selected' : ''}`}
+                                  onClick={() => setSelectedTrainer(
+                                    selectedTrainer?.userId === t.userId ? null : t
+                                  )}
+                                >
+                                  <div className="trainer-avatar">
+                                    {t.avatarUrl
+                                      ? <img src={t.avatarUrl} alt={t.fullName} />
+                                      : getInitials(t.fullName)
+                                    }
+                                  </div>
+                                  <div className="trainer-info">
+                                    <button
+                                      className="trainer-name trainer-name-link"
+                                      onClick={e => { e.stopPropagation(); openTrainerPopup(t); }}
+                                      title="Xem chi tiết & lịch PT"
+                                    >
+                                      {t.fullName}
+                                      <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: '0.7rem', marginLeft: 5, opacity: 0.6 }}></i>
+                                    </button>
+                                    <div className="trainer-spec">{t.specialization || 'Gym tổng hợp'}</div>
+                                    <div className="trainer-rating">
+                                      <i className="fa-solid fa-star"></i>
+                                      {(t.rating || 4.5).toFixed(1)}
+                                    </div>
+                                  </div>
+                                  <div className="trainer-select-btn">
+                                    {selectedTrainer?.userId === t.userId
+                                      ? <i className="fa-solid fa-check"></i>
+                                      : <i className="fa-solid fa-plus"></i>
+                                    }
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                        <div
-                          className={`no-trainer-btn${selectedTrainer === null ? ' selected' : ''}`}
-                          onClick={() => setSelectedTrainer(null)}
-                        >
-                          <i className="fa-solid fa-times" style={{ marginRight: 6 }}></i>
-                          Chưa cần HLV lúc này
-                        </div>
+                            <div
+                              className={`no-trainer-btn${selectedTrainer === null ? ' selected' : ''}`}
+                              onClick={() => setSelectedTrainer(null)}
+                            >
+                              <i className="fa-solid fa-times" style={{ marginRight: 6 }}></i>
+                              Chưa cần HLV lúc này
+                            </div>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Services selection */}
-              {services.length > 0 && (
+              {/* ── Non-PT Add-on services (available to all plans) ── */}
+              {nonPTServices.length > 0 && (
                 <div className="co-section" style={{ marginTop: 0, border: 'none', padding: 0 }}>
                   <div className="co-section-header">
                     <div className="co-section-title">
-                      <i className="fa-solid fa-concierge-bell"></i> Dịch Vụ Bổ Sung
+                      <i className="fa-solid fa-concierge-bell"></i> Dịch Vụ Tiện Ích Bổ Sung
                     </div>
                     <span className="trainer-optional-label">Tùy chọn</span>
                   </div>
                   <div className="co-section-body">
                     <div className="trainers-grid">
-                      {services.map(svc => {
+                      {nonPTServices.map(svc => {
                         const isIncluded = includedServiceIds.includes(svc.serviceId);
                         const isSelected = selectedServices.includes(svc.serviceId) || isIncluded;
-
                         return (
                           <div
                             key={svc.serviceId}
