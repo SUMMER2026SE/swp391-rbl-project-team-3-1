@@ -412,39 +412,45 @@ try {
           BEGIN
             ALTER TABLE MemberTrainerPackages ADD expiry_date DATETIME NULL;
           END
-
-          -- 5. Backfill dữ liệu cũ trong MemberTrainerPackages
-          -- Gói cũ đang active (is_active = 1) -> status = 'active', activation_date = created_at
-          UPDATE MemberTrainerPackages 
-          SET status = 'active', 
-              purchase_date = ISNULL(created_at, GETDATE()),
-              activation_date = ISNULL(created_at, GETDATE()), 
-              expiry_date = DATEADD(month, 3, ISNULL(created_at, GETDATE()))
-          WHERE status IS NULL AND is_active = 1;
-
-          -- Gói cũ đã bị ẩn/hết hạn (is_active = 0) -> status = 'expired'
-          UPDATE MemberTrainerPackages 
-          SET status = 'expired', 
-              purchase_date = ISNULL(created_at, GETDATE()),
-              activation_date = ISNULL(created_at, GETDATE()), 
-              expiry_date = ISNULL(created_at, GETDATE())
-          WHERE status IS NULL AND is_active = 0;
-
-          -- 6. Tạo bảng PtPackageCatalog
-          IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='PtPackageCatalog' and xtype='U')
-          BEGIN
-            CREATE TABLE PtPackageCatalog (
-              id INT IDENTITY(1,1) PRIMARY KEY,
-              name NVARCHAR(100) NOT NULL,
-              sessions_per_month INT NOT NULL,
-              frequency_per_week INT NOT NULL,
-              price_1_month DECIMAL(10,2) NOT NULL,
-              price_3_months DECIMAL(10,2) NOT NULL,
-              price_6_months DECIMAL(10,2) NOT NULL,
-              is_active BIT NOT NULL DEFAULT 1
-            );
-          END
         `).then(() => {
+            console.log('✅ Đã di trú thêm cột thành công! Bắt đầu backfill dữ liệu...');
+            return sequelize.query(`
+              -- 5. Backfill dữ liệu cũ trong MemberTrainerPackages
+              -- Gói cũ đang active (is_active = 1) -> status = 'active', activation_date = created_at
+              UPDATE MemberTrainerPackages 
+              SET status = 'active', 
+                  purchase_date = ISNULL(created_at, GETDATE()),
+                  activation_date = ISNULL(created_at, GETDATE()), 
+                  expiry_date = DATEADD(month, 3, ISNULL(created_at, GETDATE()))
+              WHERE status IS NULL AND is_active = 1;
+
+              -- Gói cũ đã bị ẩn/hết hạn (is_active = 0) -> status = 'expired'
+              UPDATE MemberTrainerPackages 
+              SET status = 'expired', 
+                  purchase_date = ISNULL(created_at, GETDATE()),
+                  activation_date = ISNULL(created_at, GETDATE()), 
+                  expiry_date = ISNULL(created_at, GETDATE())
+              WHERE status IS NULL AND is_active = 0;
+            `);
+        }).then(() => {
+            console.log('✅ Đã backfill dữ liệu thành công! Kiểm tra tạo bảng PtPackageCatalog...');
+            return sequelize.query(`
+              -- 6. Tạo bảng PtPackageCatalog
+              IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='PtPackageCatalog' and xtype='U')
+              BEGIN
+                CREATE TABLE PtPackageCatalog (
+                  id INT IDENTITY(1,1) PRIMARY KEY,
+                  name NVARCHAR(100) NOT NULL,
+                  sessions_per_month INT NOT NULL,
+                  frequency_per_week INT NOT NULL,
+                  price_1_month DECIMAL(10,2) NOT NULL,
+                  price_3_months DECIMAL(10,2) NOT NULL,
+                  price_6_months DECIMAL(10,2) NOT NULL,
+                  is_active BIT NOT NULL DEFAULT 1
+                );
+              END
+            `);
+        }).then(() => {
             console.log('✅ Đã di trú cấu trúc gói PT & Tạo bảng PtPackageCatalog thành công!');
             
             // Seed bảng PtPackageCatalog với 4 gói tập chuẩn
