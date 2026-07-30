@@ -13,6 +13,13 @@ const formatDate = (d) => {
   return `${year}-${month}-${day}`;
 };
 
+const getBookingTimestamp = (b) => {
+  const dateStr = formatDate(b.session_date);
+  const shiftDef = SHIFT_DEFINITIONS.find(s => s.shiftCode === b.shift_code);
+  const startTime = shiftDef ? shiftDef.start : '00:00';
+  return new Date(`${dateStr}T${startTime}:00`).getTime();
+};
+
 // 1. Get Member Trainer Packages
 exports.getMemberTrainerPackages = async (req, res) => {
   try {
@@ -192,8 +199,13 @@ exports.createBooking = async (req, res) => {
       where: { trainer_id: trainerId, off_date: sessionDate }
     });
 
-    const existingBookings = await models.PtBookings.findAll({
-      where: { trainer_id: trainerId, session_date: sessionDate }
+    // Lấy tất cả bookings của member để validate trùng ngày & giới hạn 3 ca/tuần
+    const { Op } = require('sequelize');
+    const memberBookings = await models.PtBookings.findAll({
+      where: {
+        member_id: member.member_id,
+        status: { [Op.in]: ['Pending', 'Approved', 'Completed'] }
+      }
     });
 
     // Validate
@@ -204,7 +216,8 @@ exports.createBooking = async (req, res) => {
       shiftCode,
       existingBookings,
       offRequests,
-      trainerPackage
+      trainerPackage,
+      memberBookings
     });
 
     if (!validation.valid) {
@@ -535,5 +548,117 @@ exports.rejectBooking = async (req, res) => {
   } catch (error) {
     console.error('Error rejecting booking:', error);
     return res.status(500).json({ message: 'Lỗi server khi từ chối yêu cầu đặt lịch.' });
+  }
+};
+
+// 9. Confirm Attendance (Trainer) – đánh dấu học viên đã đến tập
+exports.confirmAttendance = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+
+    const trainer = await models.Trainers.findOne({ where: { user_id: req.user.userId } });
+    if (!trainer) {
+      await t.rollback();
+      return res.status(403).json({ message: 'Chỉ HLV mới thực hiện được.' });
+    }
+
+    const booking = await models.PtBookings.findOne({
+      where: { booking_id: id, trainer_id: trainer.trainer_id },
+      include: [{ model: models.Members, as: 'member' }],
+      transaction: t
+    });
+
+    if (!booking) {
+      await t.rollback();
+      return res.status(404).json({ message: 'Không tìm thấy buổi tập.' });
+    }
+    if (booking.status !== 'Approved') {
+      await t.rollback();
+      return res.status(400).json({ message: 'Chỉ có thể xác nhận buổi tập đã được duyệt.' });
+    }
+
+    // --- KIỂM TRA BẮT BUỘC XÁC NHẬN ĐIỂM DANH THEO THỨ TỰ THỜI GIAN ---
+    // Tìm các buổi tập của Member đang ở trạng thái 'Approved' (chưa điểm danh)
+    const unconfirmedBookings = await models.PtBookings.findAll({
+      where: {
+        member_id: booking.member_id,
+        trainer_id: trainer.trainer_id,
+        status: 'Approved',
+        booking_id: { [Op.ne]: booking.booking_id }
+      },
+      transaction: t
+    });
+
+    const targetTimestamp = getBookingTimestamp(booking);
+
+    // Lọc ra các ca có thời gian diễn ra sớm hơn ca hiện tại
+    const earlierUnconfirmed = unconfirmedBookings.filter(b => getBookingTimestamp(b) < targetTimestamp);
+
+    if (earlierUnconfirmed.length > 0) {
+      // Sắp xếp tăng dần theo thời gian để lấy ca sớm nhất chưa xác nhận
+      earlierUnconfirmed.sort((a, b) => getBookingTimestamp(a) - getBookingTimestamp(b));
+      const earliest = earlierUnconfirmed[0];
+      const dateFormatted = formatDate(earliest.session_date).split('-').reverse().join('/');
+      const shiftDef = SHIFT_DEFINITIONS.find(s => s.shiftCode === earliest.shift_code);
+      const shiftText = shiftDef ? `${shiftDef.shiftCode} (${shiftDef.start} - ${shiftDef.end})` : earliest.shift_code;
+
+      await t.rollback();
+      return res.status(400).json({
+        message: `Vui lòng xác nhận điểm danh buổi tập ngày ${dateFormatted} [${shiftText}] trước khi xác nhận buổi tập này!`
+      });
+    }
+    // -----------------------------------------------------------------
+
+    // Cập nhật trạng thái booking → Completed
+    booking.status = 'Completed';
+    await booking.save({ transaction: t });
+
+    // Cộng 1 buổi đã dùng vào gói tập
+    const trainerPackage = await models.MemberTrainerPackages.findOne({
+      where: { member_id: booking.member_id, trainer_id: trainer.trainer_id },
+      order: [['package_id', 'DESC']],
+      transaction: t
+    });
+
+    if (trainerPackage) {
+      trainerPackage.used_sessions = (trainerPackage.used_sessions || 0) + 1;
+      trainerPackage.is_active = true;
+      await trainerPackage.save({ transaction: t });
+    }
+
+    await t.commit();
+
+    // Gửi thông báo cho Member
+    if (booking.member) {
+      const newNotif = await models.Notifications.create({
+        user_id: booking.member.user_id,
+        title: 'Điểm danh buổi tập',
+        content: `HLV đã xác nhận bạn đã tham gia buổi tập ca ${booking.shift_code} ngày ${booking.session_date}.`,
+        notification_type: 'BOOKING_ATTENDED'
+      });
+
+      broadcastSSE({
+        type: 'BOOKING_ATTENDED',
+        userId: booking.member.user_id,
+        message: `Đã điểm danh buổi tập ca ${booking.shift_code} ngày ${booking.session_date}.`,
+        notification: newNotif
+      });
+    }
+
+    // Broadcast cập nhật lịch
+    broadcastSSE({
+      type: 'SCHEDULE_SLOT_UPDATED',
+      trainerId: booking.trainer_id,
+      sessionDate: booking.session_date,
+      shiftCode: booking.shift_code,
+      status: 'Completed'
+    });
+
+    return res.status(200).json({ message: 'Đã xác nhận học viên đã đến tập!' });
+  } catch (error) {
+    await t.rollback();
+    console.error('Error confirming attendance:', error);
+    return res.status(500).json({ message: 'Lỗi server khi xác nhận điểm danh.' });
   }
 };

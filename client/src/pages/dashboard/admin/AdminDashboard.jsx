@@ -536,14 +536,10 @@ function AdminDashboard({ token, userInfo, logout }) {
           return [newNotif, ...prev];
         });
 
-        // Realtime auto-refresh on Off request / booking events
-        if (['OFF_REQUEST_CREATED', 'OFF_REQUEST_APPROVED', 'OFF_REQUEST_REJECTED', 'OFF_REQUEST_CANCELLED', 'NEW_OFF_REQUEST'].includes(data.type || newNotif.type)) {
-          fetchOffRequests();
-        }
-
-        if (data.type === 'MEMBER_CHECKED_IN') {
-          fetchCheckinsList();
-        }
+        // Realtime auto-refresh on all admin events
+        fetchOffRequests();
+        fetchCheckinsList();
+        reloadAllAdminData();
 
       } catch (err) {
         console.error('[SSE Admin] Error processing stream message:', err);
@@ -554,8 +550,19 @@ function AdminDashboard({ token, userInfo, logout }) {
       console.error('[SSE Admin] Stream connection error:', err);
     };
 
+    const handleWindowFocus = () => {
+      fetchOffRequests();
+      fetchCheckinsList();
+      reloadAllAdminData();
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleWindowFocus);
+
     return () => {
       eventSource.close();
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleWindowFocus);
       console.log('[SSE Admin] Closed stream connection.');
     };
   }, [token]);

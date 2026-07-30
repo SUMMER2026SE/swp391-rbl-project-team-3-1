@@ -21,6 +21,7 @@ function validateBooking({
   existingBookings = [],
   offRequests = [],
   trainerPackage,
+  memberBookings = [],
   today = new Date()
 }) {
   // 1. Kiểm tra gói tập
@@ -86,6 +87,42 @@ function validateBooking({
 
   if (isSlotOccupied) {
     return { valid: false, reason: 'Ca tập này đã có hội viên khác đặt hoặc đang chờ duyệt.' };
+  }
+
+  // 6. Kiểm tra Member đặt 2 ca trong cùng 1 ngày (Mỗi ngày chỉ được phép đặt 1 ca)
+  if (memberBookings && memberBookings.length > 0) {
+    const hasBookingSameDay = memberBookings.some(b => {
+      if (b.status !== 'Pending' && b.status !== 'Approved' && b.status !== 'Completed') return false;
+      const bD = new Date(b.session_date);
+      const sesD = new Date(sessionDate);
+      return bD.getFullYear() === sesD.getFullYear() &&
+             bD.getMonth() === sesD.getMonth() &&
+             bD.getDate() === sesD.getDate();
+    });
+
+    if (hasBookingSameDay) {
+      return { valid: false, reason: 'Bạn đã có lịch tập vào ngày này. Mỗi ngày chỉ được phép đặt 1 ca tập (3 ca tập trong tuần phải vào 3 ngày riêng biệt).' };
+    }
+
+    // 7. Kiểm tra Member đặt quá 3 ca trong 1 tuần (Thứ 2 đến Chủ nhật)
+    const targetDate = new Date(sessionDate + 'T00:00:00');
+    const dayOfWeek = targetDate.getDay();
+    const mondayDiff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(targetDate);
+    monday.setDate(targetDate.getDate() + mondayDiff);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    const weeklyCount = memberBookings.filter(b => {
+      if (b.status !== 'Pending' && b.status !== 'Approved' && b.status !== 'Completed') return false;
+      const bD = new Date(b.session_date + 'T00:00:00');
+      return bD >= monday && bD <= sunday;
+    }).length;
+
+    if (weeklyCount >= 3) {
+      return { valid: false, reason: 'Bạn chỉ được phép đặt tối đa 3 ca tập trong 1 tuần (thứ 2 đến chủ nhật).' };
+    }
   }
 
   return { valid: true };

@@ -79,6 +79,40 @@ function TrainerDashboard({
   const [cpwConf, setCpwConf] = useState('');
   const [cpwAlert, setCpwAlert] = useState({ show: false, msg: '', ok: false });
 
+  // Custom Toast Notification State
+  const [toastNotif, setToastNotif] = useState({ show: false, type: 'warning', title: '', message: '' });
+
+  const showToast = (message, type = 'warning', title = '') => {
+    const cleanMsg = message ? String(message).replace(/^[❌✅]\s*/, '') : '';
+    setToastNotif({
+      show: true,
+      type,
+      title: title || (type === 'error' ? 'Thông Báo Lỗi' : type === 'warning' ? 'Lưu Ý Điểm Danh' : type === 'success' ? 'Thành Công' : 'Thông Báo'),
+      message: cleanMsg
+    });
+  };
+
+  const closeToast = () => setToastNotif(prev => ({ ...prev, show: false }));
+
+  // Custom Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState({
+    show: false,
+    title: '',
+    message: '',
+    onConfirm: null
+  });
+
+  const showConfirm = (message, onConfirm, title = 'Xác Nhận Thao Tác') => {
+    setConfirmModal({
+      show: true,
+      title,
+      message,
+      onConfirm
+    });
+  };
+
+  const closeConfirm = () => setConfirmModal({ show: false, title: '', message: '', onConfirm: null });
+
   // --- PT INTERACTIVE STATES ---
   const [membersList, setMembersList] = useState([]);
   const [selectedMember, setSelectedMember] = useState(null);
@@ -87,6 +121,7 @@ function TrainerDashboard({
   const [selectedDate, setSelectedDate] = useState(getTodayDateString());
   const [scheduleList, setScheduleList] = useState([]);
   const [isSessionActive, setIsSessionActive] = useState(false);
+  const [selectedAttendCell, setSelectedAttendCell] = useState(null); // { bookingId, memberName, dateStr, shiftLabel }
   const [sessionTimer, setSessionTimer] = useState(900); // 15 minutes in seconds
 
   // Booking requests pending PT confirmation
@@ -186,11 +221,9 @@ function TrainerDashboard({
         });
 
         // Realtime auto-refresh on booking/schedule events
-        if (['NEW_OFF_REQUEST', 'OFF_REQUEST_CREATED', 'OFF_REQUEST_APPROVED', 'OFF_REQUEST_REJECTED', 'OFF_REQUEST_CANCELLED', 'BOOKING_CREATED', 'BOOKING_APPROVED', 'BOOKING_REJECTED', 'BOOKING_CANCELLED', 'SCHEDULE_SLOT_UPDATED'].includes(data.type || newNotif.type)) {
-          reloadTrainerDashboardData();
-          fetchBusySchedules();
-          setRefreshTrigger(prev => prev + 1);
-        }
+        reloadTrainerDashboardData();
+        fetchBusySchedules();
+        setRefreshTrigger(prev => prev + 1);
 
       } catch (err) {
         console.error('[SSE PT] Error processing stream message:', err);
@@ -201,8 +234,19 @@ function TrainerDashboard({
       console.error('[SSE PT] Stream connection error:', err);
     };
 
+    const handleWindowFocus = () => {
+      reloadTrainerDashboardData();
+      fetchBusySchedules();
+      setRefreshTrigger(prev => prev + 1);
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleWindowFocus);
+
     return () => {
       eventSource.close();
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleWindowFocus);
       console.log('[SSE PT] Closed stream connection.');
     };
   }, [token]);
@@ -403,14 +447,17 @@ function TrainerDashboard({
   const fetchBusySchedules = () => {
     if (!token) return;
 
-    // Normalize busyWeekStart to Monday
-    const start = new Date(busyWeekStart);
-    const day = start.getDay();
-    const diff = start.getDate() - day + (day === 0 ? -6 : 1);
-    start.setDate(diff);
+    // Preload ±30 days around current week so week switching is instant and smooth without flickering
+    const monday = new Date(busyWeekStart);
+    const day = monday.getDay();
+    const diff = monday.getDate() - day + (day === 0 ? -6 : 1);
+    monday.setDate(diff);
 
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
+    const start = new Date(monday);
+    start.setDate(start.getDate() - 30);
+
+    const end = new Date(monday);
+    end.setDate(end.getDate() + 30);
 
     const startStr = getTodayDateString(start);
     const endStr = getTodayDateString(end);
@@ -447,17 +494,42 @@ function TrainerDashboard({
   };
 
   useEffect(() => {
-    if (activeTab === 'quanlylich' || activeTab === 'lichday') {
+    if (activeTab === 'quanlylich' || activeTab === 'lichday' || activeTab === 'tongquan') {
       fetchBusySchedules();
     }
   }, [activeTab, busyWeekStart, token, refreshTrigger]);
+
+  const handleConfirmAttendance = (bookingId) => {
+    showConfirm(
+      'Xác nhận học viên đã đến tập buổi này?',
+      async () => {
+        try {
+          const res = await fetch(`/api/bookings/pt/${bookingId}/attend`, {
+            method: 'PUT',
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (res.ok) {
+            showToast(data.message, 'success', 'Điểm Danh Thành Công');
+            fetchBusySchedules();
+          } else {
+            showToast(data.message || 'Lỗi xác nhận điểm danh.', 'warning', 'Lưu Ý Điểm Danh');
+          }
+        } catch (err) {
+          console.error('Error confirming attendance:', err);
+          showToast('Lỗi kết nối máy chủ.', 'error', 'Lỗi Server');
+        }
+      },
+      'Xác Nhận Điểm Danh'
+    );
+  };
 
   const handleToggleLocalSlot = (dateStr, startTime, endTime) => {
     const [yr, mo, dy] = dateStr.split('-').map(Number);
     const [h, m, s] = startTime.split(':').map(Number);
     const slotDate = new Date(yr, mo - 1, dy, h, m, s || 0);
     if (slotDate < new Date()) {
-      alert('Không thể thay đổi lịch của thời gian đã qua!');
+      showToast('Không thể thay đổi lịch của thời gian đã qua!', 'warning');
       return;
     }
 
@@ -525,10 +597,10 @@ function TrainerDashboard({
       .then(async res => {
         const data = await res.json();
         if (res.ok) {
-          alert('Đã lưu lịch bận thành công!');
+          showToast('Đã lưu lịch bận thành công!', 'success');
           fetchBusySchedules();
         } else {
-          alert(data.message || 'Lỗi khi lưu lịch bận!');
+          showToast(data.message || 'Lỗi khi lưu lịch bận!', 'error');
         }
       })
       .catch(err => console.error('Error saving schedules:', err));
@@ -680,29 +752,45 @@ function TrainerDashboard({
   };
 
   const handleConfirmAppointment = (reqId) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xác nhận (Approve) yêu cầu đặt lịch này?')) return;
-    fetch(`/api/bookings/pt/${reqId}/approve`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      }
-    })
-      .then(res => {
-        if (!res.ok) return res.json().then(err => { throw new Error(err.message); });
-        return res.json();
-      })
-      .then(data => {
-        alert(data.message || 'Đã xác nhận lịch dạy thành công!');
-        reloadTrainerDashboardData();
-        setRefreshTrigger(prev => prev + 1); // Refresh calendar TKB
-      })
-      .catch(err => alert(err.message || 'Lỗi khi xác nhận lịch dạy!'));
+    const req = bookingRequests.find(r => r.id === reqId);
+    showConfirm(
+      'Bạn có chắc chắn muốn xác nhận (Duyệt) yêu cầu đặt lịch này?',
+      async () => {
+        try {
+          const res = await fetch(`/api/bookings/pt/${reqId}/approve`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message);
+          }
+          const data = await res.json();
+          showToast(data.message || 'Đã xác nhận lịch dạy thành công!', 'success', 'Thành Công');
+          reloadTrainerDashboardData();
+          setRefreshTrigger(prev => prev + 1);
+
+          if (req?.date) {
+            const approvedDate = new Date(req.date + 'T00:00:00');
+            const dayOfWeek = approvedDate.getDay();
+            const mondayDiff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+            const monday = new Date(approvedDate);
+            monday.setDate(approvedDate.getDate() + mondayDiff);
+            setBusyWeekStart(monday);
+            setSelectedDate(req.date);
+            setActiveTab('lichday');
+          }
+        } catch (err) {
+          showToast(err.message || 'Lỗi khi xác nhận lịch dạy!', 'warning', 'Không Thể Duyệt');
+        }
+      },
+      'Duyệt Yêu Cầu Đặt Lịch'
+    );
   };
 
   const handleRejectAppointment = (reqId) => {
     const reason = window.prompt('Nhập lý do từ chối yêu cầu đặt lịch này:');
-    if (reason === null) return; // User clicked Cancel
+    if (reason === null) return;
     
     fetch(`/api/bookings/pt/${reqId}/reject`, {
       method: 'PUT',
@@ -717,20 +805,20 @@ function TrainerDashboard({
         return res.json();
       })
       .then(data => {
-        alert(data.message || 'Đã từ chối yêu cầu đặt lịch!');
+        showToast(data.message || 'Đã từ chối yêu cầu đặt lịch!', 'success', 'Thành Công');
         reloadTrainerDashboardData();
-        setRefreshTrigger(prev => prev + 1); // Refresh calendar TKB
+        setRefreshTrigger(prev => prev + 1);
       })
-      .catch(err => alert(err.message || 'Lỗi khi từ chối yêu cầu!'));
+      .catch(err => showToast(err.message || 'Lỗi khi từ chối yêu cầu!', 'error'));
   };
 
   const handleRegisterOffRequest = () => {
     if (!selectedOffDate) {
-      alert('Vui lòng chọn ngày muốn xin nghỉ!');
+      showToast('Vui lòng chọn ngày muốn xin nghỉ!', 'warning', 'Lưu Ý');
       return;
     }
     if (offQuota.remaining <= 0) {
-      alert('Bạn đã hết lượt xin nghỉ phép trong tháng này!');
+      showToast('Bạn đã hết lượt xin nghỉ phép trong tháng này!', 'warning', 'Hết Lượt Nghỉ Phép');
       return;
     }
 
@@ -747,32 +835,37 @@ function TrainerDashboard({
         return res.json();
       })
       .then(data => {
-        alert(data.message || 'Đã gửi yêu cầu nghỉ phép thành công!');
+        showToast(data.message || 'Đã gửi yêu cầu nghỉ phép thành công!', 'success', 'Thành Công');
         setSelectedOffDate('');
         reloadTrainerDashboardData();
         fetchBusySchedules();
         setRefreshTrigger(prev => prev + 1);
       })
-      .catch(err => alert(err.message || 'Lỗi khi gửi yêu cầu nghỉ phép!'));
+      .catch(err => showToast(err.message || 'Lỗi khi gửi yêu cầu nghỉ phép!', 'error'));
   };
 
   const handleCancelOffRequest = (reqId) => {
-    if (!window.confirm('Bạn có chắc chắn muốn hủy yêu cầu nghỉ phép này?')) return;
-    fetch(`/api/dashboard/trainer/off-requests/${reqId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => {
-        if (!res.ok) return res.json().then(err => { throw new Error(err.message); });
-        return res.json();
-      })
-      .then(data => {
-        alert(data.message || 'Đã hủy yêu cầu thành công!');
-        reloadTrainerDashboardData();
-        fetchBusySchedules();
-        setRefreshTrigger(prev => prev + 1);
-      })
-      .catch(err => alert(err.message || 'Lỗi khi hủy yêu cầu!'));
+    showConfirm(
+      'Bạn có chắc chắn muốn hủy yêu cầu nghỉ phép này?',
+      () => {
+        fetch(`/api/dashboard/trainer/off-requests/${reqId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        })
+          .then(res => {
+            if (!res.ok) return res.json().then(err => { throw new Error(err.message); });
+            return res.json();
+          })
+          .then(data => {
+            showToast(data.message || 'Đã hủy yêu cầu thành công!', 'success', 'Thành Công');
+            reloadTrainerDashboardData();
+            fetchBusySchedules();
+            setRefreshTrigger(prev => prev + 1);
+          })
+          .catch(err => showToast(err.message || 'Lỗi khi hủy yêu cầu!', 'error'));
+      },
+      'Hủy Yêu Cầu Nghỉ Phép'
+    );
   };
 
   const handleNotificationClick = (n) => {
@@ -1015,13 +1108,27 @@ function TrainerDashboard({
   const handlePrevWeek = () => {
     const d = new Date(selectedDate);
     d.setDate(d.getDate() - 7);
-    setSelectedDate(getTodayDateString(d));
+    const newDateStr = getTodayDateString(d);
+    setSelectedDate(newDateStr);
+
+    const monday = new Date(d);
+    const day = monday.getDay();
+    const diff = monday.getDate() - day + (day === 0 ? -6 : 1);
+    monday.setDate(diff);
+    setBusyWeekStart(monday);
   };
 
   const handleNextWeek = () => {
     const d = new Date(selectedDate);
     d.setDate(d.getDate() + 7);
-    setSelectedDate(getTodayDateString(d));
+    const newDateStr = getTodayDateString(d);
+    setSelectedDate(newDateStr);
+
+    const monday = new Date(d);
+    const day = monday.getDay();
+    const diff = monday.getDate() - day + (day === 0 ? -6 : 1);
+    monday.setDate(diff);
+    setBusyWeekStart(monday);
   };
 
   const getCurrentDateString = () => {
@@ -1126,12 +1233,12 @@ function TrainerDashboard({
                 </div>
               </div>
               <div className="trainer-stat-card">
-                <span className="trainer-stat-label">Lịch dạy hôm nay</span>
+                <span className="trainer-stat-label">Lịch dạy tuần này</span>
                 <span className="trainer-stat-value">
-                  {scheduleList.filter(s => s.date === selectedDate).length}
+                  {scheduleList.length}
                 </span>
                 <div className="trainer-stat-subtext">
-                  Còn lại {scheduleList.filter(s => s.date === selectedDate).length - (isSessionActive ? 1 : 0)} buổi dạy
+                  Tổng {scheduleList.length} ca với học viên tuần này
                 </div>
                 <div className="trainer-stat-icon-wrap">
                   <i className="fa-solid fa-calendar-check"></i>
@@ -1511,7 +1618,7 @@ function TrainerDashboard({
                 <button
                   type="button"
                   className="trainer-banner-btn-white"
-                  style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1' }}
+                  style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1', cursor: 'pointer', outline: 'none', borderRadius: '8px', transition: 'all 0.15s ease' }}
                   onClick={handlePrevWeek}
                 >
                   <i className="fa-solid fa-chevron-left"></i> Tuần trước
@@ -1521,12 +1628,22 @@ function TrainerDashboard({
                   className="trainer-form-input"
                   style={{ width: '160px', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }}
                   value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
+                  onChange={(e) => {
+                    const newD = e.target.value;
+                    setSelectedDate(newD);
+                    if (newD) {
+                      const d = new Date(newD + 'T00:00:00');
+                      const day = d.getDay();
+                      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+                      d.setDate(diff);
+                      setBusyWeekStart(d);
+                    }
+                  }}
                 />
                 <button
                   type="button"
                   className="trainer-banner-btn-white"
-                  style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1' }}
+                  style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1', cursor: 'pointer', outline: 'none', borderRadius: '8px', transition: 'all 0.15s ease' }}
                   onClick={handleNextWeek}
                 >
                   Tuần sau <i className="fa-solid fa-chevron-right"></i>
@@ -1612,13 +1729,23 @@ function TrainerDashboard({
                               ) : (
                                 <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
                               )
-                            ) : item.status === 'Completed' ? null : (
-                              <button 
-                                onClick={() => handleTrainerCancelClick(item.id)}
-                                style={{ background: 'none', border: 'none', color: '#ef4444', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.88rem' }}
-                              >
-                                Yêu cầu hủy
-                              </button>
+                            ) : item.status === 'Completed' ? (
+                              <span style={{ fontSize: '0.82rem', color: '#10b981', fontStyle: 'italic', fontWeight: 'bold' }}>✅ Đã điểm danh</span>
+                            ) : (
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <button
+                                  onClick={() => handleConfirmAttendance(item.id)}
+                                  style={{ padding: '4px 10px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                >
+                                  ✅ Xác nhận đã đến tập
+                                </button>
+                                <button 
+                                  onClick={() => handleTrainerCancelClick(item.id)}
+                                  style={{ background: 'none', border: 'none', color: '#ef4444', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.88rem' }}
+                                >
+                                  Yêu cầu hủy
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -1689,8 +1816,13 @@ function TrainerDashboard({
                   <button
                     type="button"
                     className="trainer-banner-btn-white"
-                    style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1', cursor: 'pointer' }}
-                    onClick={handlePrevBusyWeek}
+                    style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1', cursor: 'pointer', outline: 'none', borderRadius: '8px', transition: 'all 0.15s ease' }}
+                    onClick={() => {
+                      const newDate = new Date(busyWeekStart);
+                      newDate.setDate(busyWeekStart.getDate() - 7);
+                      setBusyWeekStart(newDate);
+                      setSelectedDate(getTodayDateString(newDate));
+                    }}
                   >
                     <i className="fa-solid fa-chevron-left"></i> Tuần trước
                   </button>
@@ -1700,8 +1832,13 @@ function TrainerDashboard({
                   <button
                     type="button"
                     className="trainer-banner-btn-white"
-                    style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1', cursor: 'pointer' }}
-                    onClick={handleNextBusyWeek}
+                    style={{ padding: '8px 16px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1', cursor: 'pointer', outline: 'none', borderRadius: '8px', transition: 'all 0.15s ease' }}
+                    onClick={() => {
+                      const newDate = new Date(busyWeekStart);
+                      newDate.setDate(busyWeekStart.getDate() + 7);
+                      setBusyWeekStart(newDate);
+                      setSelectedDate(getTodayDateString(newDate));
+                    }}
                   >
                     Tuần sau <i className="fa-solid fa-chevron-right"></i>
                   </button>
@@ -1751,16 +1888,35 @@ function TrainerDashboard({
                               bg = '#ffedd5'; color = '#c2410c';
                               text = `Chờ duyệt: ${memberName || 'Học viên'}`;
                             } else if (shiftStatus === 'Approved') {
-                              bg = '#dcfce7'; color = '#166534';
+                              const isSelected = selectedAttendCell?.bookingId === shiftInfo?.bookingId;
+                              bg = isSelected ? '#16a34a' : '#dcfce7';
+                              color = isSelected ? '#ffffff' : '#166534';
                               text = `Dạy: ${memberName || 'Học viên'}`;
+                              cursor = 'pointer';
                             } else if (shiftStatus === 'CancelPending') {
                               bg = '#fee2e2'; color = '#b91c1c';
                               text = `Chờ hủy: ${memberName || 'Học viên'}`;
                             }
 
+                            const handleCellClick = () => {
+                              if (shiftStatus === 'Approved' && shiftInfo?.bookingId) {
+                                if (selectedAttendCell?.bookingId === shiftInfo.bookingId) {
+                                  setSelectedAttendCell(null); // toggle off
+                                } else {
+                                  setSelectedAttendCell({
+                                    bookingId: shiftInfo.bookingId,
+                                    memberName: memberName || 'Học viên',
+                                    dateStr,
+                                    shiftLabel: slot.label
+                                  });
+                                }
+                              }
+                            };
+
                             return (
                               <td
                                 key={dIdx}
+                                onClick={handleCellClick}
                                 style={{
                                   padding: '12px',
                                   border: '1px solid #e2e8f0',
@@ -1768,7 +1924,8 @@ function TrainerDashboard({
                                   color: color,
                                   cursor: cursor,
                                   fontWeight: '500',
-                                  transition: 'all 0.15s ease'
+                                  transition: 'all 0.15s ease',
+                                  outline: selectedAttendCell?.bookingId === shiftInfo?.bookingId ? '2px solid #15803d' : 'none'
                                 }}
                               >
                                 {text}
@@ -1781,8 +1938,9 @@ function TrainerDashboard({
                   </table>
                 </div>
 
-                <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
-                  <div style={{ display: 'flex', gap: '20px', fontSize: '0.85rem', flexWrap: 'wrap' }}>
+                <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* Legend row */}
+                  <div style={{ display: 'flex', gap: '20px', fontSize: '0.85rem', flexWrap: 'wrap', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{ width: '16px', height: '16px', backgroundColor: '#ffffff', borderRadius: '4px', border: '1px solid #e2e8f0' }}></div>
                       <span>Ca rảnh</span>
@@ -1793,7 +1951,7 @@ function TrainerDashboard({
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{ width: '16px', height: '16px', backgroundColor: '#dcfce7', borderRadius: '4px', border: '1px solid #bbf7d0' }}></div>
-                      <span>Lịch dạy (Đã duyệt)</span>
+                      <span>Lịch dạy (Đã duyệt) — Click để xác nhận</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{ width: '16px', height: '16px', backgroundColor: '#fee2e2', borderRadius: '4px', border: '1px solid #fca5a5' }}></div>
@@ -1808,6 +1966,47 @@ function TrainerDashboard({
                       <span>Ca đã qua</span>
                     </div>
                   </div>
+
+                  {/* Confirm attendance panel */}
+                  {selectedAttendCell && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '16px', padding: '14px 20px',
+                      backgroundColor: '#f0fdf4', border: '2px solid #16a34a', borderRadius: '12px',
+                      flexWrap: 'wrap', animation: 'fadeIn 0.2s ease'
+                    }}>
+                      <i className="fa-solid fa-user-check" style={{ color: '#16a34a', fontSize: '1.3rem' }}></i>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 'bold', color: '#14532d', fontSize: '0.95rem' }}>
+                          Xác nhận điểm danh — {selectedAttendCell.memberName}
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: '#166534', marginTop: '2px' }}>
+                          {selectedAttendCell.shiftLabel} • Ngày {selectedAttendCell.dateStr?.split('-').reverse().join('/')}
+                        </div>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          await handleConfirmAttendance(selectedAttendCell.bookingId);
+                          setSelectedAttendCell(null);
+                        }}
+                        style={{
+                          padding: '8px 20px', backgroundColor: '#16a34a', color: '#fff',
+                          border: 'none', borderRadius: '8px', fontWeight: 'bold',
+                          cursor: 'pointer', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px'
+                        }}
+                      >
+                        <i className="fa-solid fa-check"></i> Xác nhận đã đến tập
+                      </button>
+                      <button
+                        onClick={() => setSelectedAttendCell(null)}
+                        style={{
+                          padding: '8px 14px', backgroundColor: 'transparent', color: '#64748b',
+                          border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem'
+                        }}
+                      >
+                        Hủy
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2783,6 +2982,55 @@ function TrainerDashboard({
                 {isTrainerCancelSubmitting ? 'Đang gửi...' : 'Gửi yêu cầu'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal */}
+      {confirmModal.show && (
+        <div className="custom-toast-overlay" onClick={closeConfirm}>
+          <div className="custom-toast-card" onClick={e => e.stopPropagation()}>
+            <div className="custom-toast-icon-wrap confirm">
+              <i className="fa-solid fa-circle-question"></i>
+            </div>
+            <div className="custom-toast-content">
+              <h4 className="custom-toast-title">{confirmModal.title}</h4>
+              <p className="custom-toast-message">{confirmModal.message}</p>
+            </div>
+            <div className="custom-confirm-btn-group">
+              <button className="custom-confirm-btn cancel" onClick={closeConfirm}>
+                Hủy
+              </button>
+              <button className="custom-confirm-btn confirm" onClick={() => {
+                const action = confirmModal.onConfirm;
+                closeConfirm();
+                if (action) action();
+              }}>
+                Xác nhận
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Notification Toast Popup */}
+      {toastNotif.show && (
+        <div className="custom-toast-overlay" onClick={closeToast}>
+          <div className="custom-toast-card" onClick={e => e.stopPropagation()}>
+            <div className={`custom-toast-icon-wrap ${toastNotif.type}`}>
+              <i className={`fa-solid ${
+                toastNotif.type === 'error' ? 'fa-circle-xmark' :
+                toastNotif.type === 'warning' ? 'fa-triangle-exclamation' :
+                toastNotif.type === 'success' ? 'fa-circle-check' : 'fa-circle-info'
+              }`}></i>
+            </div>
+            <div className="custom-toast-content">
+              <h4 className="custom-toast-title">{toastNotif.title}</h4>
+              <p className="custom-toast-message">{toastNotif.message}</p>
+            </div>
+            <button className="custom-toast-btn" onClick={closeToast}>
+              Đã hiểu
+            </button>
           </div>
         </div>
       )}

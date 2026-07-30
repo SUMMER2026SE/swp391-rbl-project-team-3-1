@@ -132,15 +132,17 @@ function CheckoutPage() {
   const [appliedDiscountPercent, setAppliedDiscountPercent] = useState(0);
   const [couponMsg, setCouponMsg] = useState(null);
 
-  // ── Init: read plan and service from URL / localStorage ─────────────────────────
+  // ── Init: read plan, service and PT from URL / localStorage ─────────────────────────
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const planKey = params.get('plan');   // e.g. 'monthly', 'quarterly', 'annual'
     const serviceKey = params.get('service');
+    const hirePtKey = params.get('hirePT') || params.get('pt') || localStorage.getItem('checkoutPT');
     const storedPlan = localStorage.getItem('checkoutPlan');
 
-    // Determine service-only flow: must have service parameter and user must be logged in
-    const serviceOnlyFlow = isLoggedIn && !!serviceKey;
+    // Determine service-only / hire-pt flow:
+    const isHirePtFlow = !!hirePtKey;
+    const serviceOnlyFlow = (isLoggedIn && !!serviceKey) || isHirePtFlow;
     setIsServiceOnly(serviceOnlyFlow);
 
     // 1. Try to load plans from API
@@ -154,7 +156,7 @@ function CheckoutPage() {
           }));
           setPlans(apiPlans);
 
-          if (serviceOnlyFlow) {
+          if (serviceOnlyFlow || isHirePtFlow) {
             setSelectedPlan(null);
           } else {
             // Match plan from URL param or localStorage
@@ -166,7 +168,7 @@ function CheckoutPage() {
             setSelectedPlan(matched || apiPlans[0]);
           }
         } else {
-          if (serviceOnlyFlow) {
+          if (serviceOnlyFlow || isHirePtFlow) {
             setSelectedPlan(null);
           } else {
             // fallback
@@ -176,7 +178,7 @@ function CheckoutPage() {
         }
       })
       .catch(() => {
-        if (serviceOnlyFlow) {
+        if (serviceOnlyFlow || isHirePtFlow) {
           setSelectedPlan(null);
         } else {
           const matched = FALLBACK_PLANS.find(p => String(p.planId) === planKey);
@@ -184,27 +186,57 @@ function CheckoutPage() {
         }
       });
 
-    // 2. Load trainers
+    // 2. Load trainers and pre-select trainer matching hirePtKey
     fetch('/api/checkout/trainers')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data?.trainers?.length) {
-          setTrainers(data.trainers);
-        } else {
-          setTrainers(FALLBACK_TRAINERS);
+        const loadedTrainers = data?.trainers?.length ? data.trainers : FALLBACK_TRAINERS;
+        setTrainers(loadedTrainers);
+
+        if (hirePtKey) {
+          const matchedTrainer = loadedTrainers.find(t =>
+            String(t.userId) === String(hirePtKey) ||
+            String(t.trainerId) === String(hirePtKey) ||
+            t.fullName.toLowerCase().includes(hirePtKey.toLowerCase())
+          );
+          if (matchedTrainer) {
+            setSelectedTrainer(matchedTrainer);
+          }
         }
       })
-      .catch(() => setTrainers(FALLBACK_TRAINERS))
+      .catch(() => {
+        setTrainers(FALLBACK_TRAINERS);
+        if (hirePtKey) {
+          const matchedTrainer = FALLBACK_TRAINERS.find(t =>
+            String(t.userId) === String(hirePtKey) ||
+            String(t.trainerId) === String(hirePtKey) ||
+            t.fullName.toLowerCase().includes(hirePtKey.toLowerCase())
+          );
+          if (matchedTrainer) {
+            setSelectedTrainer(matchedTrainer);
+          }
+        }
+      })
       .finally(() => setIsLoadingTrainers(false));
 
-    // 3. Load services and pre-select service from URL param if present
+    // 3. Load services and pre-select service from URL param or PT 1-on-1 if hirePtKey is present
     fetch('/api/checkout/services')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.services?.length) {
           setServices(data.services);
-          const serviceKey = new URLSearchParams(window.location.search).get('service');
-          if (serviceKey) {
+
+          if (isHirePtFlow) {
+            const ptService = data.services.find(s =>
+              s.sportType === 'Huấn Luyện' ||
+              s.serviceName.includes('PT') ||
+              s.serviceName.includes('Huấn Luyện') ||
+              s.serviceName.includes('1 kèm 1')
+            );
+            if (ptService) {
+              setSelectedServices([ptService.serviceId]);
+            }
+          } else if (serviceKey) {
             const matchedSvc = data.services.find(s => String(s.serviceId) === serviceKey);
             if (matchedSvc) {
               setSelectedServices([matchedSvc.serviceId]);

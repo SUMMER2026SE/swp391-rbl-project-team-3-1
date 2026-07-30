@@ -98,6 +98,20 @@ function MemberDashboard({
   const [cpwConf, setCpwConf] = useState('');
   const [cpwAlert, setCpwAlert] = useState({ show: false, msg: '', ok: false });
 
+  // Custom Toast Notification Modal State
+  const [toastNotif, setToastNotif] = useState({ show: false, type: 'warning', title: '', message: '' });
+
+  const showToast = (message, type = 'warning', title = '') => {
+    setToastNotif({
+      show: true,
+      type,
+      title: title || (type === 'error' ? 'Thông Báo Lỗi' : type === 'warning' ? 'Lưu Ý Lịch Tập' : type === 'success' ? 'Thành Công' : 'Thông Báo'),
+      message
+    });
+  };
+
+  const closeToast = () => setToastNotif(prev => ({ ...prev, show: false }));
+
   // Workout state: completion status per exercise ID
   const [completedExercises, setCompletedExercises] = useState({
     1: false, 2: false, 3: false, 4: false, 5: false
@@ -437,15 +451,11 @@ function MemberDashboard({
           return [newNotif, ...prev];
         });
 
-        // Realtime auto-refresh on booking/schedule events
-        if (['BOOKING_CREATED', 'BOOKING_APPROVED', 'BOOKING_REJECTED', 'BOOKING_CANCELLED', 'BOOKING_CANCEL_REQUESTED', 'BOOKING_CANCEL_ACCEPTED', 'BOOKING_CANCEL_REJECTED', 'SCHEDULE_SLOT_UPDATED'].includes(data.type || newNotif.type)) {
-          reloadMemberAppointments();
-          setRefreshTrigger(prev => prev + 1);
-        }
-
-        if (['plan_completed', 'PLAN_COMPLETED'].includes(data.type || newNotif.type)) {
-          reloadPlans();
-        }
+        // Realtime auto-refresh on booking/schedule/plan/check-in events
+        reloadMemberAppointments();
+        reloadPlans();
+        fetchTrainersList();
+        setRefreshTrigger(prev => prev + 1);
 
         if (data.type === 'MEMBER_CHECKED_IN') {
           setLastCheckinTime(data.checkinTime);
@@ -463,8 +473,21 @@ function MemberDashboard({
       console.error('[SSE] Stream connection error:', err);
     };
 
+    const handleWindowFocus = () => {
+      reloadMemberAppointments();
+      reloadPlans();
+      fetchTrainersList();
+      fetchCheckinHistory();
+      setRefreshTrigger(prev => prev + 1);
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleWindowFocus);
+
     return () => {
       eventSource.close();
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleWindowFocus);
       console.log('[SSE] Closed stream connection.');
     };
   }, [token]);
@@ -518,18 +541,66 @@ function MemberDashboard({
   };
 
   const renderAppointmentStatus = (ap) => {
-    if (isAppointmentPast(ap) && ap.status === 'confirmed') {
-      return <span className="member-badge-status confirmed">Đã hoàn thành</span>;
+    const s = ap?.status?.toLowerCase();
+    if (s === 'completed') {
+      return <span className="member-badge-status confirmed" style={{ backgroundColor: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0' }}>Đã học</span>;
     }
-    return (
-      <span className={`member-badge-status ${ap.status}`}>
-        {ap.status === 'confirmed' ? 'Xác nhận' : ap.status === 'pending' ? 'Chờ duyệt' : ap.status === 'rejected' ? 'Bị từ chối' : 'Đã hủy'}
-      </span>
-    );
+    if (s === 'confirmed' || s === 'approved') {
+      if (isAppointmentPast(ap)) {
+        return <span className="member-badge-status confirmed">Đã hoàn thành</span>;
+      }
+      return <span className="member-badge-status confirmed">Đã duyệt</span>;
+    }
+    if (s === 'pending') {
+      return <span className="member-badge-status pending">Chờ duyệt</span>;
+    }
+    if (s === 'rejected') {
+      return <span className="member-badge-status rejected">Bị từ chối</span>;
+    }
+    if (s === 'cancelpending') {
+      return (
+        <span className="member-badge-status pending" style={{ backgroundColor: '#fee2e2', color: '#b91c1c' }}>
+          {ap.cancelRequestedBy === 'TRAINER' ? 'HLV xin hủy' : 'Chờ duyệt hủy'}
+        </span>
+      );
+    }
+    if (s === 'cancelled') {
+      return <span className="member-badge-status cancelled" style={{ backgroundColor: '#f1f5f9', color: '#64748b' }}>Đã hủy</span>;
+    }
+    return <span className={`member-badge-status ${ap.status}`}>{ap.status}</span>;
+  };
+
+  const getWeeklyActiveBookingsCount = (targetDateStr) => {
+    if (!targetDateStr) return 0;
+    const d = new Date(targetDateStr + 'T00:00:00');
+    const dayOfWeek = d.getDay();
+    const mondayDiff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + mondayDiff);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    const mondayStr = getLocalDateString(monday);
+    const sundayStr = getLocalDateString(sunday);
+
+    return appointmentsList.filter(ap => {
+      const s = ap.status?.toLowerCase();
+      if (s !== 'approved' && s !== 'confirmed' && s !== 'pending') return false;
+      let apDateStr = ap.workingDate;
+      if (!apDateStr && ap.date && ap.date !== 'N/A') {
+        const parts = ap.date.split('/');
+        if (parts.length === 3) apDateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+      return apDateStr >= mondayStr && apDateStr <= sundayStr;
+    }).length;
   };
 
   const upcomingAppointments = appointmentsList
-    .filter(ap => !isAppointmentPast(ap) && ap.status !== 'cancelled' && ap.status !== 'rejected')
+    .filter(ap => {
+      const s = ap.status?.toLowerCase();
+      return !isAppointmentPast(ap) && s !== 'cancelled' && s !== 'rejected' && s !== 'completed';
+    })
     .sort((a, b) => {
       const timeA = a.startDateTime ? new Date(a.startDateTime).getTime() : 0;
       const timeB = b.startDateTime ? new Date(b.startDateTime).getTime() : 0;
@@ -537,7 +608,10 @@ function MemberDashboard({
     });
 
   const historyAppointments = appointmentsList
-    .filter(ap => isAppointmentPast(ap) || ap.status === 'cancelled' || ap.status === 'rejected')
+    .filter(ap => {
+      const s = ap.status?.toLowerCase();
+      return isAppointmentPast(ap) || s === 'cancelled' || s === 'rejected' || s === 'completed';
+    })
     .sort((a, b) => {
       const timeA = a.startDateTime ? new Date(a.startDateTime).getTime() : 0;
       const timeB = b.startDateTime ? new Date(b.startDateTime).getTime() : 0;
@@ -845,7 +919,13 @@ function MemberDashboard({
   const handleBookAppointment = (e) => {
     e.preventDefault();
     if (!bookingDate) {
-      alert('Vui lòng chọn ngày hẹn!');
+      showToast('Vui lòng chọn ngày hẹn!', 'warning');
+      return;
+    }
+
+    const weeklyCount = getWeeklyActiveBookingsCount(bookingDate);
+    if (weeklyCount >= 3) {
+      showToast('Bạn chỉ được phép đặt tối đa 3 ca tập trong 1 tuần (thứ 2 đến chủ nhật)!', 'warning');
       return;
     }
 
@@ -870,7 +950,7 @@ function MemberDashboard({
         return res.json();
       })
       .then(data => {
-        alert(data.message || 'Đăng ký lịch tập thành công!');
+        showToast(data.message || 'Đăng ký lịch tập thành công!', 'success');
         setIsBookingLoading(false);
         setBookingDate('');
         setBookingNote('');
@@ -887,7 +967,7 @@ function MemberDashboard({
       })
       .catch(err => {
         setIsBookingLoading(false);
-        alert(err.message || 'Lỗi khi đăng ký lịch tập!');
+        showToast(err.message || 'Lỗi khi đăng ký lịch tập!', 'warning');
       });
   };
 
@@ -1203,7 +1283,7 @@ function MemberDashboard({
   const { monday: thisWeekMonday, sunday: thisWeekSunday } = getThisWeekRange();
 
   const thisWeekAppts = appointmentsList.filter(ap => {
-    if (ap.status !== 'confirmed' && ap.status !== 'Approved') return false;
+    if (ap.status !== 'confirmed' && ap.status !== 'Approved' && ap.status !== 'completed' && ap.status !== 'Completed') return false;
     
     let apDate = null;
     if (ap.workingDate) {
@@ -1222,8 +1302,23 @@ function MemberDashboard({
   });
 
   const thisWeekConfirmedCount = thisWeekAppts.length;
+  // Đếm số buổi PT đã xác nhận điểm danh (Completed) trong tuần này
+  const thisWeekAttendedCount = appointmentsList.filter(ap => {
+    if (ap.status !== 'Completed' && ap.status !== 'completed') return false;
+    let apDate = null;
+    if (ap.workingDate) {
+      apDate = new Date(ap.workingDate + 'T00:00:00');
+    } else if (ap.date && ap.date !== 'N/A') {
+      const parts = ap.date.split('/');
+      if (parts.length === 3) apDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`);
+    } else if (ap.startDateTime) {
+      apDate = new Date(ap.startDateTime);
+    }
+    if (!apDate || isNaN(apDate.getTime())) return false;
+    return apDate >= thisWeekMonday && apDate <= thisWeekSunday;
+  }).length;
   const thisWeekCompletedPtCount = thisWeekAppts.filter(ap => isAppointmentPast(ap)).length;
-  const totalCompletedWeek = Math.max(completedExsCount, thisWeekCompletedPtCount);
+  const totalCompletedWeek = Math.max(completedExsCount, thisWeekAttendedCount, thisWeekCompletedPtCount);
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -1236,15 +1331,13 @@ function MemberDashboard({
               <div className="member-stat-card">
                 <span className="member-stat-label">Buổi tập tuần này</span>
                 <span className="member-stat-value">
-                  {thisWeekConfirmedCount > 0
-                    ? `${totalCompletedWeek} / ${thisWeekConfirmedCount}`
-                    : `${completedExsCount} / 5`}
+                  {`${Math.min(thisWeekAttendedCount, 3)} / 3`}
                 </span>
-                {thisWeekConfirmedCount > 0 && (
-                  <span style={{ fontSize: '0.75rem', color: 'var(--orange)', marginTop: '2px', fontWeight: 'bold' }}>
-                    Đã hẹn {thisWeekConfirmedCount} buổi với PT
-                  </span>
-                )}
+                <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px', fontWeight: '500' }}>
+                  {thisWeekAttendedCount >= 3
+                    ? 'Đã hoàn thành chỉ tiêu 3 buổi tuần này'
+                    : `Đã xác nhận ${thisWeekAttendedCount}/3 buổi tập`}
+                </span>
                 <i className="fa-solid fa-dumbbell member-stat-icon"></i>
               </div>
               <div className="member-stat-card">
@@ -1398,12 +1491,7 @@ function MemberDashboard({
                         <td>{ap.trainer}</td>
                         <td>{ap.type}</td>
                         <td>
-                          <span className={`member-badge-status ${ap.status}`}>
-                            {ap.status === 'confirmed' ? 'Xác nhận' : 
-                             ap.status === 'pending' ? 'Chờ duyệt' : 
-                             ap.status === 'rejected' ? 'Bị từ chối' : 
-                             ap.status === 'cancelpending' ? (ap.cancelRequestedBy === 'TRAINER' ? 'HLV xin hủy' : 'Chờ duyệt hủy') : 'Đã hủy'}
-                          </span>
+                          {renderAppointmentStatus(ap)}
                         </td>
                         <td>
                           {ap.status === 'cancelpending' ? (
@@ -1431,7 +1519,7 @@ function MemberDashboard({
                             ) : (
                               <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
                             )
-                          ) : ap.status === 'cancelled' || ap.status === 'rejected' ? null : (
+                          ) : ap.status === 'cancelled' || ap.status === 'rejected' || ap.status === 'completed' || ap.status === 'Completed' ? null : (
                             <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
                           )}
                         </td>
@@ -1531,13 +1619,27 @@ function MemberDashboard({
                                 const diff = d.getDate() - day + (day === 0 ? -6 : 1);
                                 d.setDate(diff + dIdx);
                                 const dateStr = getLocalDateString(d);
+                                const slotStartHHMM = slot.start.substring(0, 5);
 
-                                const isBooked = trainerSchedules.some(s => s.workingDate === dateStr && s.startTime.startsWith(slot.start.substring(0, 5)) && (s.status === 'Booked' || s.status === 'Busy' || s.status === 'Off'));
+                                // Strictly check if THIS member has an ACTIVE upcoming appointment (Approved/Confirmed/Pending) for THIS selected trainer on this date & shift
+                                const myAppt = appointmentsList.find(ap => {
+                                  const apTrainerId = ap.trainerId || ap.trainer_id;
+                                  if (selectedTrainerId && apTrainerId && String(apTrainerId) !== String(selectedTrainerId)) return false;
+                                  const s = ap.status?.toLowerCase();
+                                  // ONLY approved, confirmed, or pending statuses are active upcoming appointments
+                                  if (s !== 'approved' && s !== 'confirmed' && s !== 'pending') return false;
+
+                                  const isDateMatch = ap.workingDate === dateStr || (ap.date && ap.date !== 'N/A' && ap.date.split('/').reverse().join('-') === dateStr);
+                                  const isTimeMatch = ap.startTime?.startsWith(slotStartHHMM) || (ap.time && ap.time.includes(slotStartHHMM));
+                                  return isDateMatch && isTimeMatch;
+                                });
+
+                                const isBooked = trainerSchedules.some(s => s.workingDate === dateStr && s.startTime.startsWith(slotStartHHMM) && (s.status === 'Booked' || s.status === 'Busy' || s.status === 'Off'));
 
                                 const [slotH, slotM, slotS] = slot.start.split(':').map(Number);
                                 const slotDate = new Date(d.getFullYear(), d.getMonth(), d.getDate(), slotH, slotM, slotS || 0);
                                 const isPast = slotDate < new Date();
-                                const isSelected = bookingDate === dateStr && bookingTime === slot.start.substring(0, 5);
+                                const isSelected = bookingDate === dateStr && bookingTime === slotStartHHMM;
 
                                 let bg = '#dcfce7';
                                 let color = '#166534';
@@ -1545,20 +1647,30 @@ function MemberDashboard({
                                 let cursor = 'pointer';
 
                                 if (isPast) {
+                                  // Past slots always show "Đã qua"
                                   bg = '#f1f5f9'; color = '#94a3b8'; text = 'Đã qua'; cursor = 'not-allowed';
+                                } else if (myAppt) {
+                                  // Active upcoming session between THIS PT and THIS member
+                                  bg = '#e2e8f0'; color = '#64748b'; text = 'Ca học'; cursor = 'not-allowed';
                                 } else if (isBooked) {
+                                  // PT Day Off or booked by another member
                                   bg = '#e2e8f0'; color = '#64748b'; text = 'Bận'; cursor = 'not-allowed';
                                 }
 
-                                if (isSelected) {
+                                if (isSelected && !myAppt && !isPast && !isBooked) {
                                   bg = '#3b82f6'; color = '#ffffff'; text = 'Đang chọn';
                                 }
 
                                 return (
                                   <td key={dIdx} onClick={() => {
-                                    if (!isBooked && !isPast) {
+                                    if (!myAppt && !isBooked && !isPast) {
+                                      const weeklyCount = getWeeklyActiveBookingsCount(dateStr);
+                                      if (weeklyCount >= 3) {
+                                        alert('Bạn chỉ được phép đặt tối đa 3 ca tập trong 1 tuần! (Tuần này bạn đã có 3 ca tập)');
+                                        return;
+                                      }
                                       setBookingDate(dateStr);
-                                      setBookingTime(slot.start.substring(0, 5));
+                                      setBookingTime(slotStartHHMM);
                                     }
                                   }} style={{
                                     padding: '8px',
@@ -1579,6 +1691,23 @@ function MemberDashboard({
                         </tbody>
                       </table>
                     </div>
+                    
+                    {/* Legend bar */}
+                    <div style={{ display: 'flex', gap: '15px', fontSize: '0.8rem', marginTop: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ width: '14px', height: '14px', backgroundColor: '#dcfce7', borderRadius: '3px', border: '1px solid #bbf7d0' }}></div>
+                        <span>Ca trống</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ width: '14px', height: '14px', backgroundColor: '#e2e8f0', borderRadius: '3px', border: '1px solid #cbd5e1' }}></div>
+                        <span>Ca học / Bận</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ width: '14px', height: '14px', backgroundColor: '#f1f5f9', borderRadius: '3px', border: '1px solid #e2e8f0' }}></div>
+                        <span>Ca đã qua</span>
+                      </div>
+                    </div>
+
                     {isTrainerScheduleLoading && <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '8px' }}>Đang tải lịch trình...</p>}
                     <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '8px' }}>
                       Đã chọn: <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{bookingDate ? new Date(bookingDate).toLocaleDateString('vi-VN') : 'Chưa chọn'}</span> lúc <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{bookingTime || 'Chưa chọn'}</span>
@@ -1643,12 +1772,7 @@ function MemberDashboard({
                         <td>{ap.trainer}</td>
                         <td>{ap.type}</td>
                         <td>
-                          <span className={`member-badge-status ${ap.status}`}>
-                            {ap.status === 'confirmed' ? 'Xác nhận' : 
-                             ap.status === 'pending' ? 'Chờ duyệt' : 
-                             ap.status === 'rejected' ? 'Bị từ chối' : 
-                             ap.status === 'cancelpending' ? (ap.cancelRequestedBy === 'TRAINER' ? 'HLV xin hủy' : 'Chờ duyệt hủy') : 'Đã hủy'}
-                          </span>
+                          {renderAppointmentStatus(ap)}
                         </td>
                         <td>
                           {ap.status === 'cancelpending' ? (
@@ -1676,7 +1800,7 @@ function MemberDashboard({
                             ) : (
                               <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontStyle: 'italic' }}>Đang chờ duyệt hủy</span>
                             )
-                          ) : ap.status === 'cancelled' || ap.status === 'rejected' ? null : (
+                          ) : ap.status === 'cancelled' || ap.status === 'rejected' || ap.status === 'completed' || ap.status === 'Completed' ? null : (
                             <button className="member-action-cancel" onClick={() => handleCancelAppointment(ap.id)}>Hủy</button>
                           )}
                         </td>
@@ -3651,6 +3775,28 @@ function MemberDashboard({
                 Đóng
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sleek Custom Notification Toast Popup */}
+      {toastNotif.show && (
+        <div className="custom-toast-overlay" onClick={closeToast}>
+          <div className="custom-toast-card" onClick={e => e.stopPropagation()}>
+            <div className={`custom-toast-icon-wrap ${toastNotif.type}`}>
+              <i className={`fa-solid ${
+                toastNotif.type === 'error' ? 'fa-circle-xmark' :
+                toastNotif.type === 'warning' ? 'fa-triangle-exclamation' :
+                toastNotif.type === 'success' ? 'fa-circle-check' : 'fa-circle-info'
+              }`}></i>
+            </div>
+            <div className="custom-toast-content">
+              <h4 className="custom-toast-title">{toastNotif.title}</h4>
+              <p className="custom-toast-message">{toastNotif.message}</p>
+            </div>
+            <button className="custom-toast-btn" onClick={closeToast}>
+              Đã hiểu
+            </button>
           </div>
         </div>
       )}

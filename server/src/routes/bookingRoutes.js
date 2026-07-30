@@ -14,5 +14,6 @@ router.get('/member/history', bookingController.getMemberBookingHistory);
 router.get('/pt/pending', bookingController.getPtPendingBookings);
 router.put('/pt/:id/approve', bookingController.approveBooking);
 router.put('/pt/:id/reject', bookingController.rejectBooking);
+router.put('/pt/:id/attend', bookingController.confirmAttendance);
 
 module.exports = router;

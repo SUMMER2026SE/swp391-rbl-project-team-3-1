@@ -102,7 +102,7 @@ exports.streamNotifications = (req, res) => {
   // Send an initial event acknowledging connection
   res.write(`data: ${JSON.stringify({ connected: true })}\n\n`);
 
-  // Event listener function
+  // Event listener function for direct user notifications
   const onNotificationCreated = (eventData) => {
     // Only send notification if it matches the authenticated user ID
     if (Number(eventData.user_id) === Number(userId)) {
@@ -110,12 +110,21 @@ exports.streamNotifications = (req, res) => {
     }
   };
 
+  // Event listener function for system-wide / global real-time events
+  const onGlobalEvent = (data) => {
+    if (!data.userId || Number(data.userId) === Number(userId)) {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    }
+  };
+
   notificationEmitter.on('notification_created', onNotificationCreated);
+  notificationEmitter.on('global_event', onGlobalEvent);
 
   // Clean up connection
   req.on('close', () => {
     clearInterval(keepAliveInterval);
     notificationEmitter.off('notification_created', onNotificationCreated);
+    notificationEmitter.off('global_event', onGlobalEvent);
     console.log(`[SSE] Closed connection for user ID: ${userId}`);
   });
 };

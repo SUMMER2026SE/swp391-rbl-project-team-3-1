@@ -730,10 +730,12 @@
   width: 100%;
   border-collapse: collapse;
   text-align: left;
+  font-family: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif;
 }
 
 .admin-table th {
   padding: 14px 18px;
+  font-family: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif;
   font-size: 0.72rem;
   font-weight: 700;
   color: #94a3b8;
@@ -744,6 +746,7 @@
 
 .admin-table td {
   padding: 14px 18px;
+  font-family: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif;
   font-size: 0.88rem;
   font-weight: 600;
   border-bottom: 1px solid #e2e8f0;
@@ -849,12 +852,14 @@
 .admin-action-link {
   background: none;
   border: none;
+  font-family: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif !important;
   font-size: 0.78rem;
   font-weight: 800;
   color: #ef4444;
   cursor: pointer;
   padding: 0;
   text-transform: uppercase;
+  letter-spacing: 0.02em;
   transition: opacity 0.2s;
 }
 

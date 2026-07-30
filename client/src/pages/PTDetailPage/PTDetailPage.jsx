@@ -313,7 +313,7 @@ function PTDetailPage() {
                 onClick={(e) => {
                   e.preventDefault();
                   localStorage.setItem('checkoutPT', selectedPT.userId);
-                  window.history.pushState({}, '', '/checkout');
+                  window.history.pushState({}, '', `/checkout?hirePT=${selectedPT.userId}`);
                   window.dispatchEvent(new Event('popstate'));
                 }}
               >

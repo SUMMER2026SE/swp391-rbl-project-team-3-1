@@ -1651,6 +1651,43 @@ exports.assignPlanToMember = async (req, res) => {
     await models.WorkoutExercises.bulkCreate(exercisesToCreate, { transaction });
 
     await transaction.commit();
+
+    try {
+      const member = await models.Members.findByPk(memberId);
+      if (member) {
+        const notif = await models.Notifications.create({
+          user_id: member.user_id,
+          title: 'Giáo án mới được giao',
+          content: `HLV ${trainerUser.user?.full_name || ''} vừa giao cho bạn giáo án tập luyện: ${name}`,
+          notification_type: 'WORKOUT_ASSIGNED',
+          is_read: false
+        });
+
+        const notificationEmitter = require('../utils/notificationEmitter');
+        notificationEmitter.emit('notification_created', {
+          user_id: member.user_id,
+          notification: {
+            notification_id: notif.notification_id,
+            user_id: member.user_id,
+            title: notif.title,
+            content: notif.content,
+            notification_type: notif.notification_type,
+            is_read: false,
+            created_at: new Date()
+          }
+        });
+
+        broadcastSSE({
+          type: 'WORKOUT_ASSIGNED',
+          userId: member.user_id,
+          message: `HLV vừa giao cho bạn giáo án tập luyện: ${name}`,
+          notification: notif
+        });
+      }
+    } catch (e) {
+      console.error('Error broadcasting WORKOUT_ASSIGNED:', e.message);
+    }
+
     return res.status(201).json({ message: `Đã giao thành công giáo án tập luyện: ${name}` });
   } catch (error) {
     console.error('❌ Error assigning plan:', error);
@@ -1722,6 +1759,13 @@ exports.finishMemberProgress = async (req, res) => {
             created_at: new Date()
           }
         });
+
+        broadcastSSE({
+          type: 'plan_completed',
+          userId: member.user_id,
+          message: `HLV ${trainerUser.user?.full_name || 'của bạn'} đã xác nhận hoàn thành & kết thúc tiến độ giáo án hiện tại.`,
+          notification
+        });
       }
     } catch (notifErr) {
       console.error('⚠️ Lỗi tạo thông báo kết thúc tiến độ:', notifErr.message);
@@ -1791,6 +1835,8 @@ exports.getMemberAppointments = async (req, res) => {
 
       return {
         id: b.booking_id,
+        trainerId: b.trainer_id,
+        trainer_id: b.trainer_id,
         ptName: b.trainer?.user?.full_name || 'HLV Cá Nhân',
         trainer: b.trainer?.user?.full_name || 'HLV Cá Nhân',
         date: toDateStr(b.session_date),
@@ -1898,6 +1944,13 @@ exports.createMemberAppointment = async (req, res) => {
     const existingBookings = await models.PtBookings.findAll({
       where: { trainer_id: trainerId, session_date: date }
     });
+    const { Op } = require('sequelize');
+    const memberBookings = await models.PtBookings.findAll({
+      where: {
+        member_id: member.member_id,
+        status: { [Op.in]: ['Pending', 'Approved', 'Completed'] }
+      }
+    });
 
     const { validateBooking } = require('../services/bookingValidator');
     const validation = validateBooking({
@@ -1907,7 +1960,8 @@ exports.createMemberAppointment = async (req, res) => {
       shiftCode,
       existingBookings,
       offRequests,
-      trainerPackage
+      trainerPackage,
+      memberBookings
     });
 
     if (!validation.valid) {
@@ -1984,8 +2038,8 @@ exports.getMemberTrainers = async (req, res) => {
       return res.status(200).json({ trainers: [] });
     }
 
-    const packages = await models.MemberTrainerPackages.findAll({
-      where: { member_id: member.member_id, is_active: true },
+    let packages = await models.MemberTrainerPackages.findAll({
+      where: { member_id: member.member_id },
       include: [{
         model: models.Trainers,
         as: 'trainer',
@@ -1997,18 +2051,35 @@ exports.getMemberTrainers = async (req, res) => {
       }]
     });
 
-    const result = packages
-      .filter(pkg => pkg.trainer)
-      .map(pkg => ({
-        userId: pkg.trainer.user?.user_id,
-        trainerId: pkg.trainer.trainer_id,
-        fullName: pkg.trainer.user?.full_name || 'Huấn luyện viên',
-        avatarUrl: pkg.trainer.user?.avatar_url ? `${req.protocol}://${req.get('host')}${pkg.trainer.user.avatar_url}` : null,
-        specialization: pkg.trainer.specialization || 'Gym tổng hợp',
-        experienceYears: pkg.trainer.experience_years || 0,
-        bio: pkg.trainer.bio || '',
-        rating: pkg.trainer.rating || 4.5
-      }));
+    // Make sure packages are active
+    for (const pkg of packages) {
+      if (!pkg.is_active) {
+        pkg.is_active = true;
+        await pkg.save();
+      }
+    }
+
+    // Only return trainers from packages that the member has registered/purchased
+    let trainersToReturn = packages.filter(pkg => pkg.trainer).map(pkg => pkg.trainer);
+
+    // Remove duplicates by trainer_id
+    const uniqueTrainersMap = new Map();
+    trainersToReturn.forEach(t => {
+      if (t && t.trainer_id && !uniqueTrainersMap.has(t.trainer_id)) {
+        uniqueTrainersMap.set(t.trainer_id, t);
+      }
+    });
+
+    const result = Array.from(uniqueTrainersMap.values()).map(trainer => ({
+      userId: trainer.user?.user_id,
+      trainerId: trainer.trainer_id,
+      fullName: trainer.user?.full_name || 'Huấn luyện viên',
+      avatarUrl: trainer.user?.avatar_url ? `${req.protocol}://${req.get('host')}${trainer.user.avatar_url}` : null,
+      specialization: trainer.specialization || 'Gym tổng hợp',
+      experienceYears: trainer.experience_years || 0,
+      bio: trainer.bio || '',
+      rating: trainer.rating || 4.5
+    }));
 
     return res.status(200).json({ trainers: result });
   } catch (error) {
@@ -2510,6 +2581,7 @@ exports.respondMemberAppointmentCancel = async (req, res) => {
 const sseClients = [];
 
 function broadcastSSE(data) {
+  notificationEmitter.emit('global_event', data);
   sseClients.forEach(client => {
     try {
       // If a specific userId is targetted, only broadcast to that user
@@ -2553,7 +2625,16 @@ exports.sseNotificationsStream = (req, res) => {
   const client = { id: clientId, res, user };
   sseClients.push(client);
 
+  const keepAliveInterval = setInterval(() => {
+    try {
+      res.write(': keep-alive\n\n');
+    } catch (e) {
+      clearInterval(keepAliveInterval);
+    }
+  }, 20000);
+
   req.on('close', () => {
+    clearInterval(keepAliveInterval);
     const index = sseClients.findIndex(c => c.id === clientId);
     if (index !== -1) sseClients.splice(index, 1);
   });
@@ -2691,6 +2772,7 @@ exports.approveOffRequest = async (req, res) => {
     });
 
     broadcastSSE({ type: 'OFF_REQUEST_APPROVED', userId: request.trainer.user_id, message: `Yêu cầu nghỉ ngày ${request.off_date} đã được duyệt.` });
+    broadcastSSE({ type: 'SCHEDULE_SLOT_UPDATED', trainerId: request.trainer_id, sessionDate: request.off_date, status: 'Off' });
 
     return res.status(200).json({ message: 'Duyệt yêu cầu thành công.' });
   } catch (error) {
@@ -2728,6 +2810,7 @@ exports.rejectOffRequest = async (req, res) => {
     });
 
     broadcastSSE({ type: 'OFF_REQUEST_REJECTED', userId: request.trainer.user_id, message: `Yêu cầu nghỉ ngày ${request.off_date} bị từ chối.` });
+    broadcastSSE({ type: 'SCHEDULE_SLOT_UPDATED', trainerId: request.trainer_id, sessionDate: request.off_date, status: 'Free' });
 
     return res.status(200).json({ message: 'Đã từ chối yêu cầu nghỉ phép.' });
   } catch (error) {
